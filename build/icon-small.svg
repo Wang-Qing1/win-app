@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="小说助手">
+  <!--
+    应用图标源文件（小尺寸版本，用于 32px 及以下）。
+
+    不是把 icon.svg 缩小：那份里的文字线只有 9/256 粗，缩到 16px 是 0.56 像素，
+    只会变成一层灰雾把页面糊脏。这里去掉文字线与书口，把两页撑得更大、
+    中缝加粗到 10px，左右页用纯白与浅蓝拉开对比 —— 缩到 16px 仍能看出
+    「一本摊开的书」，而不是一团发白的方块。
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#4aa3f7"/>
+      <stop offset="1" stop-color="#0f6cbd"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#tile)"/>
+
+  <path d="M128 76 C106 62 82 58 46 58 L46 174 C82 174 106 178 128 192 Z" fill="#ffffff"/>
+  <path d="M128 76 C150 62 174 58 210 58 L210 174 C174 174 150 178 128 192 Z" fill="#d2e5f8"/>
+
+  <!-- 中缝是小尺寸下唯一的辨识点：16px 时它只有 0.75 像素宽，
+       颜色不够深就完全看不见，整张图标会退化成「蓝底上一个白块」 -->
+  <path d="M128 76 L128 192" stroke="#3f8ed6" stroke-width="12" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,2257 @@
+/* ==================================================================
+ * wapp 全局样式
+ *
+ * 组件样式全部交给 antd（主题令牌在 src/renderer/src/theme/tokens.ts）。
+ * 这个文件只负责 antd 管不到的部分：
+ *   1. 布局骨架（窗口高度链、滚动容器、页头）
+ *   2. 三段式编辑器的网格与纸面
+ *   3. 主题相关的原生区域（body 底色、滚动条、选中色）
+ *   4. 少量语义化的小样式补充
+ * 保持精简是刻意的：样式越少，越不容易和组件库打架。
+ *
+ * 约定：所有颜色都通过 CSS 变量取值，变量由 html[data-theme] 切换。
+ * 硬编码色值只允许出现在「两套主题各写一遍」的地方（如热力图色阶）。
+ * ================================================================== */
+
+:root {
+  --wapp-font:
+    'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei',
+    system-ui, -apple-system, sans-serif;
+
+  /* 与 tokens.ts 的浅色主题保持一致 */
+  --wapp-bg: #f3f3f3;
+  --wapp-scrollbar-thumb: rgba(0, 0, 0, 0.22);
+  --wapp-scrollbar-thumb-hover: rgba(0, 0, 0, 0.38);
+
+  --wapp-surface: #ffffff;
+  --wapp-surface-soft: #fafafa;
+  /* 顶栏导航条的灰：比页面底色深半档，让白色选中卡片浮起来 */
+  --wapp-nav-band: #ececec;
+  --wapp-nav-band-hover: #e2e2e2;
+  --wapp-border: #e5e5e5;
+  --wapp-border-strong: #d1d1d1;
+  --wapp-text: #1b1b1b;
+  --wapp-text-soft: #5c5c5c;
+  --wapp-text-faint: #8a8a8a;
+  --wapp-accent: #0f6cbd;
+  --wapp-accent-soft: #e6f1fb;
+  --wapp-danger: #c42b1c;
+  --wapp-warning: #c76a00;
+}
+
+html[data-theme='dark'] {
+  --wapp-bg: #1f1f1f;
+  --wapp-scrollbar-thumb: rgba(255, 255, 255, 0.24);
+  --wapp-scrollbar-thumb-hover: rgba(255, 255, 255, 0.4);
+
+  --wapp-surface: #2b2b2b;
+  --wapp-surface-soft: #262626;
+  /* 顶栏导航条的灰：比页面底色浅半档，让选中卡片浮起来 */
+  --wapp-nav-band: #262626;
+  --wapp-nav-band-hover: #333333;
+  --wapp-border: #3d3d3d;
+  --wapp-border-strong: #4a4a4a;
+  --wapp-text: #ffffff;
+  --wapp-text-soft: #d6d6d6;
+  --wapp-text-faint: #8a8a8a;
+  --wapp-accent: #479ef5;
+  --wapp-accent-soft: #14324d;
+  --wapp-danger: #ff99a4;
+  --wapp-warning: #fce100;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/*
+ * 窗口高度链。整条链上任何一环是 auto，「满高 + 内部滚动」的模式就会失效：
+ * 页面会被内容撑得比窗口还长，底栏这类贴在容器底部的元素直接落到窗口外面。
+ *
+ * .app-root 是 antd App 自己插进来的包裹层（见 ThemeProvider 的说明），
+ * 它必须在这条链上，否则下面的 .app-shell 的 height:100% 就没有解析基准。
+ */
+html,
+body,
+#root,
+.app-root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--wapp-font);
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--wapp-bg);
+  -webkit-font-smoothing: antialiased;
+  /* 主题切换时让底色有过渡，避免深色模式切换瞬间闪白 */
+  transition: background-color 0.2s ease;
+}
+
+/* Win11 用的是细的浮层滚动条，Chromium 默认的粗滚动条在桌面窗口里很出戏 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--wapp-scrollbar-thumb);
+  border-radius: 999px;
+  /* 用透明边框把滑块「收窄」，是模拟浮层滚动条的常用手法 */
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--wapp-scrollbar-thumb-hover);
+  background-clip: content-box;
+}
+
+::selection {
+  background: #0f6cbd;
+  color: #fff;
+}
+
+/* ==================================================================
+ * 布局骨架
+ * ================================================================== */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* antd Header 默认只在水平方向留白，这里补上两端对齐与品牌区内边距 */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  gap: 16px;
+}
+
+/* 顶栏品牌区（布局改为上下结构后，品牌从侧栏回到顶栏左侧） */
+.app-header__brand {
+  min-width: 0;
+  cursor: default;
+}
+
+.app-header__logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(140deg, #0f6cbd, #4cc2ff);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.app-header__title {
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.app-header__subtitle {
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.app-main {
+  flex: 1 1 auto;
+  /* 和 .app-shell__body 同理。少了这一条，编辑器页面会被内容撑高，
+     底栏（计划 / 本章）落到窗口外面，而 --flush 的 overflow:hidden
+     又把它裁掉 —— 既看不见也滚不到，只能靠断言才发现 */
+  min-height: 0;
+  /* 唯一的滚动容器。窗口高度链靠 html/body/#root 的 height:100% 撑起来 */
+  overflow-y: auto;
+  padding: 20px 24px 28px;
+}
+
+/* 章节编辑器自带三段式布局与内部滚动，外层不能再加内边距 */
+.app-main--flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.page {
+  max-width: 1180px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/*
+ * 视觉隐藏：元素不留任何可见占位，但仍在辅助技术的可访问树里。
+ * 用在页面标题这类「布局不需要、语义需要」的节点上。
+ * 不能用 display:none / visibility:hidden —— 那会把辅助技术一起屏蔽掉；
+ * 也不能用 opacity:0 —— 它仍会占布局空间。
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.section-title {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.card__extra {
+  font-size: 12px;
+}
+
+/* antd Tag 自带右外边距，在 Flex + gap 布局里会造成间距不均 */
+.tag--flush {
+  margin-inline-end: 0;
+}
+
+.offline-banner {
+  padding: 12px 24px 0;
+  max-width: 1228px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ---------------- 顶部横向导航条 ----------------
+ * 上下结构的第二行。选中态 = 柔和底色 + 底部指示条，
+ * 与 Win11 的「选项卡」隐喻一致；底部指示条压在导航条自身的
+ * 下边框上，视觉上是「这个标签页连着下面的内容区」。
+ */
+
+.app-nav {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  /* 灰色圆角条内缩悬浮：不贴窗口两缘（通栏方形是残留的「直角感」来源），
+     与下方内容区之间也不再需要分割线 —— 靠色块边界分层 */
+  margin: 8px 12px 4px;
+  background: var(--wapp-nav-band);
+  border-radius: 10px;
+  padding: 6px;
+}
+
+/*
+ * 每个标签 flex:1 且 basis 为 0 —— 五个标签拿到完全相等的宽度，
+ * 与文字长短无关；min-width:0 防止文字把格子撑宽。
+ */
+.app-nav__item {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  gap: 7px;
+  padding: 9px 12px;
+  overflow: hidden;
+  font: inherit;
+  font-size: 14px;
+  color: var(--wapp-text-soft);
+  text-align: center;
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.app-nav__item:hover:not(:disabled) {
+  color: var(--wapp-text);
+  background: var(--wapp-nav-band-hover);
+}
+
+.app-nav__item:disabled {
+  color: var(--wapp-text-faint);
+  cursor: not-allowed;
+}
+
+/* 选中态：白色圆角卡片浮在灰条上（参考 CC Bridge 的顶栏标签）。
+   等宽排布下胶囊底色会让五个格子视觉重量不均，浮起的卡片则不会。 */
+.app-nav__item--active {
+  font-weight: 500;
+  color: var(--wapp-accent);
+  background: var(--wapp-surface);
+  border-color: var(--wapp-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.app-nav__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 15px;
+}
+
+.app-nav__pending {
+  color: var(--wapp-text-faint);
+}
+
+@media (max-width: 720px) {
+  .app-nav {
+    margin: 8px 6px 4px;
+    padding: 4px;
+  }
+
+  .app-nav__item {
+    padding: 9px 6px;
+  }
+}
+
+/* ---------------- 页头健康徽标 ---------------- */
+
+.health-badge {
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
+
+.health-tooltip {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-width: 200px;
+}
+
+.health-tooltip__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  line-height: 1.8;
+}
+
+.health-tooltip__label {
+  opacity: 0.72;
+}
+
+.theme-toggle__item {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ---------------- 错误提示 ---------------- */
+
+.error-alert__trace {
+  font-size: 12px;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+}
+
+/* ==================================================================
+ * 首页
+ * ================================================================== */
+
+.metric-card__card {
+  height: 100%;
+}
+
+.metric-card__label {
+  font-size: 12px;
+}
+
+.metric-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--wapp-accent-soft);
+  color: var(--wapp-accent);
+  font-size: 14px;
+}
+
+.metric-card__hanzi-icon {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.metric-card__value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-card__footer {
+  font-size: 12px;
+}
+
+.statistic__suffix {
+  font-size: 13px;
+  margin-inline-start: 4px;
+}
+
+.module-grid {
+  margin-top: 0;
+}
+
+.module-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--wapp-accent-soft);
+  color: var(--wapp-accent);
+  font-size: 17px;
+}
+
+.module-card__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.module-card__hint {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.module-card__arrow {
+  color: var(--wapp-text-faint);
+  font-size: 12px;
+}
+
+.chart-placeholder {
+  min-height: 180px;
+}
+
+.progress-list {
+  gap: 2px;
+}
+
+.progress-row {
+  padding: 8px 6px;
+  border-radius: 8px;
+}
+
+.progress-row:hover {
+  background: var(--wapp-surface-soft);
+}
+
+.progress-row__accent {
+  flex: 0 0 auto;
+  width: 4px;
+  align-self: stretch;
+  min-height: 30px;
+  border-radius: 999px;
+}
+
+.progress-row__main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.progress-row__title {
+  font-size: 14px;
+}
+
+.progress-row__meta {
+  font-size: 12px;
+}
+
+.dashboard-today__flame {
+  color: var(--wapp-warning);
+}
+
+.dashboard-today__note {
+  margin-bottom: 0 !important;
+  font-size: 12px;
+}
+
+/* ==================================================================
+ * 书架 / 书籍详情
+ * ================================================================== */
+
+.books-toolbar__search {
+  width: 220px;
+}
+
+.books-toolbar__filter {
+  min-width: 128px;
+}
+
+.books-toolbar__count {
+  font-size: 12px;
+}
+
+.book-card__spine {
+  flex: 0 0 auto;
+  width: 5px;
+  border-radius: 999px;
+}
+
+.book-card__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.book-card__title {
+  font-size: 15px;
+}
+
+.book-card__meta {
+  font-size: 12px;
+}
+
+.book-card__summary {
+  margin-bottom: 0 !important;
+  font-size: 12px;
+}
+
+.book-card__stats {
+  font-size: 12px;
+}
+
+.book-card__progress {
+  font-size: 11px;
+}
+
+.book-card__open {
+  font-size: 12px;
+}
+
+.book-form__alert {
+  margin-bottom: 16px;
+}
+
+.book-form__number {
+  width: 100%;
+}
+
+/* 最后一个表单项不要下外边距，否则弹窗底部会多出一块空白 */
+.book-form__last {
+  margin-bottom: 0;
+}
+
+.book-form__hint {
+  font-size: 12px;
+}
+
+.accent-picker {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.accent-swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.accent-swatch:hover {
+  transform: scale(1.08);
+}
+
+.accent-swatch--active {
+  border-color: var(--wapp-text);
+}
+
+.book-summary {
+  margin-bottom: 0 !important;
+  white-space: pre-wrap;
+}
+
+.book-stat__hint {
+  display: block;
+  font-size: 12px;
+}
+
+.book-meta {
+  margin-top: 4px;
+}
+
+.volume-draft,
+.chapter-draft {
+  margin-bottom: 12px;
+}
+
+.volume-list {
+  gap: 2px;
+}
+
+.volume-row {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--wapp-surface-soft);
+}
+
+.volume-row__index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--wapp-accent-soft);
+  color: var(--wapp-accent);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.volume-row__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.volume-row__meta {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.volume-row__edit {
+  flex: 1 1 auto;
+}
+
+.volume-row__actions {
+  flex: 0 0 auto;
+}
+
+.chapter-link {
+  padding: 0 !important;
+  height: auto !important;
+  text-align: start;
+  white-space: normal;
+}
+
+.chapter-meta {
+  font-size: 11px;
+}
+
+.chapter-move {
+  min-width: 104px;
+}
+
+.stats-range {
+  font-size: 12px;
+}
+
+/* ==================================================================
+ * 三段式章节编辑器
+ * ================================================================== */
+
+.editor-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--wapp-bg);
+}
+
+.editor-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+  height: 46px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--wapp-border);
+  background: var(--wapp-surface);
+}
+
+.editor-topbar__left {
+  min-width: 0;
+}
+
+.editor-topbar__book {
+  max-width: 220px;
+  font-size: 13px;
+}
+
+.editor-topbar__chapter {
+  max-width: 260px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.editor-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 专注模式：收起左右两栏，正文铺满 */
+.editor-page--focus .editor-main {
+  max-width: 100%;
+}
+
+.editor-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.editor-main__loading {
+  padding: 24px;
+}
+
+.editor-metabar {
+  flex: 0 0 auto;
+  padding: 10px 20px 8px;
+  border-bottom: 1px solid var(--wapp-border);
+  background: var(--wapp-surface);
+}
+
+.editor-metabar__title {
+  font-size: 18px;
+  font-weight: 600;
+  padding: 0 !important;
+  margin-bottom: 6px;
+}
+
+.editor-metabar__controls {
+  gap: 8px;
+}
+
+.editor-metabar__select {
+  min-width: 110px;
+}
+
+.editor-metabar__number {
+  width: 96px;
+}
+
+.editor-metabar__label {
+  font-size: 12px;
+}
+
+/* ---------------- 左侧目录 ---------------- */
+
+.catalog {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 208px;
+  width: 208px;
+  min-height: 0;
+  border-right: 1px solid var(--wapp-border);
+  background: var(--wapp-surface);
+}
+
+.catalog__head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid var(--wapp-border);
+}
+
+.catalog__book-select {
+  width: 100%;
+}
+
+.catalog__draft {
+  margin-top: 2px;
+}
+
+.catalog__section {
+  flex: 0 0 auto;
+  padding: 8px 12px 4px;
+}
+
+.catalog__section-title {
+  font-size: 12px;
+}
+
+.catalog__summary {
+  font-size: 11px;
+}
+
+.catalog__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 6px 8px;
+}
+
+.catalog__volume {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  margin-top: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--wapp-text-soft);
+}
+
+.catalog__volume:hover {
+  background: var(--wapp-surface-soft);
+}
+
+.catalog__volume--static {
+  cursor: default;
+}
+
+.catalog__volume-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.catalog__count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.catalog__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+  font: inherit;
+  color: var(--wapp-text-soft);
+  line-height: 1.45;
+}
+
+.catalog__row:hover {
+  background: var(--wapp-surface-soft);
+}
+
+.catalog__row--active {
+  background: var(--wapp-accent-soft);
+  color: var(--wapp-accent);
+}
+
+.catalog__row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+
+.catalog__row-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--wapp-text-faint);
+}
+
+.catalog__row--active .catalog__row-count {
+  color: var(--wapp-accent);
+}
+
+.catalog__foot {
+  flex: 0 0 auto;
+  padding: 6px;
+  border-top: 1px solid var(--wapp-border);
+}
+
+/* ---------------- 编辑器主体 ---------------- */
+
+.wapp-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.editor-toolbar {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--wapp-border);
+  background: var(--wapp-surface);
+}
+
+.editor-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* 纵向 flex 是为了让纸面撑满可视高度，见下面 .editor-surface 的说明 */
+  display: flex;
+  flex-direction: column;
+  padding: 18px 22px 40px;
+  /* 编辑器周围的底色比纸面深一档，让「纸」浮起来 */
+  background: var(--wapp-bg);
+}
+
+.editor-surface {
+  position: relative;
+  /* 撑满可视高度。写字时「纸」应该是一整张，而不是随正文长短伸缩的一小块 ——
+     后者更像输入框，不像稿纸，而且光标越往下写、纸就越长，边界一直在动。
+     纵向也不设 min-height:0：flex 项默认 min-height:auto，内容超高时
+     纸面会跟着长高，由外层 .editor-stage 滚动 */
+  flex: 1 1 auto;
+  max-width: 940px;
+  margin: 0 auto;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+html[data-theme='dark'] .editor-surface {
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+}
+
+/* 背景层单独一层，这样调「纸面浓度」不会连正文一起变透明 */
+.editor-surface__wash {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/*
+ * 纸面墨色。
+ *
+ * 关键点：纸面是浅色还是深色**由纸面预设决定**，跟应用主题无关 ——
+ * 浅色主题下同样可以选「夜灯」这种深色纸，那时正文必须是浅色字。
+ * 所以这里用一组自己的变量，不跟主题走的 --wapp-text-* 混用。
+ *
+ * 早期版本把这件事搞反了：PAPER_PRESETS 里的 ink 说的是**墨**的颜色
+ * （dark = 深色墨，配浅色纸），而 CSS 把 --dark 读成了「深色底」，
+ * 于是给素白纸配了近白色的字 —— 正文整段看不见，只剩纠错波浪线浮着。
+ * 而 ink 为 light 的深色纸反而完全没有规则，会变成深字压深底。
+ *
+ * 波浪线颜色也跟着纸面走，否则浅色主题下的深红在深色纸上几乎看不见。
+ */
+.editor-surface {
+  --paper-ink: #1f1c17;
+  --paper-ink-soft: #4a453d;
+  --paper-ink-faint: #8f887c;
+  --paper-error: #c42b1c;
+  --paper-warning: #a35c00;
+}
+
+.editor-surface--light {
+  --paper-ink: #f0ece4;
+  --paper-ink-soft: #b8b2a6;
+  --paper-ink-faint: #8a8578;
+  --paper-error: #ff8a80;
+  --paper-warning: #ffd54f;
+}
+
+.editor-column {
+  position: relative;
+  z-index: 1;
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 44px 30px 96px;
+  color: var(--paper-ink);
+}
+
+/* ---------------- 正文排版 ---------------- */
+
+.wapp-editor__content {
+  font-family: var(--editor-font-family, var(--wapp-font));
+  font-size: var(--editor-font-size, 17px);
+  line-height: var(--editor-line-height, 1.9);
+  color: var(--paper-ink);
+  outline: none;
+  min-height: 360px;
+}
+
+.wapp-editor__content p {
+  margin: 0 0 var(--editor-paragraph-gap, 0);
+  text-indent: var(--editor-indent, 2em);
+}
+
+.wapp-editor__content h3 {
+  margin: 1.2em 0 0.6em;
+  font-size: 1.08em;
+  text-indent: 0;
+}
+
+.wapp-editor__content blockquote {
+  margin: 0 0 0.6em;
+  padding-left: 12px;
+  border-left: 3px solid var(--wapp-border-strong);
+  color: var(--paper-ink-soft);
+  text-indent: 0;
+}
+
+.wapp-editor__content ul,
+.wapp-editor__content ol {
+  margin: 0 0 0.6em;
+  padding-left: 1.6em;
+  text-indent: 0;
+}
+
+.editor-surface--rules .wapp-editor__content p {
+  /* 段落之间的虚线辅助线：帮助判断单行长度，不打字时几乎看不见。
+     颜色从墨色派生而不是写死黑色 —— 深色纸面上黑虚线反而成了最显眼的东西 */
+  padding-bottom: var(--editor-paragraph-gap, 8px);
+  border-bottom: 1px dashed color-mix(in srgb, var(--paper-ink) 14%, transparent);
+}
+
+.editor-surface--rules .wapp-editor__content p:last-child {
+  border-bottom: none;
+}
+
+.wapp-editor__content p.is-editor-empty:first-child::before {
+  content: '在这里开始写正文…';
+  color: var(--paper-ink-faint);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* ---------------- 校对高亮 ---------------- */
+
+.proofread-mark {
+  border-radius: 2px;
+}
+
+.proofread-mark--error {
+  /* 用波浪下划线而不是背景色：背景色会改变行高观感，
+     而作者需要正文的排版保持稳定，才能判断单行长度 */
+  text-decoration: underline wavy var(--paper-error);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+
+.proofread-mark--suggestion {
+  text-decoration: underline wavy var(--paper-warning);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* ---------------- 工具栏面板 ---------------- */
+
+.toolbar-panel {
+  width: 300px;
+}
+
+.toolbar-panel--actions {
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toolbar-panel__row + .toolbar-panel__row {
+  margin-top: 10px;
+}
+
+.toolbar-panel__label {
+  font-size: 12px;
+}
+
+.toolbar-panel__hint {
+  display: block;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.toolbar-panel__slider {
+  width: 140px;
+}
+
+.toolbar-panel__note {
+  display: block;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--wapp-border);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.paper-swatches {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.paper-swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid var(--wapp-border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.paper-swatch--active {
+  border-color: var(--wapp-accent);
+}
+
+/* ---------------- 查找替换 ---------------- */
+
+.find-bar {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--wapp-border);
+  background: var(--wapp-surface-soft);
+}
+
+.find-bar__input {
+  width: 150px;
+}
+
+.find-bar__count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-width: 52px;
+}
+
+.find-bar__label {
+  font-size: 12px;
+}
+
+/* ---------------- 取名器 ---------------- */
+
+.name-dialog__label {
+  font-size: 12px;
+}
+
+.name-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.name-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 10px 6px;
+  border: 1px solid var(--wapp-border);
+  border-radius: 8px;
+  background: var(--wapp-surface);
+  cursor: pointer;
+  font: inherit;
+  color: var(--wapp-text);
+  transition: border-color 0.12s ease;
+}
+
+.name-card:hover {
+  border-color: var(--wapp-accent);
+}
+
+.name-card--active {
+  border-color: var(--wapp-accent);
+  background: var(--wapp-accent-soft);
+  color: var(--wapp-accent);
+}
+
+.name-card__full {
+  font-size: 16px;
+  letter-spacing: 0.06em;
+}
+
+.name-card__tag {
+  font-size: 10px;
+  line-height: 1.4;
+  padding-inline: 4px;
+}
+
+.name-dialog__hint {
+  font-size: 12px;
+}
+
+/* ---------------- 右侧检查区 ---------------- */
+
+.inspector {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.inspector__panel {
+  display: flex;
+  flex-direction: column;
+  width: 306px;
+  min-height: 0;
+  border-left: 1px solid var(--wapp-border);
+  background: var(--wapp-surface);
+}
+
+/* antd Tabs 默认把内容区撑高，这里改成「头部固定 + 内容独立滚动」 */
+.inspector__panel .ant-tabs {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.inspector__panel .ant-tabs-nav {
+  flex: 0 0 auto;
+  margin: 0 !important;
+  padding: 0 10px;
+}
+
+.inspector__panel .ant-tabs-content-holder,
+.inspector__panel .ant-tabs-content,
+.inspector__panel .ant-tabs-tabpane {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.inspector__panel .ant-tabs-tabpane {
+  display: flex;
+  flex-direction: column;
+}
+
+.inspector__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.inspector__hint {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* ---------------- 问题列表 ---------------- */
+
+.issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.issue-row {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-left: 3px solid var(--wapp-border-strong);
+  border-radius: 6px;
+  background: var(--wapp-surface-soft);
+  text-align: start;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.issue-row:hover {
+  background: var(--wapp-accent-soft);
+}
+
+.issue-row--error {
+  border-left-color: var(--wapp-danger);
+}
+
+.issue-row--suggestion {
+  border-left-color: var(--wapp-warning);
+}
+
+.issue-row__head {
+  margin-bottom: 2px;
+}
+
+.issue-row__message {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.issue-row__context {
+  margin-bottom: 0 !important;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--wapp-text-soft);
+}
+
+.issue-row__hit {
+  color: var(--wapp-danger);
+  font-weight: 600;
+}
+
+.filler-row {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--wapp-surface-soft);
+}
+
+.filler-row__word {
+  font-size: 13px;
+}
+
+.filler-row__count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.filler-row__note {
+  display: block;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* ---------------- 手机预览 ---------------- */
+
+.preview__scroller {
+  min-height: 0;
+}
+
+.preview {
+  gap: 6px;
+}
+
+.preview__platform-note {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.preview__disclaimer {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.preview__empty {
+  font-size: 12px;
+}
+
+.phone {
+  position: relative;
+  width: 100%;
+  max-width: 268px;
+  margin: 0 auto;
+  padding: 10px 8px 8px;
+  border: 8px solid #2b2b2b;
+  border-radius: 26px;
+  background: #2b2b2b;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+}
+
+.phone__notch {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 64px;
+  height: 5px;
+  border-radius: 999px;
+  background: #4b4b4b;
+  z-index: 2;
+}
+
+.phone__screen {
+  display: flex;
+  flex-direction: column;
+  height: 420px;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.phone__titlebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 18px 12px 8px;
+  font-size: 12px;
+  opacity: 0.72;
+}
+
+.phone__back {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.phone__book {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 14px 12px;
+  text-align: justify;
+}
+
+.phone__paragraph {
+  margin-top: 0;
+  cursor: pointer;
+}
+
+.phone__paragraph--focus {
+  background: rgba(15, 108, 189, 0.14);
+  border-radius: 3px;
+}
+
+.phone__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  padding: 6px 12px 8px;
+  font-size: 10.5px;
+  opacity: 0.62;
+}
+
+/* ---------------- 竖排功能栏 ---------------- */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  width: 54px;
+  padding: 8px 0;
+  border-left: 1px solid var(--wapp-border);
+  background: var(--wapp-surface-soft);
+}
+
+.rail__item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 44px;
+  padding: 6px 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wapp-text-soft);
+  cursor: pointer;
+  font: inherit;
+}
+
+.rail__item:hover:not(:disabled) {
+  background: var(--wapp-surface);
+  color: var(--wapp-accent);
+}
+
+.rail__item:disabled {
+  color: var(--wapp-text-faint);
+  cursor: not-allowed;
+}
+
+.rail__item--active {
+  background: var(--wapp-accent-soft);
+  color: var(--wapp-accent);
+}
+
+.rail__icon {
+  font-size: 15px;
+}
+
+.rail__label {
+  font-size: 10.5px;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+}
+
+.rail__badge {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  min-width: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--wapp-danger);
+  color: #fff;
+  font-size: 9.5px;
+  line-height: 15px;
+  text-align: center;
+}
+
+html[data-theme='dark'] .rail__badge {
+  color: #2b0a06;
+}
+
+/* ---------------- 底栏 ---------------- */
+
+.editor-statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 12px;
+  border-top: 1px solid var(--wapp-border);
+  background: var(--wapp-surface);
+  font-size: 12px;
+}
+
+.editor-statusbar__stats {
+  min-width: 0;
+}
+
+.editor-statusbar__item {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.editor-statusbar__item--strong {
+  font-weight: 500;
+}
+
+.editor-statusbar__sub {
+  margin-inline-start: 6px;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* ==================================================================
+ * 统计页
+ * ================================================================== */
+
+/* ---------------- 热力日历 ---------------- */
+
+.heatmap__months,
+.heatmap__body {
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.heatmap__months {
+  padding-left: 22px;
+}
+
+.heatmap__weekday-spacer {
+  flex: 0 0 auto;
+  width: 0;
+}
+
+.heatmap__month {
+  flex: 0 0 auto;
+  width: 14px;
+  font-size: 10px;
+  color: var(--wapp-text-faint);
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.heatmap__weekdays {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  padding-bottom: 2px;
+}
+
+.heatmap__weekday {
+  height: 12px;
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--wapp-text-faint);
+}
+
+.heatmap__scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.heatmap__grid {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  grid-auto-flow: column;
+  gap: 2px;
+  width: max-content;
+}
+
+.heatmap__cell {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.heatmap__cell--empty {
+  background: transparent;
+}
+
+.heatmap__cell--legend {
+  width: 11px;
+  height: 11px;
+}
+
+.heatmap__summary,
+.heatmap__legend-label {
+  font-size: 12px;
+}
+
+.heatmap__legend-label {
+  line-height: 1;
+}
+
+/* ==================================================================
+ * 大纲管理
+ *
+ * 两栏：左侧情节树（可拖拽），右侧节点详情。
+ * 这一页挂在 app-main--flush 下（占满内容区、由页面自己管滚动），
+ * 因此高度链是 100%，两栏各自内部滚动 —— 树很长时右侧面板不该跟着滚走。
+ * ================================================================== */
+
+.outline-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+  padding: 20px 24px 24px;
+}
+
+.outline-book-select {
+  min-width: 200px;
+}
+
+.outline-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 384px;
+  gap: 16px;
+  flex: 1 1 auto;
+  /* 没有这一条，grid 行高会被内容撑开，两栏内部的滚动就永远不触发 */
+  min-height: 0;
+}
+
+.outline-tree-pane,
+.outline-panel-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--wapp-border);
+  border-radius: 10px;
+  background: var(--wapp-surface);
+}
+
+.outline-tree-pane {
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.outline-panel-pane {
+  overflow-y: auto;
+}
+
+.outline-tree-pane__head {
+  flex: 0 0 auto;
+}
+
+.outline-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--wapp-text-soft);
+}
+
+.outline-summary strong {
+  color: var(--wapp-text);
+  font-variant-numeric: tabular-nums;
+  margin-left: 2px;
+}
+
+.outline-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* 树节点排版：状态圆点 + 标题 + 类型标签 + 落地章节 */
+.outline-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.outline-node__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-node__title--dropped {
+  text-decoration: line-through;
+  color: var(--wapp-text-faint);
+}
+
+.outline-node .ant-tag.outline-node__type {
+  /* Tag 默认带外边距，在紧凑的树行里会把间距撑得忽宽忽窄 */
+  margin-inline-end: 0;
+  font-size: 11px;
+  line-height: 18px;
+  /* 类型标签只是辅助信息，不该抢标题的注意力 */
+  opacity: 0.9;
+}
+
+.outline-node__chapter {
+  font-size: 11px;
+  color: var(--wapp-accent);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-legend {
+  flex: 0 0 auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--wapp-border);
+  font-size: 12px;
+  color: var(--wapp-text-soft);
+}
+
+.outline-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.outline-legend__tag {
+  margin-inline-end: 0;
+  font-size: 11px;
+}
+
+.outline-legend strong {
+  font-variant-numeric: tabular-nums;
+  color: var(--wapp-text);
+}
+
+/* ---------------- 右侧节点详情 ---------------- */
+
+.outline-panel {
+  padding: 16px;
+}
+
+.outline-panel--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 220px;
+}
+
+.outline-panel__hint {
+  font-size: 12px;
+  margin-bottom: 0 !important;
+}
+
+.outline-panel__meta {
+  font-size: 12px;
+}
+
+.outline-panel__divider {
+  margin: 4px 0 !important;
+  font-size: 12px;
+  color: var(--wapp-text-soft);
+}
+
+.outline-panel__volume {
+  min-width: 168px;
+}
+
+.outline-panel__full {
+  width: 100%;
+}
+
+.outline-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.outline-field--grow {
+  flex: 1 1 150px;
+  min-width: 130px;
+}
+
+.outline-field__label {
+  font-size: 12px;
+  color: var(--wapp-text-soft);
+}
+
+/* 下拉里的「已关联到…」后缀是禁用说明，弱化显示 */
+.outline-panel .ant-select-item-option-disabled {
+  font-style: italic;
+}
+
+/* ==================================================================
+ * 卡片库
+ *
+ * 两栏：左侧卡片列表（含筛选条与分页），右侧卡片编辑。
+ * 这一页同样挂在 app-main--flush 下（占满内容区、页面自己管滚动），
+ * 因此高度链是 100%，两栏各自内部滚动 ——
+ * 卡片很多时右侧的编辑面板不该跟着列表一起滚走。
+ * ================================================================== */
+
+.cards-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+  padding: 20px 24px 24px;
+}
+
+.cards-toolbar {
+  flex: 0 0 auto;
+}
+
+.cards-scope-select {
+  min-width: 180px;
+}
+
+.cards-type-select {
+  min-width: 136px;
+}
+
+.cards-keyword {
+  flex: 1 1 260px;
+  min-width: 200px;
+  max-width: 420px;
+}
+
+.cards-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--wapp-text-soft);
+  margin-left: auto;
+}
+
+.cards-summary strong {
+  color: var(--wapp-text);
+  font-variant-numeric: tabular-nums;
+  margin-left: 2px;
+}
+
+.cards-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 16px;
+  flex: 1 1 auto;
+  /* 没有这一条，grid 的行高会被内容撑开，两栏内部的滚动就永远不触发 */
+  min-height: 0;
+}
+
+.cards-list-pane,
+.cards-panel-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--wapp-border);
+  border-radius: 10px;
+  background: var(--wapp-surface);
+}
+
+.cards-list-pane {
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.cards-panel-pane {
+  overflow-y: auto;
+}
+
+.cards-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cards-pager {
+  flex: 0 0 auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--wapp-border);
+}
+
+/* ---------------- 列表里的一行 ---------------- */
+
+/* 用 button 而不是 div：键盘可以直接走，且天然有 focus 样式 */
+.card-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid var(--wapp-border);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.card-row:hover {
+  border-color: var(--wapp-accent);
+}
+
+.card-row--selected {
+  border-color: var(--wapp-accent);
+  background: var(--wapp-accent-soft);
+}
+
+.card-row__title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-row__type {
+  /* Tag 默认带外边距，在紧凑的行里会把间距撑得忽宽忽窄 */
+  margin-inline-end: 0;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.card-row__subtitle {
+  font-size: 12px;
+  color: var(--wapp-text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-row__meta {
+  font-size: 11px;
+}
+
+.card-row__tag {
+  margin-inline-end: 0;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.card-row__book {
+  color: var(--wapp-text-faint);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------- 右侧编辑面板 ---------------- */
+
+.cards-panel {
+  padding: 16px;
+}
+
+.cards-panel--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 220px;
+}
+
+.cards-panel__hint {
+  font-size: 12px;
+  margin-bottom: 0 !important;
+}
+
+.cards-panel__meta {
+  font-size: 12px;
+}
+
+.cards-panel__divider {
+  margin: 4px 0 !important;
+  font-size: 12px;
+  color: var(--wapp-text-soft);
+}
+
+.cards-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cards-field--grow {
+  flex: 1 1 150px;
+  min-width: 130px;
+}
+
+.cards-field__label {
+  font-size: 12px;
+  color: var(--wapp-text-soft);
+}
+
+@media (max-width: 1180px) {
+  .cards-layout {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+
+  .inspector__panel {
+    width: 268px;
+  }
+}
+
+/* 窄窗口下改成上下堆叠，并让整页自己滚动。
+   两栏各自滚在半高的小格子里会非常难用，不如让页面整体滚 */
+@media (max-width: 980px) {
+  .cards-page {
+    height: auto;
+    min-height: 100%;
+    overflow-y: auto;
+  }
+
+  .cards-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cards-list-pane,
+  .cards-panel-pane {
+    max-height: 520px;
+  }
+
+  .cards-summary {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 980px) {
+  .catalog {
+    display: none;
+  }
+
+  .rail {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-main {
+    padding: 16px;
+  }
+
+  .books-toolbar__search {
+    width: 100%;
+  }
+}
+
+/* 窄窗口下大纲改成上下堆叠，并让整页自己滚动。
+   两栏各自滚在半高的小格子里会非常难用，不如让页面整体滚 */
+@media (max-width: 980px) {
+  .outline-page {
+    height: auto;
+    min-height: 100%;
+    overflow-y: auto;
+  }
+
+  .outline-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .outline-tree-pane,
+  .outline-panel-pane {
+    max-height: 460px;
+  }
+}
+
+/* ==================================================================
+ * 顶栏全库检索
+ *
+ * 浮层而不是独立页面：检索的使用场景是「写着写着想起某个设定，找一下再回来」，
+ * 独立页面意味着离开当前编辑器，光标、展开的分卷、滚动位置全都要重建。
+ * ================================================================== */
+
+.app-header__center {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-width: 0;
+}
+
+.global-search {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+}
+
+.global-search__icon {
+  color: var(--wapp-text-faint);
+}
+
+.search-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  overflow: hidden;
+  background: var(--wapp-surface);
+  border: 1px solid var(--wapp-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+}
+
+.search-panel__hint {
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--wapp-text-soft);
+}
+
+.search-panel__hint--error {
+  color: var(--wapp-danger);
+}
+
+.search-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--wapp-border);
+}
+
+.search-panel__summary {
+  font-size: 12px;
+}
+
+.search-panel__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.search-panel__chip {
+  margin: 0;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--wapp-accent);
+  background: var(--wapp-accent-soft);
+  border-color: transparent;
+}
+
+.search-panel__body {
+  max-height: 56vh;
+  overflow-y: auto;
+  padding: 6px 0 8px;
+}
+
+.search-group + .search-group {
+  margin-top: 4px;
+  border-top: 1px solid var(--wapp-border);
+}
+
+.search-group__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px 4px;
+}
+
+.search-group__name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wapp-text-soft);
+}
+
+.search-group__count {
+  font-size: 11px;
+  color: var(--wapp-text-faint);
+}
+
+/* 结果行用 button 而不是 div：键盘 Tab 能到达、回车即打开。
+   代价是要把浏览器默认的按钮样式清掉 */
+.search-hit {
+  display: block;
+  width: 100%;
+  padding: 8px 16px 9px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+}
+
+.search-hit--active {
+  background: var(--wapp-surface-soft);
+  border-left-color: var(--wapp-accent);
+}
+
+.search-hit__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.search-hit__title {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-hit__where {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--wapp-text-faint);
+}
+
+.search-hit__field {
+  padding: 0 5px;
+  border: 1px solid var(--wapp-border);
+  border-radius: 4px;
+}
+
+.search-hit__snippet {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--wapp-text-soft);
+}
+
+.search-hit__mark {
+  color: var(--wapp-text);
+  background: #ffe58f;
+  border-radius: 2px;
+}
+
+html[data-theme='dark'] .search-hit__mark {
+  color: #1b1b1b;
+}
+
+@media (max-width: 860px) {
+  .app-header__center {
+    display: none;
+  }
+}

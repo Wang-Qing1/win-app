@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="小说助手">
+  <!--
+    应用图标源文件（大尺寸版本，用于 48px 及以上）。
+
+    画的是摊开的书：左右两页在中间的书脊处相汇，下方露出的书口表示厚度。
+    之所以选「摊开」而不是「合上」：合上的书在 16px 下就是一个圆角方块，
+    和记事本、便签纸没有区别；摊开书的两页加中缝是独一无二的剪影。
+
+    小尺寸另有一份 icon-small.svg —— 这一份的文字线和书口在 32px 以下
+    会糊成一片灰，所以不靠缩小来降级，而是换一张专门画的简版。
+
+    配色取自应用强调色（#0f6cbd），与侧栏的品牌方块保持同一套视觉。
+    书的横向占方块约 62%：再小则 32px 下四周全是蓝底、字形发散，
+    再大则圆角处会顶到边，两个方向都试过。
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#4aa3f7"/>
+      <stop offset="1" stop-color="#0f6cbd"/>
+    </linearGradient>
+    <linearGradient id="pageLeft" x1="0.1" y1="0" x2="0.75" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e4effb"/>
+    </linearGradient>
+    <linearGradient id="pageRight" x1="0.9" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e4effb"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#tile)"/>
+  <!-- 顶部描边：让方块有被光打到的感觉，纯平色块在大图标下显得很闷 -->
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2"/>
+
+  <!-- 书口（下方露出的纸叠厚度） -->
+  <path d="M54 169 C86 169 110 173 128 185 C146 173 170 169 202 169 L202 180 C170 180 146 184 128 196 C110 184 86 180 54 180 Z"
+        fill="#ffffff" fill-opacity="0.5"/>
+
+  <!-- 左页 / 右页：外缘竖直，内侧向书脊下坠 -->
+  <path d="M128 84 C110 72 86 66 54 66 L54 170 C86 170 110 174 128 186 Z" fill="url(#pageLeft)"/>
+  <path d="M128 84 C146 72 170 66 202 66 L202 170 C170 170 146 174 128 186 Z" fill="url(#pageRight)"/>
+
+  <!-- 文字线：只是示意「有字」，不画成真字 —— 真字在这个尺度下必然是噪点 -->
+  <g fill="#bcd8f4">
+    <rect x="68" y="92" width="40" height="9" rx="4.5"/>
+    <rect x="68" y="114" width="33" height="9" rx="4.5"/>
+    <rect x="68" y="136" width="37" height="9" rx="4.5"/>
+    <rect x="148" y="92" width="40" height="9" rx="4.5"/>
+    <rect x="155" y="114" width="33" height="9" rx="4.5"/>
+    <rect x="151" y="136" width="37" height="9" rx="4.5"/>
+  </g>
+
+  <!-- 中缝：整张图标的结构线，压在最上面 -->
+  <path d="M128 84 L128 186" stroke="#9cc2e8" stroke-width="5" stroke-linecap="round"/>
+</svg>

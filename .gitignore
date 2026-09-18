@@ -1,0 +1,14 @@
+node_modules/
+out/
+release/
+dist/
+.env
+.env.local
+.env.*.local
+smoke-report.txt
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

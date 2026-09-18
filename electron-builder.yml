@@ -1,0 +1,52 @@
+appId: com.wapp.desktop
+productName: wapp
+copyright: Copyright © 2026 wapp
+
+directories:
+  output: release
+  buildResources: build
+
+# 只打包构建产物与运行时依赖；better-sqlite3 为原生模块，必须解包到 asar 之外
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.{md,map,ts,tsx}'
+  - '!**/{test,tests,__tests__,docs,example,examples}/**'
+
+asarUnpack:
+  - '**/*.node'
+  - node_modules/better-sqlite3/**
+
+# better-sqlite3 v13 起改为发布 Node-API(N-API) 预编译产物，ABI 跨 Node 与
+# Electron 版本稳定，无需按 Electron 重新编译。若开启 npmRebuild，electron-builder
+# 会因为包里带了 binding.gyp 而误判为需要源码编译，进而在没有 MSVC 的机器上失败。
+# 将来若引入了真正需要重编译的原生模块（非 N-API），再把这里改回 true。
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+
+win:
+  # 由 npm run icons 生成的多尺寸 .ico（16/20/24/32/48/64/128/256）。
+  # 32px 以下用的是专门画的简版而不是等比缩小，见 build/icon-small.svg
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  artifactName: ${productName}-${version}-setup.${ext}
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: wapp
+  # 卸载时保留 userData 下的数据库，避免用户数据丢失
+  deleteAppDataOnUninstall: false
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
