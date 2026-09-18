@@ -1,5 +1,5 @@
 import { IpcChannel } from '@shared/ipc-channels'
-import { exportChapterSchema } from '@shared/modules/exporter'
+import { exportBookSchema, exportChapterSchema, exportVolumeSchema } from '@shared/modules/exporter'
 import { registerHandler } from '../../core/ipc-handler'
 import type { ExportService } from './export.service'
 
@@ -16,5 +16,17 @@ export function registerExportHandlers(service: ExportService): void {
     label: '导出章节草稿',
     parse: (raw) => exportChapterSchema.parse(raw),
     handle: (input, ctx) => service.exportChapter(input, ctx.event.sender)
+  })
+
+  registerHandler(IpcChannel.ExporterBook, {
+    label: '导出整本书草稿',
+    parse: (raw) => exportBookSchema.parse(raw),
+    handle: (input, ctx) => service.exportBook(input, ctx.event.sender)
+  })
+
+  registerHandler(IpcChannel.ExporterVolume, {
+    label: '导出整卷草稿',
+    parse: (raw) => exportVolumeSchema.parse(raw),
+    handle: (input, ctx) => service.exportVolume(input, ctx.event.sender)
   })
 }

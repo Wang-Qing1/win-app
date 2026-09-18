@@ -114,6 +114,39 @@ export class ChapterRepository {
     return rows.map(toListItem)
   }
 
+  /**
+   * 整本/整卷导出用：带正文的有序章节列表。
+   *
+   * 与 {@link list} 用同一套查询条件与排序规则（只多选一列 content_text），
+   * 是为了确保“列表页看到的顺序”与“导出文件里的顺序”永远一致——
+   * 若各写一份，两边的排序逻辑日后只修了其中一份，导出出来的书会与章节列表页对不上。
+   */
+  listWithContent(query: ChapterListQuery): Array<ChapterListItem & { contentText: string }> {
+    const { bookId, volumeId } = query
+
+    if (volumeId === undefined) {
+      const rows = this.db
+        .prepare(
+          `SELECT ${LIST_COLUMNS}, c.content_text FROM chapters c
+            WHERE c.book_id = ?
+            ORDER BY c.volume_id IS NULL, c.volume_id ASC, c.order_index ASC, c.id ASC`
+        )
+        .all(bookId) as Array<ChapterListRow & { content_text: string }>
+      return rows.map((row) => ({ ...toListItem(row), contentText: row.content_text }))
+    }
+
+    const condition = containerCondition(volumeId)
+    const rows = this.db
+      .prepare(
+        `SELECT ${LIST_COLUMNS}, c.content_text FROM chapters c
+          WHERE ${condition.sql}
+          ORDER BY c.order_index ASC, c.id ASC`
+      )
+      .all(bookId, ...condition.params) as Array<ChapterListRow & { content_text: string }>
+
+    return rows.map((row) => ({ ...toListItem(row), contentText: row.content_text }))
+  }
+
   findById(id: number): Chapter | null {
     const row = this.db.prepare('SELECT * FROM chapters WHERE id = ?').get(id) as ChapterRow | undefined
     return row ? toChapter(row) : null

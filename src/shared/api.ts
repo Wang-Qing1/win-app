@@ -48,7 +48,8 @@ import type {
   SessionListQuery,
   WritingSession
 } from './modules/sessions'
-import type { ExportChapterInput, ExportChapterResult } from './modules/exporter'
+import type { ExportBatchResult, ExportBookInput, ExportChapterInput, ExportChapterResult, ExportVolumeInput } from './modules/exporter'
+import type { BackupDatabaseResult } from './modules/backup'
 import type {
   BookProgressItem,
   BookProgressQuery,
@@ -209,6 +210,15 @@ export interface WappApi {
   exporter: {
     /** 弹出系统保存对话框，把一章正文写成 .txt / .md 草稿 */
     chapter: (input: ExportChapterInput) => Promise<IpcResponse<ExportChapterResult>>
+    /** 把一本书的所有章节（含未分卷）按现行顺序拼成同一个草稿文件 */
+    book: (input: ExportBookInput) => Promise<IpcResponse<ExportBatchResult>>
+    /** 只拼接指定分卷下的章节 */
+    volume: (input: ExportVolumeInput) => Promise<IpcResponse<ExportBatchResult>>
+  }
+
+  backup: {
+    /** 弹出系统保存对话框，把当前数据库安全地备份为用户选定的一个文件（只备份，不支持从备份恢复） */
+    database: () => Promise<IpcResponse<BackupDatabaseResult>>
   }
 }
 

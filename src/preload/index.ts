@@ -11,8 +11,10 @@ import { IpcChannel } from '@shared/ipc-channels'
  * 3：新增大纲（自由多层情节树）模块。
  * 4：新增卡片库（人物 / 物品 / 灵感统一建模）模块。
  * 5：新增全库检索（章节正文 / 卡片 / 大纲 / 书籍信息，LIKE 扫描非 FTS5）。
+ * 6：导出新增整本书/整卷批量导出（exporter.book / exporter.volume）。
+ * 7：新增数据库备份（backup.database）。
  */
-const BRIDGE_VERSION = '5'
+const BRIDGE_VERSION = '7'
 
 /**
  * preload 是主进程与渲染进程之间唯一的通道。
@@ -94,7 +96,13 @@ const api: WappApi = {
   },
 
   exporter: {
-    chapter: (input) => ipcRenderer.invoke(IpcChannel.ExporterChapter, input)
+    chapter: (input) => ipcRenderer.invoke(IpcChannel.ExporterChapter, input),
+    book: (input) => ipcRenderer.invoke(IpcChannel.ExporterBook, input),
+    volume: (input) => ipcRenderer.invoke(IpcChannel.ExporterVolume, input)
+  },
+
+  backup: {
+    database: () => ipcRenderer.invoke(IpcChannel.BackupDatabase)
   }
 }
 

@@ -18,6 +18,8 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "build": "npm run typecheck && electron-vite build",
     "smoke": "electron-vite build && electron . --smoke-test",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "icons": "electron scripts/generate-icons.cjs",
     "dist:win": "npm run build && electron-builder --win",
     "dist:dir": "npm run build && electron-builder --win --dir",
@@ -47,6 +49,7 @@
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "typescript": "^7.0.2",
-    "vite": "^7.3.6"
+    "vite": "^7.3.6",
+    "vitest": "^5.0.1"
   }
 }

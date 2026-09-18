@@ -31,6 +31,22 @@ export const exportChapterSchema = z.object({
 
 export type ExportChapterInput = z.infer<typeof exportChapterSchema>
 
+/** 整本书导出：按书内现行顺序（分卷内按 order_index，未分卷排在最后）把每一章拼接进同一个文件 */
+export const exportBookSchema = z.object({
+  bookId: z.number().int().positive('书籍 ID 非法'),
+  format: z.string().refine(isExportFormat, '导出格式不支持').default('txt')
+})
+
+export type ExportBookInput = z.infer<typeof exportBookSchema>
+
+/** 整卷导出：只拼接该卷下的章节，不包含未分卷或其他卷的内容 */
+export const exportVolumeSchema = z.object({
+  volumeId: z.number().int().positive('分卷 ID 非法'),
+  format: z.string().refine(isExportFormat, '导出格式不支持').default('txt')
+})
+
+export type ExportVolumeInput = z.infer<typeof exportVolumeSchema>
+
 /**
  * 导出回执。
  *
@@ -44,6 +60,21 @@ export interface ExportChapterResult {
   bytes: number
   /** 建议的文件名（导出前的默认名），取消时也返回，便于界面提示 */
   suggestedName: string
+}
+
+/**
+ * 整本书/整卷导出的回执。
+ *
+ * 比 ExportChapterResult 多一个 chapterCount：界面需要告知用户“拼接了几章”，
+ * 若一章也没有则不弹对话框而是报错——空书/空卷导出到硬盘还是个文件无内容，
+ * 与“用户取消”同样不算错误，但应让用户知道自己导出的是个空文件。
+ */
+export interface ExportBatchResult {
+  canceled: boolean
+  filePath: string | null
+  bytes: number
+  suggestedName: string
+  chapterCount: number
 }
 
 /** 导出时的默认文件名：书名-章节标题.txt。非法字符由主进程统一清洗 */

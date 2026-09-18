@@ -62,7 +62,12 @@ export const IpcChannel = {
   StatsHeatmap: 'stats:heatmap',
 
   /* ---------------- 草稿导出 ---------------- */
-  ExporterChapter: 'exporter:chapter'
+  ExporterChapter: 'exporter:chapter',
+  ExporterBook: 'exporter:book',
+  ExporterVolume: 'exporter:volume',
+
+  /* ---------------- 数据库备份 ---------------- */
+  BackupDatabase: 'backup:database'
 } as const
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel]

@@ -24,6 +24,7 @@ import {
   DeleteOutlined,
   DownOutlined,
   EditOutlined,
+  ExportOutlined,
   PlusOutlined,
   SortAscendingOutlined,
   UpOutlined
@@ -52,6 +53,7 @@ import {
   useRemoveChapter,
   useReorderChapters
 } from '../chapters/use-chapters'
+import { useExportBook, useExportVolume } from '../chapters/use-exporter'
 
 const { Text, Paragraph } = Typography
 
@@ -94,6 +96,8 @@ export function BookDetailPage() {
   const updateVolume = useUpdateVolume()
   const removeVolume = useRemoveVolume()
   const reorderVolumes = useReorderVolumes()
+  const exportBook = useExportBook()
+  const exportVolume = useExportVolume()
 
   const volumeMap = useMemo(() => {
     const map = new Map<number, VolumeListItem>()
@@ -219,6 +223,31 @@ export function BookDetailPage() {
       }
     },
     [bookId, notifyError, reorderVolumes, volumes.data]
+  )
+
+  const handleExportBook = useCallback(async (): Promise<void> => {
+    try {
+      const result = await exportBook.mutateAsync({ bookId, format: 'txt' })
+      if (!result.canceled) {
+        notifySuccess(`已导出整本书（${result.chapterCount} 章）`)
+      }
+    } catch (error) {
+      notifyError(error instanceof Error ? error.message : '导出失败')
+    }
+  }, [bookId, exportBook, notifyError, notifySuccess])
+
+  const handleExportVolume = useCallback(
+    async (volume: VolumeListItem): Promise<void> => {
+      try {
+        const result = await exportVolume.mutateAsync({ volumeId: volume.id, format: 'txt' })
+        if (!result.canceled) {
+          notifySuccess(`已导出「${volume.title}」（${result.chapterCount} 章）`)
+        }
+      } catch (error) {
+        notifyError(error instanceof Error ? error.message : '导出失败')
+      }
+    },
+    [exportVolume, notifyError, notifySuccess]
   )
 
   const columns: ColumnsType<ChapterListItem> = [
@@ -392,6 +421,13 @@ export function BookDetailPage() {
             </Button>
             <Button icon={<EditOutlined />} onClick={() => setFormOpen(true)}>
               编辑信息
+            </Button>
+            <Button
+              icon={<ExportOutlined />}
+              loading={exportBook.isPending}
+              onClick={() => void handleExportBook()}
+            >
+              导出整本书
             </Button>
             <Popconfirm
               title={`删除《${data.title}》？`}
@@ -574,6 +610,15 @@ export function BookDetailPage() {
                             setRenamingVolumeId(volume.id)
                             setRenamingTitle(volume.title)
                           }}
+                        />
+                      </Tooltip>
+                      <Tooltip title="导出本卷">
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<ExportOutlined />}
+                          loading={exportVolume.isPending}
+                          onClick={() => void handleExportVolume(volume)}
                         />
                       </Tooltip>
                       <Popconfirm

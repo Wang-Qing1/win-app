@@ -26,6 +26,8 @@ import { StatsService } from '../modules/stats/stats.service'
 import { registerStatsHandlers } from '../modules/stats/stats.controller'
 import { ExportService } from '../modules/exporter/export.service'
 import { registerExportHandlers } from '../modules/exporter/export.controller'
+import { BackupService } from '../modules/backup/backup.service'
+import { registerBackupHandlers } from '../modules/backup/backup.controller'
 import { HealthService } from '../modules/health/health.service'
 import { registerHealthHandlers } from '../modules/health/health.controller'
 
@@ -79,8 +81,8 @@ export function registerAllIpcHandlers(config: AppConfig): void {
   const statsService = new StatsService(bookRepository, chapterRepository, sessionRepository)
   const searchService = new SearchService(searchRepository)
 
-  // 导出模块需要书名与正文字数，因此复用书籍、章节两个仓储，不另开查询路径
-  const exportService = new ExportService(chapterRepository, bookRepository)
+  // 导出模块需要书名与正文字数，因此复用书籍、章节、分卷三个仓储，不另开查询路径
+  const exportService = new ExportService(chapterRepository, bookRepository, volumeRepository)
 
   /* ---------------- 控制器 ---------------- */
   registerBookHandlers(bookService)
@@ -92,6 +94,10 @@ export function registerAllIpcHandlers(config: AppConfig): void {
   registerSessionHandlers(sessionService)
   registerStatsHandlers(statsService)
   registerExportHandlers(exportService)
+
+  // 备份不需要任何仓储：它只把活连接写到用户选定的文件，不查不改业务数据
+  const backupService = new BackupService()
+  registerBackupHandlers(backupService)
 
   // 健康检查复用书籍与章节仓储做计数，不额外开一条查询路径
   const healthService = new HealthService(config, db, bookRepository, chapterRepository)

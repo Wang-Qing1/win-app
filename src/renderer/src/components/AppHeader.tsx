@@ -1,4 +1,5 @@
 import { Flex, Layout, Tooltip } from 'antd'
+import { BackupButton } from './BackupButton'
 import { HealthBadge } from './HealthBadge'
 import { ThemeToggle } from './ThemeToggle'
 import { GlobalSearch } from '../features/search/GlobalSearch'
@@ -34,6 +35,7 @@ export function AppHeader() {
 
       <Flex align="center" gap={16}>
         <HealthBadge />
+        <BackupButton />
         <ThemeToggle />
       </Flex>
     </Header>
