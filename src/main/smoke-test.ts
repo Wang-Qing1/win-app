@@ -1670,6 +1670,26 @@ async function checkDashboard(window: BrowserWindow): Promise<StepResult> {
       problems.push('导航元素存在但读不到几何信息')
     }
 
+    // 行内卡片等高：Ant Design 的 Card 默认按内容收缩，Col 却被 flex 拉伸，
+    // 于是「今日」卡比趋势图卡矮一截、模块卡随提示文字行数参差 —— 用户
+    // 明确要求「高度要对齐，不能出现偏差」，用实测高度把它锁住（容差 2px）。
+    const rows = rendered.rows
+    const sameHeight = (heights: number[]) =>
+      heights.length > 1 && Math.max(...heights) - Math.min(...heights) <= 2
+    if (rows.metricHeights.length !== 4 || !sameHeight(rows.metricHeights)) {
+      problems.push(`指标卡没有等高（各卡高 ${rows.metricHeights.join('/')}px，共 ${rows.metricHeights.length} 张）`)
+    }
+    if (rows.moduleHeights.length !== 4 || !sameHeight(rows.moduleHeights)) {
+      problems.push(`功能模块卡没有等高（各卡高 ${rows.moduleHeights.join('/')}px，共 ${rows.moduleHeights.length} 张）`)
+    }
+    if (rows.trendHeight < 0 || rows.todayHeight < 0) {
+      problems.push('趋势图卡或「今日」卡未渲染，无法验证等高')
+    } else if (Math.abs(rows.trendHeight - rows.todayHeight) > 2) {
+      problems.push(
+        `「今日」卡与趋势图卡不等高（${rows.todayHeight}px vs ${rows.trendHeight}px）—— Card 没有吃满所在列`
+      )
+    }
+
     await captureIfRequested(window, 'dashboard')
 
     return {
@@ -1677,7 +1697,7 @@ async function checkDashboard(window: BrowserWindow): Promise<StepResult> {
       ok: problems.length === 0,
       detail:
         problems.length === 0
-          ? `React 已挂载，顶部导航 ${rendered.nav ? `${rendered.nav.itemTops.length} 个标签等宽同一行（各 ${rendered.nav.itemWidths[0]}px）、条宽 ${rendered.nav.width}px` : '存在'}，首页渲染 ${rendered.bookCount} 本书 / ${rendered.totalHanzi} 汉字 / ${rendered.progressRowCount} 行进度，健康状态「${rendered.healthText}」`
+          ? `React 已挂载，顶部导航 ${rendered.nav ? `${rendered.nav.itemTops.length} 个标签等宽同一行（各 ${rendered.nav.itemWidths[0]}px）、条宽 ${rendered.nav.width}px` : '存在'}，首页渲染 ${rendered.bookCount} 本书 / ${rendered.totalHanzi} 汉字 / ${rendered.progressRowCount} 行进度，健康状态「${rendered.healthText}」，行内卡片等高（指标 ${rendered.rows.metricHeights[0]}px / 模块 ${rendered.rows.moduleHeights[0]}px / 趋势与今日 ${rendered.rows.trendHeight}px）`
           : // 失败时把实测快照一并打出来。否则只有一句「没有渲染出数据行」，
             // 还得回头改代码加日志才能知道到底是没挂载、还在 loading 还是选择器写错了
             `${problems.join('；')}｜实测：React ${
@@ -2643,6 +2663,13 @@ interface RenderSnapshot {
     contentTop: number
     windowWidth: number
   } | null
+  /** 首页各行卡片的等高几何：用户明确要求「高度要对齐，不能出现偏差」 */
+  rows: {
+    metricHeights: number[]
+    moduleHeights: number[]
+    trendHeight: number
+    todayHeight: number
+  }
 }
 
 /**
@@ -2682,6 +2709,14 @@ const SNAPSHOT_SCRIPT = `(() => {
       windowWidth: window.innerWidth
     }
   })() : null
+  // 等高验证读的是我们自己挂的类名（.metric-card / .module-card /
+  // .dashboard-trend / .dashboard-today），不碰组件库的内部类
+  const heightsOf = (selector) =>
+    Array.from(document.querySelectorAll(selector)).map((el) =>
+      Math.round(el.getBoundingClientRect().height)
+    )
+  const trendCard = document.querySelector('.dashboard-trend')
+  const todayCard = document.querySelector('.dashboard-today')
   return {
     reactMounted: (root?.children.length ?? 0) > 0,
     hasNav: !!navEl,
@@ -2692,7 +2727,13 @@ const SNAPSHOT_SCRIPT = `(() => {
     bookCount: numberOf('metric-book-count'),
     totalHanzi: numberOf('metric-total-hanzi'),
     progressRowCount: document.querySelectorAll('[data-testid="progress-row"]').length,
-    nav
+    nav,
+    rows: {
+      metricHeights: heightsOf('.metric-card'),
+      moduleHeights: heightsOf('.module-card'),
+      trendHeight: trendCard ? Math.round(trendCard.getBoundingClientRect().height) : -1,
+      todayHeight: todayCard ? Math.round(todayCard.getBoundingClientRect().height) : -1
+    }
   }
 })()`
 
@@ -2706,7 +2747,8 @@ const EMPTY_SNAPSHOT: RenderSnapshot = {
   bookCount: -1,
   totalHanzi: -1,
   progressRowCount: 0,
-  nav: null
+  nav: null,
+  rows: { metricHeights: [], moduleHeights: [], trendHeight: -1, todayHeight: -1 }
 }
 
 /**

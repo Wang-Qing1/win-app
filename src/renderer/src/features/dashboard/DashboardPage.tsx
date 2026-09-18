@@ -68,14 +68,12 @@ export function DashboardPage() {
 
   return (
     <Flex vertical gap={16} className="page">
-      <PageHeader
-        title="首页"
-        extra={
-          <Button type="primary" icon={<EditOutlined />} onClick={() => void navigate('/books')}>
-            去写作
-          </Button>
-        }
-      />
+      {/*
+       * 顶部导航条已经常驻「去写作」的入口（书架就是写作的落点），
+       * 页面里再放一个主按钮是重复。这里只保留 title —— 它渲染成
+       * .sr-only，是冒烟测试判断「当前在哪个页面」的锚点，不能删。
+       */}
+      <PageHeader title="首页" />
 
       {failedQuery ? (
         <ErrorAlert
@@ -91,7 +89,7 @@ export function DashboardPage() {
 
       {/* ---------------- 四个总指标 ---------------- */}
       <div data-testid="dashboard-metrics" data-loading={isLoading ? 'true' : 'false'}>
-        <Row gutter={[16, 16]}>
+        <Row gutter={[16, 16]} className="equal-height-row">
           <Col xs={12} lg={6}>
             <MetricCard
               testId="metric-book-count"
@@ -156,10 +154,12 @@ export function DashboardPage() {
       </div>
 
       {/* ---------------- 趋势 + 今日 ---------------- */}
-      <Row gutter={[16, 16]}>
+      {/* 卡片类名 .dashboard-trend / .dashboard-today 供等高样式与冒烟几何断言使用 */}
+      <Row gutter={[16, 16]} className="equal-height-row">
         <Col xs={24} xl={15}>
           <Card
             title="近 30 天写作量"
+            className="dashboard-trend"
             extra={
               <Text type="secondary" className="card__extra">
                 合计 {formatCount(trend.data?.totalWordsWritten ?? 0)} 汉字 ·{' '}
@@ -225,7 +225,7 @@ export function DashboardPage() {
         <Text strong className="section-title">
           功能模块
         </Text>
-        <Row gutter={[16, 16]} className="module-grid">
+        <Row gutter={[16, 16]} className="module-grid equal-height-row">
           {DASHBOARD_MODULES.map((module) => (
             <Col xs={24} sm={12} xl={6} key={module.key}>
               <Card
