@@ -18,8 +18,17 @@ import { OfflineBanner } from './OfflineBanner'
  *
  * 章节编辑器要的是「写作时视野完整」，大纲与卡片库要的是「两栏各自滚动」——
  * 它们都需要外部不加内边距、不做滚动。
+ *
+ * `/books/:bookId`（打开一本书）也在这里：它渲染的就是编辑器本身，只是
+ * 可能还没定位到具体某一章（新书第一次打开时）。漏掉这一条的话，从书架
+ * 点进一本空书会先套着一圈 24px 内边距闪一下，跳到章节后边距又消失。
  */
-const FLUSH_ROUTES = [/^\/books\/\d+\/chapters\/\d+$/, /^\/outline$/, /^\/cards$/]
+const FLUSH_ROUTES = [
+  /^\/books\/\d+$/,
+  /^\/books\/\d+\/chapters\/\d+$/,
+  /^\/outline$/,
+  /^\/cards$/
+]
 
 export function AppShell() {
   const location = useLocation()

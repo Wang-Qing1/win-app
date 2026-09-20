@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Empty, Flex, Select, Skeleton, Tag, Typography } from 'antd'
+import { Empty, Flex, Select, Skeleton, Tag, Typography } from 'antd'
 import type { Key } from 'react'
 import { CompressOutlined, ExpandOutlined, PlusOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router'
@@ -393,9 +393,13 @@ export function OutlinePage() {
                 </Flex>
               }
             >
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => void handleAdd(null)}>
-                新增根节点
-              </Button>
+              <IconButton
+                label="新增根节点"
+                icon={<PlusOutlined />}
+                tone="primary"
+                large
+                onClick={() => void handleAdd(null)}
+              />
             </Empty>
           ) : (
             <OutlineTree

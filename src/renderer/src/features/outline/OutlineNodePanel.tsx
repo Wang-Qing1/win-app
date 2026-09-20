@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import {
   Alert,
-  Button,
   Descriptions,
   Divider,
   Empty,
@@ -16,6 +15,7 @@ import {
 } from 'antd'
 import {
   DeleteOutlined,
+  DisconnectOutlined,
   InsertRowBelowOutlined,
   PlusOutlined,
   RocketOutlined,
@@ -238,9 +238,10 @@ export function OutlineNodePanel({
         </label>
 
         <Flex gap={8} align="center">
-          <Button
-            type="primary"
+          <IconButton
+            label="保存节点"
             icon={<SaveOutlined />}
+            tone="primary"
             disabled={!dirty}
             loading={busy}
             data-testid="outline-save"
@@ -250,16 +251,13 @@ export function OutlineNodePanel({
                 toast.notifySuccess('已保存')
               })
             }
-          >
-            保存
-          </Button>
-          <Button
+          />
+          <IconButton
+            label="还原改动"
             icon={<UndoOutlined />}
             disabled={!dirty}
             onClick={() => setDraft(toDraft(node))}
-          >
-            还原
-          </Button>
+          />
           {dirty ? (
             <Text type="warning" className="outline-panel__meta">
               有未保存的改动
@@ -283,15 +281,14 @@ export function OutlineNodePanel({
                 onChange={(value: number | null | undefined) => setVolumeId(value ?? null)}
                 options={volumes.map((volume) => ({ value: volume.id, label: volume.title }))}
               />
-              <Button
-                type="primary"
+              <IconButton
+                label="落地成章节"
                 icon={<RocketOutlined />}
+                tone="primary"
                 loading={busy}
                 disabled={draft.title.trim().length === 0}
                 onClick={() => run(() => onMaterialize(node, volumeId))}
-              >
-                落地成章节
-              </Button>
+              />
             </Flex>
           </Flex>
         ) : (
@@ -311,14 +308,13 @@ export function OutlineNodePanel({
                 </Flex>
               }
             />
-            <Flex gap={8} wrap>
-              <Button
-                icon={<UndoOutlined />}
+            <Flex gap={8} wrap align="center">
+              <IconButton
+                label="解除关联"
+                icon={<DisconnectOutlined />}
                 loading={busy}
                 onClick={() => run(() => onDetachChapter(node))}
-              >
-                解除关联
-              </Button>
+              />
               <Text type="secondary" className="outline-panel__meta">
                 解除只断开这条连线，节点与章节都保留。
               </Text>
@@ -369,9 +365,12 @@ export function OutlineNodePanel({
             })
           }
         >
-          <Button danger icon={<DeleteOutlined />} data-testid="outline-delete">
-            删除节点
-          </Button>
+          <IconButton
+            tone="danger"
+            label="删除节点"
+            icon={<DeleteOutlined />}
+            data-testid="outline-delete"
+          />
         </Popconfirm>
       </Flex>
     </div>

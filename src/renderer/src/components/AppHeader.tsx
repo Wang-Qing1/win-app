@@ -2,6 +2,7 @@ import { Button, Flex, Layout, Tooltip } from 'antd'
 import { HomeOutlined } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router'
 import { TopBarMenu } from './TopBarMenu'
+import { OriginReturn } from './OriginReturn'
 import { findActiveModule, HOME_PATH } from './nav'
 import { GlobalSearch } from '../features/search/GlobalSearch'
 
@@ -38,6 +39,13 @@ export function AppHeader() {
 
   return (
     <>
+      {/*
+        「返回来源」—— 从编辑器点右侧竖栏去大纲 / 卡片库查资料时的回程票。
+        它只在 URL 带着 `?from=` 的那一屏出现，所以从首页正常进模块时不会有。
+        详见 `OriginReturn`。
+      */}
+      <OriginReturn />
+
       {onHome ? null : (
         <Tooltip
           title={module ? `返回首页（当前在「${module.label}」）` : '返回首页'}
@@ -59,7 +67,7 @@ export function AppHeader() {
           <Tooltip title="小说助手 · 本机写作管理" placement="bottomLeft">
             <Flex align="center" gap={10} className="app-header__brand">
               <span className="app-header__logo" aria-hidden="true">
-                小
+                书
               </span>
               <Flex vertical className="app-header__brand-text">
                 <span className="app-header__title">小说助手</span>

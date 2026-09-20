@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { App } from 'antd'
 
 /**
@@ -32,5 +32,44 @@ export function useToast(): ToastApi {
       }
     }),
     [message]
+  )
+}
+
+export interface ConfirmOptions {
+  title: string
+  /** 说清「会发生什么、能不能撤」。删除类操作必须填，别只留一句「确定吗？」 */
+  description?: string
+  okText?: string
+  danger?: boolean
+}
+
+/**
+ * 二次确认。返回一个 Promise：确认 → true，取消 → false。
+ *
+ * 为什么要有它 —— 菜单项里的删除没法用 `Popconfirm`：
+ * `Popconfirm` 需要一枚常驻的触发元素，而菜单项是浮层里的临时元素，
+ * 点一下菜单就关了，「确认」气泡一起消失。所以从菜单里触发的破坏性操作
+ * 只能走模态确认框。
+ *
+ * 走 `App.useApp()` 而不是 `Modal.confirm` 静态方法：静态方法会脱离
+ * ConfigProvider 上下文，在深色主题下样式不对（同上面 message 的理由）。
+ */
+export function useConfirm(): (options: ConfirmOptions) => Promise<boolean> {
+  const { modal } = App.useApp()
+
+  return useCallback(
+    (options: ConfirmOptions) =>
+      new Promise<boolean>((resolve) => {
+        modal.confirm({
+          title: options.title,
+          content: options.description,
+          okText: options.okText ?? '确定',
+          cancelText: '取消',
+          okButtonProps: options.danger ? { danger: true } : undefined,
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false)
+        })
+      }),
+    [modal]
   )
 }

@@ -6,12 +6,14 @@ import {
   FieldTimeOutlined,
   FileTextOutlined,
   FireOutlined,
+  PlusOutlined,
   ReadOutlined,
   RightOutlined
 } from '@ant-design/icons'
 import { BOOK_STATUS_LABELS } from '@shared/modules/books'
 import type { BookProgressQuery, StatsTrendQuery } from '@shared/modules/stats'
 import { ErrorAlert } from '../../components/ErrorAlert'
+import { IconButton } from '../../components/IconButton'
 import { MODULE_ITEMS } from '../../components/nav'
 import { PageHeader } from '../../components/PageHeader'
 import {
@@ -275,12 +277,35 @@ export function DashboardPage() {
         ) : progressItems.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
+            /*
+             * `data-empty-zone` / `data-empty-create` 是给冒烟探针用的锚点：
+             * 空状态是**唯一一种「页面上没有内容、只有一个动作」**的样子，
+             * 而它的失败方式恰好是「动作没了」或「动作又变回带文字的长条」——
+             * 两者都不会让任何「卡片在不在」的断言变红。探针按这两个属性采，
+             * 采到就要求「区块里的每个按钮都是圆形图标入口，且只有一个」。
+             */
+            data-empty-zone="dashboard-books"
             description={
-              <Flex vertical gap={8} align="center">
+              <Flex vertical gap={10} align="center">
                 <Text type="secondary">还没有书籍</Text>
-                <Button type="primary" size="small" onClick={() => void navigate('/books')}>
-                  新建第一本书
-                </Button>
+                {/*
+                  空状态这枚是**整页唯一的动作**，所以它跟页面头部那些 32px 的
+                  图标按钮不同规格：头部按钮要和同排的 Select / Input 对齐，
+                  而这里四周是空白，没有对齐对象 —— 用 40px 的基础规格，
+                  它才像「一块可以点的地方」，而不是一枚缩在角落的小图标
+                  （用户 2026-09-20：「这个按钮没有改？太丑了，改成【+】图标
+                  加鼠标悬浮提示的形式」）。
+                */}
+                <IconButton
+                  label="新建第一本书"
+                  tone="primary"
+                  large
+                  icon={<PlusOutlined />}
+                  data-testid="dashboard-create-book"
+                  data-empty-create="dashboard-books"
+                  tipTestId="dashboard-create-book-tip"
+                  onClick={() => void navigate('/books')}
+                />
               </Flex>
             }
           />
@@ -322,8 +347,13 @@ export function DashboardPage() {
                       />
                     ) : null}
                   </div>
-                  <Button
-                    size="small"
+                  {/*
+                    行尾的「继续写作 / 打开」也是圆形图标钮（用户 2026-09-20 截图圈出）：
+                    一行书籍信息里唯一需要交互的就是「进去写」，图标足够；
+                    「是接着上一章写、还是先打开这本书」由悬浮提示说明。
+                  */}
+                  <IconButton
+                    label={item.lastChapterId !== null ? '继续写作' : '打开这本书'}
                     icon={<EditOutlined />}
                     onClick={() =>
                       void navigate(
@@ -332,9 +362,7 @@ export function DashboardPage() {
                           : `/books/${item.bookId}`
                       )
                     }
-                  >
-                    {item.lastChapterId !== null ? '继续写作' : '打开'}
-                  </Button>
+                  />
                 </Flex>
               )
             })}

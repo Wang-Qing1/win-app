@@ -2,7 +2,6 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { HashRouter, Navigate, Route, Routes } from 'react-router'
 import { AppShell } from './components/AppShell'
 import { BooksPage } from './features/books/BooksPage'
-import { BookDetailPage } from './features/books/BookDetailPage'
 import { CardsPage } from './features/cards/CardsPage'
 import { ChapterEditorPage } from './features/chapters/ChapterEditorPage'
 import { DashboardPage } from './features/dashboard/DashboardPage'
@@ -33,7 +32,17 @@ export default function App() {
               <Route index element={<DashboardPage />} />
 
               <Route path="books" element={<BooksPage />} />
-              <Route path="books/:bookId" element={<BookDetailPage />} />
+              {/*
+                打开一本书 = 进正文编辑页（用户 2026-09-20：「新建书籍并且打开
+                书籍之后应该是正文编辑页，不应该出现这个统计界面」）。
+                原先这里挂着 `BookDetailPage`（书名 + 四张概览卡 + 分卷卡片 +
+                章节表格），那一页已整体取消：它的统计进了编辑器底栏，
+                卷章管理进了左侧目录的右键菜单，书籍级操作进了顶栏 `…` 菜单。
+
+                两个路由指向同一个组件，差别的只是「有没有指定章节」：
+                没指定时它会自己跳到这本书最近写过的章（没有章节就停在空态）。
+              */}
+              <Route path="books/:bookId" element={<ChapterEditorPage />} />
               <Route path="books/:bookId/chapters/:chapterId" element={<ChapterEditorPage />} />
 
               <Route path="outline" element={<OutlinePage />} />

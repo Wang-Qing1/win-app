@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import {
-  Button,
   Descriptions,
   Divider,
   Empty,
@@ -312,9 +311,10 @@ export function CardEditorPanel({
         </label>
 
         <Flex gap={8} align="center" wrap>
-          <Button
-            type="primary"
+          <IconButton
+            label={isNew ? '新建卡片' : '保存卡片'}
             icon={<SaveOutlined />}
+            tone="primary"
             disabled={!canSave}
             loading={busy}
             data-testid="card-save"
@@ -325,16 +325,13 @@ export function CardEditorPanel({
                 toast.notifySuccess(isNew ? '已新建卡片' : '已保存')
               })
             }
-          >
-            {isNew ? '新建' : '保存'}
-          </Button>
-          <Button
+          />
+          <IconButton
+            label="还原改动"
             icon={<UndoOutlined />}
             disabled={!dirty}
             onClick={() => setDraft(card === null ? draftSeed : toDraft(card))}
-          >
-            还原
-          </Button>
+          />
           {dirty && !isNew ? (
             <Text type="warning" className="cards-panel__meta">
               有未保存的改动
@@ -381,9 +378,12 @@ export function CardEditorPanel({
                 })
               }
             >
-              <Button danger icon={<DeleteOutlined />} data-testid="card-delete">
-                删除卡片
-              </Button>
+              <IconButton
+                tone="danger"
+                label="删除卡片"
+                icon={<DeleteOutlined />}
+                data-testid="card-delete"
+              />
             </Popconfirm>
           </>
         )}

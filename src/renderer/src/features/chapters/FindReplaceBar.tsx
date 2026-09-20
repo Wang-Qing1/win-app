@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Flex, Input, Switch, Typography } from 'antd'
-import { CloseOutlined, DownOutlined, UpOutlined } from '@ant-design/icons'
+import { Button, Flex, Input, Switch, Tooltip, Typography } from 'antd'
+import { CloseOutlined, DownOutlined, RetweetOutlined, SwapOutlined, UpOutlined } from '@ant-design/icons'
 import type { Editor } from '@tiptap/react'
 import { findTextRanges, mapTextRange, type DocText } from './doc-text'
 
@@ -111,20 +111,28 @@ export function FindReplaceBar({ editor, docText, onClose }: FindReplaceBarProps
               : `${cursor + 1}/${matches.length}`}
         </Text>
 
-        <Button
-          size="small"
-          type="text"
-          icon={<UpOutlined />}
-          disabled={matches.length === 0}
-          onClick={() => step(-1)}
-        />
-        <Button
-          size="small"
-          type="text"
-          icon={<DownOutlined />}
-          disabled={matches.length === 0}
-          onClick={() => step(1)}
-        />
+        <Tooltip title="上一处（Shift+Enter）">
+          <Button
+            size="small"
+            type="text"
+            shape="circle"
+            icon={<UpOutlined />}
+            aria-label="上一处"
+            disabled={matches.length === 0}
+            onClick={() => step(-1)}
+          />
+        </Tooltip>
+        <Tooltip title="下一处（Enter）">
+          <Button
+            size="small"
+            type="text"
+            shape="circle"
+            icon={<DownOutlined />}
+            aria-label="下一处"
+            disabled={matches.length === 0}
+            onClick={() => step(1)}
+          />
+        </Tooltip>
 
         <Input
           size="small"
@@ -134,12 +142,28 @@ export function FindReplaceBar({ editor, docText, onClose }: FindReplaceBarProps
           value={replacement}
           onChange={(event) => setReplacement(event.target.value)}
         />
-        <Button size="small" disabled={matches.length === 0} onClick={replaceCurrent}>
-          替换
-        </Button>
-        <Button size="small" disabled={matches.length === 0} onClick={replaceAll}>
-          全部替换
-        </Button>
+        <Tooltip title="替换当前一处">
+          <Button
+            size="small"
+            type="text"
+            shape="circle"
+            icon={<SwapOutlined />}
+            aria-label="替换当前一处"
+            disabled={matches.length === 0}
+            onClick={replaceCurrent}
+          />
+        </Tooltip>
+        <Tooltip title="全部替换">
+          <Button
+            size="small"
+            type="text"
+            shape="circle"
+            icon={<RetweetOutlined />}
+            aria-label="全部替换"
+            disabled={matches.length === 0}
+            onClick={replaceAll}
+          />
+        </Tooltip>
 
         <Flex align="center" gap={4}>
           <Text type="secondary" className="find-bar__label">
@@ -148,7 +172,16 @@ export function FindReplaceBar({ editor, docText, onClose }: FindReplaceBarProps
           <Switch size="small" checked={caseSensitive} onChange={setCaseSensitive} />
         </Flex>
 
-        <Button size="small" type="text" icon={<CloseOutlined />} onClick={onClose} />
+        <Tooltip title="关闭查找替换">
+          <Button
+            size="small"
+            type="text"
+            shape="circle"
+            icon={<CloseOutlined />}
+            aria-label="关闭查找替换"
+            onClick={onClose}
+          />
+        </Tooltip>
       </Flex>
     </div>
   )

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Empty, Flex, Input, Pagination, Select, Skeleton, Tag, Tooltip, Typography } from 'antd'
+import { Empty, Flex, Input, Pagination, Select, Skeleton, Tag, Tooltip, Typography } from 'antd'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router'
 import { DEFAULT_BOOK_QUERY } from '@shared/modules/books'
@@ -15,6 +15,7 @@ import {
   type CardType
 } from '@shared/modules/cards'
 import { ErrorAlert } from '../../components/ErrorAlert'
+import { IconButton } from '../../components/IconButton'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
 import { useBookList } from '../books/use-books'
@@ -250,26 +251,15 @@ export function CardsPage() {
    * shape="circle"：与书籍管理页一致，做正圆而不是圆角矩形。
    */
   const addCardButton = (
-    <Tooltip
-      title={
-        <span data-testid="cards-add-tip">
-          {books.length === 0 ? '先创建一本书，才能往里添加卡片' : '新建卡片'}
-        </span>
-      }
-    >
-      {/* 禁用态的按钮不派发鼠标事件，必须由外层 span 承接 hover，否则提示永远不出现 */}
-      <span className="toolbar-icon-slot">
-        <Button
-          type="primary"
-          shape="circle"
-          icon={<PlusOutlined />}
-          aria-label="新建卡片"
-          data-testid="cards-add"
-          disabled={books.length === 0}
-          onClick={handleStartNew}
-        />
-      </span>
-    </Tooltip>
+    <IconButton
+      label={books.length === 0 ? '先创建一本书，才能往里添加卡片' : '新建卡片'}
+      icon={<PlusOutlined />}
+      tone="primary"
+      tipTestId="cards-add-tip"
+      data-testid="cards-add"
+      disabled={books.length === 0}
+      onClick={handleStartNew}
+    />
   )
 
   const header = <PageHeader title="卡片库" />
@@ -389,9 +379,13 @@ export function CardsPage() {
                 </Flex>
               }
             >
-              <Button type="primary" icon={<PlusOutlined />} onClick={handleStartNew}>
-                新建卡片
-              </Button>
+              <IconButton
+                label={keyword.length > 0 ? '新建卡片' : '新建第一张卡片'}
+                icon={<PlusOutlined />}
+                tone="primary"
+                large
+                onClick={handleStartNew}
+              />
             </Empty>
           ) : (
             <div className="cards-list" data-testid="cards-list">

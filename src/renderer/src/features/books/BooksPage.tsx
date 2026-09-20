@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
-  Button,
   Card,
   Col,
   Empty,
@@ -34,6 +33,7 @@ import {
   type BookStatus
 } from '@shared/modules/books'
 import { ErrorAlert } from '../../components/ErrorAlert'
+import { IconButton } from '../../components/IconButton'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
 import { useDebouncedValue } from '../../hooks/use-debounced-value'
@@ -85,6 +85,17 @@ export function BooksPage() {
   const removeBook = useRemoveBook()
 
   const items = list.data?.items ?? []
+
+  /**
+   * 当前是不是「没有任何筛选条件」。
+   *
+   * 「书架真的是空的」与「筛出来是空的」是两种情形，空状态的文案与出口都不同：
+   * 前者给「新建第一本书」，后者该让人去清条件而不是新建。
+   * 抽成一个变量，是因为它现在有三处用途（文案、按钮、给冒烟探针的区块标记），
+   * 三处各写一遍 `debouncedKeyword.length === 0 && status === null`
+   * 早晚会有一处漏改 —— 而「探针标记漏改」的后果是**断言静默失效**。
+   */
+  const noFilter = debouncedKeyword.length === 0 && status === null
 
   const openCreate = useCallback((): void => {
     setEditing(null)
@@ -146,20 +157,20 @@ export function BooksPage() {
            * 新建入口从「标题栏右侧的大主按钮」改成「搜索框左侧的图标按钮 + 悬浮提示」。
            * 理由：它和搜索 / 筛选是同一层的操作，放在工具栏里手指不必横跨整个窗口；
            * 文案转为 tooltip 后不再占位，工具栏一行能多放一个筛选器。
-           * aria-label 与 Tooltip 同文案：图标按钮没有可见文字，读屏必须能读出它是什么。
-           * shape="circle"：按钮做正圆而不是圆角矩形（只有一个图标时，方形留白会显得比
-           * 工具栏里的其他控件重）。圆角由 antd 画成 50%，我们不另外写 px 值去覆盖它。
+           *
+           * 2026-09-20 补：这里原先自己写 `shape="circle"` 的 antd 按钮，是
+           * 上一轮「全界面统一」时漏掉的一处 —— 形状对了，但不是同一个组件，
+           * 于是尺寸 / 语气 / 禁用态各自一份。改成 `IconButton`，
+           * 「正圆 + 只有图标 + 文案在提示里 + aria-label 同源」才只有一处定义。
            */}
-          <Tooltip title={<span data-testid="books-add-tip">新建书籍</span>}>
-            <Button
-              type="primary"
-              shape="circle"
-              icon={<PlusOutlined />}
-              aria-label="新建书籍"
-              data-testid="books-add"
-              onClick={openCreate}
-            />
-          </Tooltip>
+          <IconButton
+            label="新建书籍"
+            tone="primary"
+            icon={<PlusOutlined />}
+            data-testid="books-add"
+            tipTestId="books-add-tip"
+            onClick={openCreate}
+          />
           <Input
             allowClear
             className="books-toolbar__search"
@@ -221,17 +232,37 @@ export function BooksPage() {
       ) : items.length === 0 ? (
         <Card>
           <Empty
+            /*
+             * 空状态的锚点（见 DashboardPage 里同一处的说明）。
+             *
+             * 只在**书架真的是空的**时候挂：筛选无结果时区块里没有「新建」
+             * 是**对的**（该做的是清掉筛选条件），但那一刻如果不挂标记，
+             * 探针就分不清「正确地没给按钮」和「按钮被删了」。标记跟着
+             * `noFilter` 走，正好把这两种情形分开。
+             */
+            data-empty-zone={noFilter ? 'books' : undefined}
             description={
               <Flex vertical gap={10} align="center">
                 <Text type="secondary">
-                  {debouncedKeyword.length > 0 || status !== null
-                    ? '没有符合条件的书籍'
-                    : '书架还是空的'}
+                  {noFilter ? '书架还是空的' : '没有符合条件的书籍'}
                 </Text>
-                {debouncedKeyword.length === 0 && status === null ? (
-                  <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-                    新建第一本书
-                  </Button>
+                {noFilter ? (
+                  /*
+                   * 空书架是**唯一一种「还没东西可看」**的情形，此时这枚按钮就是
+                   * 全页唯一的出口，所以和首页那枚一样用 40px 的基础规格
+                   * （见 DashboardPage 里同一处的说明）。筛选无结果时不给它 ——
+                   * 那种情况下该做的是清筛选条件，而不是新建。
+                   */
+                  <IconButton
+                    label="新建第一本书"
+                    tone="primary"
+                    large
+                    icon={<PlusOutlined />}
+                    data-testid="books-empty-create"
+                    data-empty-create="books"
+                    tipTestId="books-empty-create-tip"
+                    onClick={openCreate}
+                  />
                 ) : null}
               </Flex>
             }

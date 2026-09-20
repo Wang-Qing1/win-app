@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Button, Card, Col, Flex, Progress, Row, Segmented, Skeleton, Tag, Typography } from 'antd'
-import { ClockCircleOutlined, FireOutlined, RiseOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { Card, Col, Flex, Progress, Row, Segmented, Skeleton, Tag, Typography } from 'antd'
+import { ClockCircleOutlined, EditOutlined, FireOutlined, RiseOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router'
 import { BOOK_STATUS_LABELS } from '@shared/modules/books'
 import {
@@ -12,6 +12,7 @@ import {
   type StatsTrendQuery
 } from '@shared/modules/stats'
 import { ErrorAlert } from '../../components/ErrorAlert'
+import { IconButton } from '../../components/IconButton'
 import { PageHeader } from '../../components/PageHeader'
 import { formatCompact, formatCount, formatMinutes, progressPercent } from '../../lib/format'
 import { HeatmapCalendar } from './HeatmapCalendar'
@@ -279,9 +280,12 @@ function BookProgressRow({
           <Progress percent={percent} size="small" showInfo={false} strokeColor={item.accentColor} />
         ) : null}
       </div>
-      <Button size="small" onClick={onOpen}>
-        {item.lastChapterId !== null ? '继续写作' : '打开'}
-      </Button>
+      {/* 与首页「在写书籍」同一套行尾圆钮，两处不能长成两种样子 */}
+      <IconButton
+        label={item.lastChapterId !== null ? '继续写作' : '打开这本书'}
+        icon={<EditOutlined />}
+        onClick={onOpen}
+      />
     </Flex>
   )
 }

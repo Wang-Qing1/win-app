@@ -12,6 +12,7 @@ import { useThemeMode, type ThemePreference } from '../theme/ThemeProvider'
 import { useBackupDatabase } from '../features/backup/use-backup'
 import { useHealth } from '../features/health/use-health'
 import { formatBytes, formatDuration } from '../lib/format'
+import { MenuRow } from './MenuRow'
 import { useToast } from './Toast'
 
 /**
@@ -86,40 +87,9 @@ function useHealthSummary(): HealthSummary {
 }
 
 /**
- * 菜单项的行：圆形图标 + 两行文字。
- *
- * `data-testid` 挂在行与图标上：冒烟要能分别量「这一项在不在」「图标是不是正圆」
- * 和「文字有没有丢」—— 只读菜单的整体文案，量不出圆形这件事。
+ * 菜单项的行（圆形图标 + 两行文字）已抽到 `MenuRow` —— 编辑器的书籍菜单
+ * 用的是同一份形状，见那个文件的说明。
  */
-function MenuRow({
-  testId,
-  icon,
-  title,
-  hint,
-  statusIcon = false
-}: {
-  testId: string
-  icon: ReactNode
-  title: string
-  hint: string
-  /** 状态型图标（一个状态点）用中性底，别和「可点的功能图标」撞成一样 */
-  statusIcon?: boolean
-}) {
-  return (
-    <span className="topbar-menu__row" data-testid={testId}>
-      <span
-        className={`topbar-menu__icon${statusIcon ? ' topbar-menu__icon--status' : ''}`}
-        data-testid={`${testId}-icon`}
-      >
-        {icon}
-      </span>
-      <span className="topbar-menu__text">
-        <span className="topbar-menu__title">{title}</span>
-        <span className="topbar-menu__hint">{hint}</span>
-      </span>
-    </span>
-  )
-}
 
 export function TopBarMenu() {
   const health = useHealthSummary()

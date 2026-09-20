@@ -118,7 +118,7 @@ export function ChapterCreateModal({
 
       <Text type="secondary" className="chapter-create__hint">
         本章最少 {formatCount(chapterWords)} 字（书籍设置里的「每章最少字数」，全书统一）。
-        要改就在书籍详情页编辑书籍。
+        要改就点编辑器顶栏最右边的「…」→ 编辑书籍信息。
       </Text>
     </Modal>
   )

@@ -102,43 +102,53 @@ const CARD_ROWS_MIN: Readonly<Record<string, number>> = {
   '/books': 1, // 书架卡片网格（另一行骨架只在加载时存在）
   '/outline': 0,
   '/cards': 0,
-  '/stats': 2, // 区间指标 / 趋势图
-  'book-detail': 1 // 书籍概览四张卡
+  '/stats': 2 // 区间指标 / 趋势图
+  /*
+   * 原先这里还有一条 `'book-detail': 1`（书籍详情页的四张概览卡）。
+   * 用户 2026-09-20 取消了那一页（「新建书籍并且打开书籍之后应该是正文编辑页，
+   * 不应该出现这个统计界面」），所以这条下限连同那一页的断言整段删掉 ——
+   * 只删断言不删下限的话，下一次有人给编辑页加一行并排卡片就会被误报。
+   */
 }
 
 /**
- * 书籍详情页头部那四枚圆形图标按钮的期望清单。
+ * 编辑器顶栏「书籍菜单」（`…`）里的三项。
  *
- * 同样**独立写一遍**（同上：清单是产品约定，共用一份就永远测不出「清单被改错」）。
+ * 这一份清单原来是**书籍详情页**头部的四枚按钮（返回书架 / 编辑信息 /
+ * 导出整本书 / 删除书籍）。那一页取消后，「返回书架」变成了编辑器顶栏
+ * 最左那枚箭头（见 `EDITOR_TOP_BAR_ACTIONS` 的 editor-back），
+ * 剩下三项收进 `…` 菜单里。清单按新形态重写，不是照抄。
  *
- * 为什么这四枚值得逐个点名：把「图标 + 文字」改成「图标 + 悬浮提示」时，
- * 最典型的失手是**文字删掉了、按钮也顺手删掉了**（改造时只盯着「把这行文字
- * 拿掉」），或者两枚按钮复制粘贴成同一个 `testId` / 同一个 label。
- * 只断「页面上有几枚圆钮」这两种错都发现不了。
+ * 为什么这三项值得逐个点名：它们是**整本书唯一的出口**（改书名与目标字数、
+ * 导出、删除）。收进菜单之后，「菜单打开时项没渲染出来」「某一项点着没反应」
+ * 都不会让任何存在性断言变红 —— 按钮还在，只是里面空了。
  */
-const BOOK_DETAIL_ACTIONS = [
-  { testId: 'book-detail-back', label: '返回书架' },
-  { testId: 'book-detail-edit', label: '编辑信息' },
-  { testId: 'book-detail-export', label: '导出整本书' },
-  { testId: 'book-detail-remove', label: '删除书籍' }
-] as const
+const BOOK_MENU_ITEMS: ReadonlyArray<{ key: string; testId: string; name: string }> = [
+  { key: 'edit', testId: 'book-menu-edit', name: '编辑书籍信息' },
+  { key: 'export', testId: 'book-menu-export', name: '导出整本书' },
+  { key: 'remove', testId: 'book-menu-remove', name: '删除这本书' }
+]
 
 /**
  * 章节编辑器顶栏那几枚功能按钮的锚点（同上一份清单，独立写一遍）。
  *
- * 五枚 = 返回书籍详情 + 查找替换 / 取名 / 专注 / 发布草稿。
+ * 六枚 = 返回书架 + 查找替换 / 取名 / 专注 / 发布草稿 + 书籍菜单 `…`。
  *
  * 只点名锚点、不点名文案：其中一枚（专注模式）的提示文案**随状态变**
  * （「专注模式：…」/「退出专注模式」），写死文案的断言会在切到专注模式后
  * 变成假失败。形状与「label 非空」由 `checkIconButtons` 统一管，
- * 这里只负责「五枚都还在」。
+ * 这里只负责「六枚都还在」。
+ *
+ * 空书（`/books/:bookId`，一章都还没有）时只有两枚：返回书架 + `…` 菜单 ——
+ * 其余四枚都要有正文才谈得上。这一点由「打开书籍」那一步单独断言。
  */
 const EDITOR_TOP_BAR_ACTIONS = [
   'editor-back',
   'editor-find-toggle',
   'editor-name',
   'editor-focus-toggle',
-  'editor-export'
+  'editor-export',
+  'editor-book-menu'
 ] as const
 
 /**
@@ -213,7 +223,7 @@ function findTreeNode(nodes: readonly OutlineTreeNode[], id: number): OutlineTre
 /** 渲染检查需要的一对 id：有了它们才能导航到编辑器的真实路由 */
 export interface ShowcaseTargets {
   bookId: number
-  /** 展示书籍的书名。书籍详情页的页标题读的就是它（页标题已改为隐藏锚点） */
+  /** 展示书籍的书名。打开一本书之后，它出现在编辑器顶栏的书名位上 */
   bookTitle: string
   chapterId: number
   /** 展示书籍里的一个分卷。新建章弹窗靠它验证「选的分卷真的落库了」 */
@@ -221,6 +231,38 @@ export interface ShowcaseTargets {
   volumeTitle: string
   /** 展示书籍的「每章最少字数」。底栏「计划」的口径断言按它算期望值 */
   chapterWords: number
+  /**
+   * 一本**一章都没有**的书。
+   *
+   * 用户 2026-09-20 那张截图里被打开的正是这样一本书（分卷 0 / 章节 0），
+   * 而那时的落点是一张统计页。现在它必须落在编辑器空态上：顶栏、左侧目录、
+   * 底栏统计都在，只有正文区是空的。这个「什么都没有」的形态**只能用一本
+   * 真空的书**测出来 —— 拿展示用书去测，永远走的是「有章节」那条分支。
+   */
+  emptyBookId: number
+  emptyBookTitle: string
+  /**
+   * 按 id 回读一整本书的总量（分卷数 / 章节数 / 汉字总数）。
+   *
+   * 底栏右侧那一组「全书」统计必须与库里的数一致 —— 而它最容易出的错是
+   * 「读的是书籍列表项里的缓存聚合字段」，那种错在刚删改过章节时立刻显形，
+   * 所以判据只能是回库现算，不能复用界面上的任何中间值。
+   */
+  bookTotals: (bookId: number) => { volumes: number; chapters: number; hanzi: number }
+  /**
+   * 打开这本书时**应当自动跳到的**那一章。
+   *
+   * 由主进程按「最近更新的一章」算出来，而不是把 `chapterId` 当成答案：
+   * 这本书里除了展示用的那一章，还有大纲节点落地成的章节，它们谁更新是
+   * **数据决定**的。把展示章节的 id 写死当期望值，等于拿测试的假设去规定
+   * 产品行为 —— 换一批数据就会变成假失败。
+   */
+  resumeChapterId: (bookId: number) => number | null
+  /**
+   * 按标题回读分卷。左侧目录的「建卷 / 改名 / 删除」三条路径都要落在这里验证 ——
+   * 界面上「卷消失了」也可能是没建出来，只有回库才知道到底发生了哪一件事。
+   */
+  lookupVolume: (title: string) => { id: number; title: string; chapterCount: number } | null
   /**
    * 按标题回读章节元数据。
    *
@@ -354,6 +396,9 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
   let showcaseChapterId: number | null = null
   let showcaseVolumeId: number | null = null
   let showcaseVolumeTitle = ''
+  /** 「一章都没有」的那本书，见 ShowcaseTargets.emptyBookId 的说明 */
+  let emptyBookId: number | null = null
+  let emptyBookTitle = ''
 
   try {
     /* ---- 建书 ---- */
@@ -710,6 +755,29 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
     })
     showcaseBookId = showcase.id
     showcaseBookTitle = showcase.title
+
+    /*
+     * 一本**一章都没有**的书，专门给「打开书籍」那一步用。
+     *
+     * 用户 2026-09-20 的截图里被打开的正是这种书（分卷 0 / 章节 0）：那时它
+     * 落在一张统计页上，而现在必须落在编辑器空态上。这个形态**只能用一本
+     * 真空的书**测 —— 拿展示用书去测，走的永远是「有章节」那条分支。
+     * 状态用「构思中」而不是「连载中」：它不该出现在「在写书籍」的语义里。
+     */
+    const emptyBook = bookService.create({
+      title: `冒烟-空书-${STAMP}`,
+      // 笔名**刻意与展示用书不同**：检索那一步会搜「冒烟作者」并断言「命中 1 处」，
+      // 两本书同笔名就会变成 2 处 —— 那是被新数据带出来的假失败
+      penName: '空书作者',
+      genre: '都市',
+      status: 'idea',
+      summary: '这本书刻意不建任何分卷与章节，用来验证「打开一本书直落编辑器」。',
+      targetWords: 50_000,
+      chapterWords: SHOWCASE_CHAPTER_WORDS,
+      accentColor: '#0f7b0f'
+    })
+    emptyBookId = emptyBook.id
+    emptyBookTitle = emptyBook.title
 
     // 一本书要有分卷，新建章弹窗里的「所属分卷」才有真选项可选 ——
     // 否则那条断言只能验到「下拉框在」，选完到底有没有写进去完全测不到
@@ -1748,15 +1816,18 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
     push('业务规则', false, messageOf(error))
   }
 
-  // 供渲染检查使用：确认至少有一本书 + 一章可供展示
-  if (showcaseBookId === null || showcaseChapterId === null) {
+  // 供渲染检查使用：确认有一本书 + 一章 + 一本空书可供展示
+  if (showcaseBookId === null || showcaseChapterId === null || emptyBookId === null) {
     push('冒烟数据准备', false, '未能为渲染检查准备出可见的数据')
   }
 
   return {
     results,
     showcase:
-      showcaseBookId !== null && showcaseChapterId !== null && showcaseVolumeId !== null
+      showcaseBookId !== null &&
+      showcaseChapterId !== null &&
+      showcaseVolumeId !== null &&
+      emptyBookId !== null
         ? {
             bookId: showcaseBookId,
             bookTitle: showcaseBookTitle,
@@ -1764,6 +1835,31 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
             volumeId: showcaseVolumeId,
             volumeTitle: showcaseVolumeTitle,
             chapterWords: SHOWCASE_CHAPTER_WORDS,
+            emptyBookId,
+            emptyBookTitle,
+            bookTotals: (id) => {
+              const chapters = chapterService.list({ bookId: id, volumeId: undefined })
+              return {
+                volumes: volumeService.list(id).length,
+                chapters: chapters.length,
+                hanzi: chapters.reduce((sum, item) => sum + item.hanziCount, 0)
+              }
+            },
+            lookupVolume: (title) => {
+              const found = volumeService
+                .list(showcaseBookId as number)
+                .find((item) => item.title === title)
+              return found === undefined
+                ? null
+                : { id: found.id, title: found.title, chapterCount: found.chapterCount }
+            },
+            resumeChapterId: (id) => {
+              const chapters = chapterService.list({ bookId: id, volumeId: undefined })
+              if (chapters.length === 0) return null
+              return chapters.reduce((best, item) =>
+                item.updatedAt.localeCompare(best.updatedAt) > 0 ? item : best
+              ).id
+            },
             lookupChapter: (title) => {
               const found = chapterService
                 .list({ bookId: showcaseBookId as number, volumeId: undefined })
@@ -1807,13 +1903,15 @@ export async function runRendererSmokeChecks(
       { name: '渲染进程', ok: false, detail: messageOf(error) },
       { name: '首页启动台', ok: false, detail: '渲染进程未能加载，无法继续' },
       { name: '书籍管理', ok: false, detail: '渲染进程未能加载，无法继续' },
+      { name: '打开书籍', ok: false, detail: '渲染进程未能加载，无法继续' },
       { name: '大纲管理', ok: false, detail: '渲染进程未能加载，无法继续' },
       { name: '卡片库', ok: false, detail: '渲染进程未能加载，无法继续' },
       { name: '全库检索', ok: false, detail: '渲染进程未能加载，无法继续' },
       { name: '章节编辑器', ok: false, detail: '渲染进程未能加载，无法继续' },
       { name: '编辑器工具栏', ok: false, detail: '渲染进程未能加载，无法继续' },
       { name: '新建章弹窗', ok: false, detail: '渲染进程未能加载，无法继续' },
-      { name: '目录右键菜单', ok: false, detail: '渲染进程未能加载，无法继续' }
+      { name: '目录右键菜单', ok: false, detail: '渲染进程未能加载，无法继续' },
+      { name: '左侧目录建卷', ok: false, detail: '渲染进程未能加载，无法继续' }
     ]
   }
 
@@ -1824,7 +1922,26 @@ export async function runRendererSmokeChecks(
    * 而后面几条检查各自用改 hash 的方式进自己的页面，互不干扰。
    */
   results.push(await checkHomeNavigation(window))
-  results.push(await checkBooks(window, showcase))
+  results.push(await checkBooks(window))
+  /*
+   * 「打开书籍」紧跟书架之后：它就是「从书架点开一本书」的下一跳，
+   * 而且这一步会把落点从书架挪到编辑器（在空书上还会停在空态），
+   * 后面的检查各自改 hash 进自己的页面，不受它影响。
+   */
+  if (showcase === null) {
+    results.push({
+      name: '打开书籍',
+      ok: false,
+      detail: '后端没有留下可见的书籍与空书，无法验证打开书籍的落点'
+    })
+    results.push({
+      name: '左侧目录建卷',
+      ok: false,
+      detail: '后端没有留下可见的书籍，无法验证目录栏的分卷管理'
+    })
+  } else {
+    results.push(await checkBookWorkspace(window, showcase))
+  }
   results.push(await checkOutline(window))
   results.push(await checkCards(window))
 
@@ -1861,6 +1978,23 @@ export async function runRendererSmokeChecks(
         lookup: showcase.lookupChapter
       })
     )
+    /*
+     * 目录栏的分卷管理排在最后：它会真的建出一卷、改名、再删掉，
+     * 中途还要在分卷行上右键。放在前面的话，那几帧会混进
+     * 「书籍管理 / 打开书籍 / 新建章弹窗」要看的页面与截图里。
+     */
+    results.push(await checkCatalogVolumeMenu(window, showcase))
+    /*
+     * 「外出后返回正文」排在这一段最后：它会真的离开编辑器去大纲页与卡片库，
+     * 放在前面会把那几帧混进前面几步要看的页面与截图里。
+     */
+    results.push(await checkOriginReturn(window, showcase))
+    /*
+     * 「正文自动保存往返」同样排最后：它往正文里真的打进一段字，
+     * 会改动这一章的字数与内容 —— 放在前面会把「正文字数与预期一致」
+     * 那条断言打红。冒烟库是一次性的，跑完即弃，不需要清理。
+     */
+    results.push(await checkEditorRoundTrip(window, showcase))
   }
 
   results.push(checkNoSilentIpcFailure())
@@ -1914,10 +2048,10 @@ async function checkDashboard(window: BrowserWindow): Promise<StepResult> {
 
     // 页标题必须**不占纵向空间**。这条对首页与各模块页成立（用户 2026-09-20
     // 「页标题移除，不要展示」）—— 它们的标题是导航标签，内容已经说明了自己。
-    // **唯一的例外是书籍详情页**（那里的标题是书名，是内容），它在 checkBooks
-    // 里反向断言。读的是实测面积，不是类名：类名可以随便改，「占不占地方」
-    // 才是事实。下面 `pageTitle` 那一行同时证明了隐藏的锚点还在（否则它会
-    // 读成空字符串）。
+    // 曾经有过一个例外（书籍详情页显示书名），那一页已经取消，书名改由编辑器
+    // 顶栏显示、不再是一个「页标题」——**于是现在没有例外**（见 titleVisible 的说明）。
+    // 读的是实测面积，不是类名：类名可以随便改，「占不占地方」才是事实。
+    // 下面 `pageTitle` 那一行同时证明了隐藏的锚点还在（否则它会读成空字符串）。
     if (rendered.titleVisible) {
       problems.push('页标题在画面上占位了，它应当只是给读屏与测试用的隐藏锚点')
     }
@@ -2389,6 +2523,100 @@ function checkIconButtons(buttons: IconButtonProbe[], pageLabel: string): string
 }
 
 /* ------------------------------------------------------------------ *
+ * 空状态里的新建入口
+ *
+ * 用户 2026-09-20 看着首页截图问：「这个按钮没有改？太丑了，改成【+】图标加
+ * 鼠标悬浮提示的形式」—— 指的是「还没有书籍 / 书架还是空的」那张插图下面
+ * 那枚「新建第一本书」，它是全应用最后两枚**还带着文字的长条按钮**。
+ *
+ * 这类改造的失败方式很特别：空状态是「页面上没有内容、只剩一个动作」的样子，
+ * 而它的每一种退化都**不会让任何存在性断言变红**：
+ *   - 动作被删掉 → 页面上一片空白，用户在这里无路可走；
+ *   - 动作改回带文字的长条 → 就是用户这次指出的样子；
+ *   - 动作被复制成两份 → 卡片库真出过（两枚一模一样的新建按钮并排站着）。
+ * 所以这里不采「按钮在不在」，采的是**空状态区块本身**：区块一旦出现在画面上，
+ * 它里面的按钮就必须恰好是「一枚圆形图标入口」—— 多一枚、少一枚、带文字、
+ * 没 aria-label，都算错。
+ *
+ * 代价写在明处：**新加空状态却忘了挂标记 = 漏检**。所以标记只挂在「本来
+ * 就该给出口」的那种空状态上 —— 书籍管理页筛不出结果时不该给「新建」，
+ * 那一刻不挂标记本身就是断言的一部分。
+ * ------------------------------------------------------------------ */
+
+interface EmptyZoneProbe {
+  /** 区块名（`data-empty-zone` 的值），失败时用来指认是哪一处空状态 */
+  name: string
+  /** 区块里渲染出来的按钮总数 */
+  buttons: number
+  /** 其中挂了 `data-empty-create` 的（也就是「空状态的新建入口」） */
+  creates: number
+  /** 入口是不是圆形图标按钮（挂着同一个 `.app-icon-button` 类） */
+  createIsIconButton: boolean
+  /** 入口的可见文字。**必须为空** */
+  createText: string
+  /** 入口的 `aria-label`。**必须非空** */
+  createLabel: string
+}
+
+/**
+ * 探针按 `data-empty-zone` / `data-empty-create` 这两个**我们自己的**属性采，
+ * 不依赖 antd 的内部类名（README 第 1 条）。两个属性由产品代码挂在空状态
+ * 与它的入口上。
+ */
+const EMPTY_ZONE_PROBE_JS = `Array.prototype.map.call(
+  document.querySelectorAll('[data-empty-zone]'),
+  (zone) => {
+    const create = zone.querySelector('[data-empty-create]')
+    return {
+      name: zone.getAttribute('data-empty-zone') || '',
+      buttons: zone.querySelectorAll('button').length,
+      creates: zone.querySelectorAll('[data-empty-create]').length,
+      createIsIconButton: !!create && create.classList.contains('app-icon-button'),
+      createText: (create?.textContent || '').trim(),
+      createLabel: create?.getAttribute('aria-label') || ''
+    }
+  }
+)`
+
+/** 空状态区块的检查。规矩只有一份，首页与书架页量的是同一套。 */
+function checkEmptyZones(zones: EmptyZoneProbe[], pageLabel: string): string[] {
+  const problems: string[] = []
+
+  for (const zone of zones) {
+    const who = `「${pageLabel}」页的空状态（${zone.name || '未命名区块'}）`
+
+    if (zone.creates !== 1) {
+      problems.push(
+        `${who}里有 ${zone.creates} 枚新建入口（应为 1 枚）—— 空状态是这一页唯一有内容的地方，书都没了却没有入口，用户在这里无路可走`
+      )
+      continue
+    }
+    if (zone.buttons !== 1) {
+      problems.push(
+        `${who}共 ${zone.buttons} 枚按钮，其中只有 ${zone.creates} 枚是圆形图标入口 —— 空状态里不该有第二种按钮形态（用户 2026-09-20 指的就是「这枚还带着文字」）`
+      )
+    }
+    if (!zone.createIsIconButton) {
+      problems.push(
+        `${who}的入口不是圆形图标按钮（没有 .app-icon-button 类）—— 它应当与全应用其他按钮同一形态`
+      )
+    }
+    if (zone.createText.length > 0) {
+      problems.push(
+        `${who}的入口上还写着「${zone.createText}」—— 文字应当移进鼠标悬浮的提示里`
+      )
+    }
+    if (zone.createLabel.length === 0) {
+      problems.push(
+        `${who}的入口没有 aria-label —— 文字从画面上移走不等于可以删掉，否则读屏读不出它是什么`
+      )
+    }
+  }
+
+  return problems
+}
+
+/* ------------------------------------------------------------------ *
  * 并排卡片等高
  *
  * 用户 2026-09-20：「上方的四个并排卡片没有高度对齐？并排的卡片都需要高度对齐」。
@@ -2607,14 +2835,19 @@ const EDITOR_SNAPSHOT_SCRIPT = `(() => {
     paragraphCount: document.querySelectorAll('[data-testid="editor-content"] p').length,
     hanzi: intOf('editor-hanzi'),
     catalogRows: document.querySelectorAll('[data-testid="catalog-row"]').length,
-    // 目录栏里的新建入口只该有头部那两个。分卷行上的 + 与列表底部的
+    // 目录栏里的新建入口只该有头部那两枚。分卷行上的 + 与列表底部的
     // 新建章节都已被删掉：同一件事在一屏里给三个入口，只让人每次先做一次
     // 无意义的选择，而目录栏很窄，这些按钮还挤掉了章节标题的宽度。
+    //
+    // 这两枚的**形态来回变过**（2026-09-20 先被圆钮化、用户当天又点名改回
+    // 带文字的按钮 —— 「目录栏头部按钮不用改成图标 + 悬浮提示的形式」），
+    // 所以这里两种形态都要数得着：文字按钮读 textContent、圆钮读 aria-label。
+    // 只按其中一种读，形态一换这条就会把「入口好端端在那儿」误判成 0 个。
     catalogNewTriggers: (() => {
       const catalog = document.querySelector('[data-testid="chapter-catalog"]')
       if (!catalog) return -1
       return Array.prototype.filter.call(catalog.querySelectorAll('button'), (el) =>
-        /新建/.test(el.textContent || '')
+        /新建/.test((el.textContent || '') + ' ' + (el.getAttribute('aria-label') || ''))
       ).length
     })(),
     // 元信息栏只该剩标题。原来那一整行（未分卷 / 草稿 / 本章目标 / 保存信息）
@@ -2903,6 +3136,44 @@ async function checkChapterEditor(
   }
 }
 
+/**
+ * 点**模态确认框**（`modal.confirm`）的「确定」。
+ *
+ * 与 `clickModalOk` 分开写，因为两者的 DOM 不一样：普通 Modal 的按钮在
+ * `.ant-modal-footer` 里，而 `modal.confirm` 渲染的是 `.ant-modal-confirm`，
+ * 按钮在 `.ant-modal-confirm-btns` 里 —— 拿前者的选择器去点后者会永远点不到，
+ * 报出来却是「没有弹出二次确认」。
+ *
+ * 之所以需要模态确认：菜单项一点就关，`Popconfirm` 需要一枚常驻的触发元素，
+ * 在浮层里挂不住。所以「从菜单里删除」只能走这条路。
+ *
+ * 会重试：点完菜单项到确认框真正可点之间隔着一两帧，点完就读会读到「没有弹窗」。
+ * 判据仍然是**在可见的浮层里**找主按钮（隐藏的旧弹窗不算）。
+ */
+async function clickConfirmOk(window: BrowserWindow, timeoutMs = 4000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    const clicked = (await window.webContents.executeJavaScript(`(() => {
+      const wraps = Array.prototype.filter.call(
+        document.querySelectorAll('.ant-modal-wrap'),
+        (el) => el.style.display !== 'none'
+      )
+      const wrap = wraps[wraps.length - 1]
+      if (!wrap) return false
+      const btn = wrap.querySelector('.ant-btn-primary')
+      if (!btn || btn.disabled) return false
+      btn.click()
+      return true
+    })()`)) as boolean
+
+    if (clicked) return true
+    await delay(120)
+  }
+
+  return false
+}
+
 /** 点一下挂着这个 testid 的元素。按钮禁用时返回 false，不硬点 */
 async function clickTestId(window: BrowserWindow, testId: string): Promise<boolean> {
   return (await window.webContents.executeJavaScript(
@@ -2913,6 +3184,29 @@ async function clickTestId(window: BrowserWindow, testId: string): Promise<boole
       return true
     })()`
   )) as boolean
+}
+
+/**
+ * 等某个锚点出现。
+ *
+ * 「点了某个菜单项 → 界面上长出一样东西」这类时序必须等，不能点完就读：
+ * 菜单项自己关掉、目标元素再挂上来，是两帧之后的事。点完立刻查会拿到
+ * 「不存在」，报出来却是「功能没实现」。
+ */
+async function waitForTestId(
+  window: BrowserWindow,
+  testId: string,
+  timeoutMs = 3000
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const found = (await window.webContents.executeJavaScript(
+      `!!document.querySelector('[data-testid="${testId}"]')`
+    )) as boolean
+    if (found) return true
+    await delay(80)
+  }
+  return false
 }
 
 /**
@@ -3432,12 +3726,34 @@ async function openRowMenu(
   window: BrowserWindow,
   chapterId: number
 ): Promise<CatalogMenuState> {
+  return openContextMenuOn(window, '[data-testid="catalog-row"][data-chapter-id="' + chapterId + '"]')
+}
+
+/**
+ * 在指定分卷行上右键，等菜单出来。
+ *
+ * 与章节行共用同一段派发逻辑（`openContextMenuOn`）：两者都挂
+ * `overlayClassName="catalog__menu"`，读菜单与点菜单的辅助函数也是同一套。
+ */
+async function openVolumeMenu(
+  window: BrowserWindow,
+  volumeId: number
+): Promise<CatalogMenuState> {
+  return openContextMenuOn(
+    window,
+    '[data-testid="catalog-volume"][data-volume-id="' + volumeId + '"]'
+  )
+}
+
+/** 在任意元素上派发一次 contextmenu（鼠标右键）并等菜单浮层出现 */
+async function openContextMenuOn(
+  window: BrowserWindow,
+  selector: string
+): Promise<CatalogMenuState> {
   await closeCatalogMenu(window)
 
   const dispatched = (await window.webContents.executeJavaScript(`(() => {
-    const row = document.querySelector(
-      '[data-testid="catalog-row"][data-chapter-id="${chapterId}"]'
-    )
+    const row = document.querySelector(${JSON.stringify(selector)})
     if (!row) return false
     const rect = row.getBoundingClientRect()
     row.dispatchEvent(new MouseEvent('contextmenu', {
@@ -3791,15 +4107,17 @@ interface RouteState {
   /**
    * 页标题在画面上是否占位。
    *
-   * 用户 2026-09-20 先要求「页标题移除，不要展示」，随后又追加了唯一的例外：
-   * 「书籍详情页需要显示书籍名称，原标题的位置应该显示书籍名称」。
-   * 所以这个值**按页给结论**，不是一刀切：
-   *   - 首页与四个模块页（书籍管理 / 大纲管理 / 卡片库 / 统计）：必须 false。
-   *     这些标题是导航标签，内容本身已经说明了这是哪一页；
-   *   - 书籍详情页：必须 true。那里的标题是**书名**，是内容，页面里没有别处写着它。
+   * 用户 2026-09-20 要求「页标题移除，不要展示」：首页与四个模块页
+   * （书籍管理 / 大纲管理 / 卡片库 / 统计）的标题都是**导航标签**，
+   * 内容本身已经说明了这是哪一页 —— 必须 false。
+   *
+   * 曾经有过一个例外：书籍详情页显示书名（那里的标题是内容）。那一页后来
+   * 被整体取消（同一天的「打开书籍后直接就是正文编辑界面」），书名改挂在
+   * 编辑器顶栏上 —— 那是同一页里的一条横带，不是页标题。**于是「一律不显示」
+   * 现在没有例外**，这个字段也就只有一种期望值。
    *
    * 判据是**实测面积**而不是类名：类名怎么改都行，「占不占画面」才是事实。
-   * 两个方向都留了断言 —— 该隐的没隐（回去了）与该显的没显（书名丢了）都会红。
+   * 与该隐的没隐（回去了）互为正反两条断言。
    */
   titleVisible: boolean
   /** 可见标题的左 / 上坐标；标题隐藏时是 -1 */
@@ -3879,6 +4197,22 @@ interface RouteState {
    * 规矩共用同一份 `checkCardRows`。
    */
   cardRows: CardRowProbe[]
+  /**
+   * 「在写书籍」这类进度列表渲染出的行数。
+   *
+   * 只有一个用途：把「数据还在路上」和「真的没有在写的书」分开。空状态断言
+   * 挂在下面那个探针上，而**加载中读到的空状态集合必然也是空的** ——
+   * 不区分的话，「空状态入口被删掉」会伪装成「还没加载完」而静默通过。
+   */
+  bookProgressRows: number
+  /**
+   * 空状态区块的实测形态（见 `EMPTY_ZONE_PROBE_JS`）。
+   *
+   * 用户 2026-09-20 看着首页截图指出：空状态那枚「新建第一本书」还是带文字的
+   * 长条，全应用就剩这两处没改。挂在路由快照上，首页与各模块页各量一遍 ——
+   * 全应用只有书籍相关的这两处是「页面上没有内容、只剩一个动作」的样子。
+   */
+  emptyZones: EmptyZoneProbe[]
 }
 
 const EMPTY_ROUTE_STATE: RouteState = {
@@ -3897,7 +4231,9 @@ const EMPTY_ROUTE_STATE: RouteState = {
   moduleCount: 0,
   iconButtons: [],
   duplicateButtonTestIds: [],
-  cardRows: []
+  cardRows: [],
+  bookProgressRows: 0,
+  emptyZones: []
 }
 
 /**
@@ -3962,6 +4298,12 @@ const ROUTE_STATE_SCRIPT = `(() => {
     brandLeft: brandEl ? Math.round(brandEl.getBoundingClientRect().left) : -1,
     moduleCount: document.querySelectorAll('[data-testid="module-entry"]').length,
     iconButtons: ${ICON_BUTTON_PROBE_JS},
+    // 「在写书籍」的行数：用来区分「还没加载完」与「真的没有在写的书」，
+    // 否则空状态断言会把「入口被删掉」读成「还没加载完」。
+    bookProgressRows: document.querySelectorAll('[data-testid="progress-row"]').length,
+    // 空状态区块：区块出现就要求「里面恰好一枚圆形图标入口」（见
+    // EMPTY_ZONE_PROBE_JS 的说明）。首页与各模块页各量一遍。
+    emptyZones: ${EMPTY_ZONE_PROBE_JS},
     // 每一行并排卡片的实测几何。用户 2026-09-20：「并排的卡片都需要高度对齐」。
     cardRows: ${CARD_ROW_PROBE_JS},
     // 重复的按钮锚点：同一颗按钮在一屏里出现两次。见 RouteState 里的说明 ——
@@ -4044,7 +4386,17 @@ async function checkHomeNavigation(window: BrowserWindow): Promise<StepResult> {
 
   try {
     await gotoHome(window)
-    const home = await readRouteState(window, (state) => state.moduleCount > 0)
+    /*
+     * 等判据里带上「在写书籍」区已就绪：`emptyZones` 在数据回来之前必然是空的，
+     * 只等 `moduleCount` 会读到一个「还没有区块」的帧 —— 那时空状态断言不会
+     * 报错（区块不在画面上是合法的），但**也永远不会开始工作**。
+     * 要么读到行（有书），要么读到空状态区块（没有书），两者都没有就是还没加载完。
+     */
+    const home = await readRouteState(
+      window,
+      (state) =>
+        state.moduleCount > 0 && (state.bookProgressRows > 0 || state.emptyZones.length > 0)
+    )
 
     if (home.moduleCount !== HOME_MODULES.length) {
       return {
@@ -4060,6 +4412,13 @@ async function checkHomeNavigation(window: BrowserWindow): Promise<StepResult> {
 
     // 首页有三行并排卡片（功能模块 / 首页指标 / 趋势与今日），每一行内部必须等高
     problems.push(...checkCardRows(home.cardRows, '首页', CARD_ROWS_MIN['/'] ?? 0))
+
+    /* 空状态里的新建入口（见 `checkEmptyZones` 的说明）。
+     *
+     * 用户 2026-09-20 看着首页截图问的正是这一枚：「这个按钮没有改？太丑了，
+     * 改成【+】图标加鼠标悬浮提示的形式」。区块不在画面上时这里不报错 ——
+     * 「有书可写」的时候本来就没有空状态。 */
+    problems.push(...checkEmptyZones(home.emptyZones, '首页'))
 
     // 品牌区的左坐标作为「顶栏没被挤动」的基线。悬浮按钮不在布局流里，
     // 它在与不在都不该让顶栏的任何东西挪位置；若有人把它改回顶栏里的普通
@@ -4101,8 +4460,8 @@ async function checkHomeNavigation(window: BrowserWindow): Promise<StepResult> {
       // 模块页的标题是**导航标签**，必须不显示（用户 2026-09-20 指定）。
       // 这一条是上一版断言的反转：原先断的是「标题可见且写着模块名」，
       // 需求翻过来之后旧断言不能直接删 —— 删了就没人拦得住它被改回可见。
-      // 唯一的例外是书籍详情页的书名（那一个是内容，见 checkBooks 里的反向断言）；
-      // 「哪些页该显、哪些页该隐」于是两边都有守卫，不会一起漂。
+      // 反向那一条（曾经只开给书籍详情页的书名）随着那一页被取消而消失，
+      // 于是「一律不显示」这条规矩现在**只有这一个方向**，也就没有了对冲。
       if (arrived.titleVisible) {
         problems.push(
           `「${module.label}」页的标题又显示出来了 —— 模块页的标题是导航标签，应当只做隐藏锚点`
@@ -4131,10 +4490,15 @@ async function checkHomeNavigation(window: BrowserWindow): Promise<StepResult> {
        *
        * 与上面那条同源：批量外观/布局改造最容易只改一半，而「卡片在不在」
        * 「点了有没有反应」全都照样绿。不等高是纯几何症状，只有量盒子看得见。
-       * 规矩共用 `checkCardRows`，四页各量一遍（书籍详情页在 checkBooks 里另量）。 */
+       * 规矩共用 `checkCardRows`，四页各量一遍（编辑器页没有并排卡片，也没挂标记）。 */
       problems.push(
         ...checkCardRows(arrived.cardRows, module.label, CARD_ROWS_MIN[module.path] ?? 0)
       )
+
+      /* 空状态里的新建入口：书籍管理页「书架还是空的」那枚（见 checkEmptyZones）。
+       * 其他模块页的空状态没有挂标记，采不到就不会报错 —— 标记只挂在「本来就
+       * 该给出口」的那种空状态上。 */
+      problems.push(...checkEmptyZones(arrived.emptyZones, module.label))
 
       /* 重复的按钮锚点：同一颗按钮在一屏里出现两次。
        *
@@ -4478,17 +4842,19 @@ async function checkOutline(window: BrowserWindow): Promise<StepResult> {
 }
 
 /**
- * 书籍管理页：书架真的渲染出书，且「新建书籍」按钮已图标化并挪到搜索框左侧。
+ * 书籍管理页（书架）：真的渲染出书，且「新建书籍」按钮已图标化并挪到搜索框左侧。
  *
  * 这一页此前没有独立检查 —— 首页只覆盖了列表接口（BookProgress），
  * 而书架页读的是另一支接口（BookList）并带分页 / 筛选 / 排序。
  * 现在补上，顺带把「独立主按钮 → 工具栏图标按钮」这条界面约定锁住：
  * 它属于「用户肉眼能看到、但 DOM 查询与接口断言都覆盖不到」的那类事实。
+ *
+ * **「从书架打开一本书」那一段已经搬去 `checkBookWorkspace`**：那一页原来
+ * 是「书籍详情页」，用户 2026-09-20 取消了它，落点从而从这一页越到了编辑器。
+ * 跨页面的检查留在同一段里，失败时说不清是哪一页坏的。
  */
-async function checkBooks(window: BrowserWindow, ctx: ShowcaseTargets | null): Promise<StepResult> {
+async function checkBooks(window: BrowserWindow): Promise<StepResult> {
   const route = '#/books'
-  /** 书籍详情页那一段的实测结论，拼进结果里 */
-  let detailNote = '书籍详情页未覆盖（本轮没有拿到书名上下文）'
 
   try {
     // HashRouter 认的是 hash，直接改它相当于点了一次链接
@@ -4512,121 +4878,1015 @@ async function checkBooks(window: BrowserWindow, ctx: ShowcaseTargets | null): P
       problems.push('书籍管理：「新建书籍」图标按钮悬浮后没有任何提示文案')
     }
 
-    /*
-     * 顺带把**书籍详情页**也走一遍。
-     *
-     * 这一页此前在冒烟里完全没有覆盖（只能从书架的「打开」进，没有可直接点到的
-     * 路由），而它是全应用唯一**把标题显示出来**的一页（用户 2026-09-20：
-     * 「书籍详情页需要显示书籍名称，原标题的位置应该显示书籍名称」）。
-     * 判断依据不是「哪一页更特殊」，而是这个字符串是不是内容：模块页的标题是
-     * 导航标签（内容已经说明了自己），这一页的标题是**书名** —— 它是这本书的
-     * 身份，页面里没有别处写着它。
-     *
-     * 等待判据用的是书名而不是「hash 变了」：改 hash 是同步的，React 还停在
-     * 上一页时 `pageTitle` 里是「书籍管理」—— 拿非空当判据会立刻通过，
-     * 断言看着全绿而读的其实是上一页。
-     */
-    if (ctx !== null && ctx.bookId > 0 && ctx.bookTitle.length > 0) {
-      const detailRoute = `#/books/${ctx.bookId}`
-      await window.webContents.executeJavaScript(
-        `(() => { location.hash = ${JSON.stringify(detailRoute)}; return true })()`
-      )
-      const detail = await readRouteState(
-        window,
-        (state) => state.hash === detailRoute && state.pageTitle === ctx.bookTitle
-      )
-
-      if (detail.hash !== detailRoute) {
-        problems.push(`进入书籍详情页失败（hash 停在 ${detail.hash || '空'}）`)
-      } else if (detail.pageTitle !== ctx.bookTitle) {
-        problems.push(
-          `书籍详情页读到的页面标识是「${detail.pageTitle}」（应为书名「${ctx.bookTitle}」）—— 标题元素丢了，读屏会读不出这是哪本书`
-        )
-      } else {
-        /*
-         * 书名必须**显示在画面上、且在操作按钮左侧**。
-         *
-         * 这一条是上一版断言的反转：上一版认为书名只该做隐藏锚点，需求翻过来
-         * 之后旧断言不能直接删 —— 删了就没人拦得住它被改回隐藏。反向那一条
-         * （模块页不得显示标题）仍由首页与模块往返那两步守着，两边都有断言。
-         *
-         * 只断 `titleVisible` 不够：标题被挪到页面底部另起一行、或塞到按钮右边，
-         * 存在性断言照样全绿，但「原标题的位置」已经不成立。所以量的是
-         * 同一行（top 接近）且书名在左、操作区在右。
-         */
-        if (!detail.titleVisible) {
-          problems.push(
-            '书籍详情页没有显示书名 —— 这一页的标题是内容（书名），不属于「页标题不展示」的范围'
-          )
-        } else if (detail.actionsLeft >= 0 && detail.titleLeft >= detail.actionsLeft) {
-          problems.push(
-            `书籍详情页的书名没有排在操作按钮左侧（标题 left=${detail.titleLeft}，操作区 left=${detail.actionsLeft}）—— 它应当仍在原来那一行的左端`
-          )
-        } else if (detail.actionsTop >= 0 && Math.abs(detail.titleTop - detail.actionsTop) > 8) {
-          problems.push(
-            `书籍详情页的书名与操作按钮不在同一行（top ${detail.titleTop} vs ${detail.actionsTop}）`
-          )
-        }
-        if (detail.emptyHeaderRows > 0) {
-          problems.push(`书籍详情页有 ${detail.emptyHeaderRows} 行只剩外壳的标题行，会在页顶撑出空白`)
-        }
-
-        /* 概览四张卡必须等高。
-         *
-         * 这是用户 2026-09-20 亲眼看出来的那个问题：「上方的四个并排卡片没有
-         * 高度对齐」。实测过三种高度（78.5 / 78.5 / 93 / 90px）—— 而四张卡
-         * 都在、内容都对、点着都有反应，所有「存在性」断言全绿。
-         * 这类「卡片不齐」的毛病只有量盒子才看得见，所以这里量到底。 */
-        problems.push(...checkCardRows(detail.cardRows, '书籍详情页', CARD_ROWS_MIN['book-detail'] ?? 0))
-
-        /* 四枚操作按钮逐个点名（用户 2026-09-20：「书籍详情页…的图标也要跟着改」）。
-         *
-         * 这一页是本轮改造里最值得单独看的一页：它是全应用唯一**同行里同时**
-         * 有可见标题（书名）与操作按钮的地方，而且改造前那四枚是四个带文字的
-         * 按钮、一共 400px 宽。文字移走之后要保证三件事同时成立：
-         * 圆钮都在（没被顺手删）、label 与按钮一一对应（没有复制粘贴错）、
-         * 书名还在它们左边（书名没被挤到换行）。前两条在这里，第三条在上面。 */
-        problems.push(...checkIconButtons(detail.iconButtons, '书籍详情页'))
-        for (const action of BOOK_DETAIL_ACTIONS) {
-          const found = detail.iconButtons.find((item) => item.testId === action.testId)
-          if (!found) {
-            problems.push(
-              `书籍详情页少了「${action.label}」按钮（[${action.testId}]）—— 把文字移进提示时最容易连按钮一起删掉`
-            )
-          } else if (found.label !== action.label) {
-            problems.push(
-              `书籍详情页 [${action.testId}] 的提示文案是「${found.label}」，应为「${action.label}」`
-            )
-          }
-        }
-
-        detailNote = `书籍详情页书名「${detail.pageTitle}」显示在标题位（可见、在操作按钮左侧 ${
-          detail.actionsLeft - detail.titleLeft
-        }px，同一行 top 差 ${Math.abs(detail.titleTop - detail.actionsTop)}px），头部 ${
-          detail.iconButtons.length
-        } 枚圆形图标按钮（${detail.iconButtons
-          .map((item) => item.width)
-          .join('/')}px，全部无文字、提示文案齐全），概览 ${
-          detail.cardRows.find((row) => row.name === '书籍概览')?.boxes.length ?? 0
-        } 张卡实测高 ${detail.cardRows
-          .find((row) => row.name === '书籍概览')
-          ?.boxes.map((box) => box.cardHeight)
-          .join(' / ')}px（等高）`
-        await captureIfRequested(window, 'book-detail')
-      }
-    }
-
     return {
       name: '书籍管理',
       ok: problems.length === 0,
       detail:
         problems.length === 0
-          ? `进入 ${route}，标题「${snap.title}」，书架渲染 ${snap.cards} 本书，新建按钮为 ${snap.addButton.width}px 正圆图标（圆角 ${snap.addButton.radiusPx}px）且在搜索框左侧 ${snap.addButton.gapToSearch}px，悬浮提示「${tip}」；${detailNote}`
-          : `${problems.join('；')}｜实测：hash=${snap.hash}，标题「${snap.title}」，书籍卡片=${snap.cards}，新建按钮文字「${snap.addButton.text}」间距=${snap.addButton.gapToSearch} 中线差=${snap.addButton.centerOffset} 在工具栏=${snap.addButton.inToolbar} 尺寸=${snap.addButton.width}×${snap.addButton.height} 圆角=${snap.addButton.radiusPx}；${detailNote}`
+          ? `进入 ${route}，标题「${snap.title}」，书架渲染 ${snap.cards} 本书，新建按钮为 ${snap.addButton.width}px 正圆图标（圆角 ${snap.addButton.radiusPx}px）且在搜索框左侧 ${snap.addButton.gapToSearch}px，悬浮提示「${tip}」`
+          : `${problems.join('；')}｜实测：hash=${snap.hash}，标题「${snap.title}」，书籍卡片=${snap.cards}，新建按钮文字「${snap.addButton.text}」间距=${snap.addButton.gapToSearch} 中线差=${snap.addButton.centerOffset} 在工具栏=${snap.addButton.inToolbar} 尺寸=${snap.addButton.width}×${snap.addButton.height} 圆角=${snap.addButton.radiusPx}`
     }
   } catch (error) {
     return { name: '书籍管理', ok: false, detail: messageOf(error) }
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * 「打开一本书」= 正文编辑页
+ *
+ * 用户 2026-09-20：「这个页面的功能完全不正确，新建书籍并且打开书籍之后
+ * 应该是正文编辑页，不应该出现这个统计界面，而且卷和章节还分开了。
+ * 打开书籍后直接就是正文编辑界面，左侧可以新建卷和章节，底部才是统计信息
+ * 该出现的地方。」
+ *
+ * 落点的改变是这一条的核心，也正因为它只是一次路由跳转，**所有「元素在不在」
+ * 的断言都拦不住它退回去**：把 `/books/:bookId` 改回旧的那张统计页，
+ * 编辑器本身一切正常、书架也一切正常，全部断言照样全绿。
+ * 所以这里断的是三件事，缺一不可：
+ *   ① 打开一本书之后，**hash 落在具体某一章上**（而不是停在书本身）；
+ *   ② 那一刻页面上是编辑器的三件套（顶栏 / 左侧目录 / 底栏），
+ *      且**旧统计页的三件标志物一件都不在**；
+ *   ③ 底栏右端那组「全书」统计与库里的数（主进程现算）逐项相等。
+ *
+ * 空书（一章都没有）另有一段：它必须**留在原地**显示编辑器空态，
+ * 而不是把用户弹走 —— 那正是用户截图里那本书的样子。
+ * ------------------------------------------------------------------ */
+
+interface WorkspaceSnapshot {
+  hash: string
+  hasEditorPage: boolean
+  hasCatalog: boolean
+  hasStatusbar: boolean
+  /** 正文上方的章节标题输入框。空书里必须没有它 */
+  hasTitleInput: boolean
+  /**
+   * 顶栏显示的书名。
+   *
+   * 存在的唯一理由是**当路由判据用**：`location.hash` 是同步改掉的，
+   * React 还停在上一本书的界面上时它已经是新值了。只等 hash 会读到
+   * 「上一本书的页面 + 新书的地址」，于是所有针对空书的断言都变成在量
+   * 上一本有章节的书 —— 报出来的却是「空书里怎么什么都有」。
+   */
+  bookTitle: string
+  /** 空状态区块的 `data-empty-zone`（没有就是空串）。空书必须挂着它 */
+  emptyZone: string
+  /** 顶栏里那几枚圆形图标按钮的锚点，用来核对「哪几枚在」 */
+  topBarButtons: string[]
+  /**
+   * 锚点清单里每一枚顶栏按钮的**逐项体检**。
+   *
+   * `topBarButtons` 只回答「哪几枚挂着形状类」，一旦某枚被浮层组件换掉了
+   * className（2026-09-20 真踩到：`Dropdown` 会把 `className` 注入子元素，
+   * 而 `IconButton` 原先把类名写在自己内部、`child.props.className` 是
+   * undefined，于是一条 `app-icon-button` 被整条换掉），那枚按钮就从
+   * `topBarButtons` 里静悄悄地消失 —— 报出来只是一句「顶栏少了按钮」，
+   * 而它其实**就在 DOM 里、也点得动**。
+   *
+   * 所以这里额外记下「元素在不在、类名到底是什么」，失败时能一句话说清是
+   * 「真删了」还是「还在但不是那枚圆钮了」。
+   */
+  topBarButtonDetail: TopBarButtonDetail[]
+  /** 旧「书籍详情页」的三件标志物 */
+  legacyChapterTable: boolean
+  legacyOverviewCards: boolean
+  legacyVolumeCard: boolean
+  /* 底栏右端那组全书统计，取自 data-value */
+  bookVolumes: number
+  bookChapters: number
+  bookHanzi: number
+  bookProgress: number
+  /** 底栏左端那组本章统计里的「本章汉字」，同样取 data-value */
+  chapterHanzi: number
+}
+
+interface TopBarButtonDetail {
+  id: string
+  /** 元素在不在 DOM 里 */
+  present: boolean
+  /** 有没有挂上形状类 `.app-icon-button` */
+  shaped: boolean
+  /** 实测的 class 属性，用来指认被换成了什么 */
+  className: string
+}
+
+const EMPTY_WORKSPACE: WorkspaceSnapshot = {
+  hash: '',
+  hasEditorPage: false,
+  hasCatalog: false,
+  hasStatusbar: false,
+  hasTitleInput: false,
+  bookTitle: '',
+  emptyZone: '',
+  topBarButtons: [],
+  topBarButtonDetail: [],
+  legacyChapterTable: false,
+  legacyOverviewCards: false,
+  legacyVolumeCard: false,
+  bookVolumes: -1,
+  bookChapters: -1,
+  bookHanzi: -1,
+  bookProgress: -1,
+  chapterHanzi: -1
+}
+
+/**
+ * 工作台（编辑器）的实测快照。
+ *
+ * 读 `data-value` 而不是文案：底栏的数字带千分位、带「计划：剩 N」这类前缀，
+ * 拿文案去比会把「格式变了」误报成「数错了」。产品代码把原始数字另挂了一份
+ * 到 `data-value` 上（这是本项目的成例，见底栏的 `editor-hanzi`）。
+ */
+const WORKSPACE_PROBE_JS = `(() => {
+  const intOf = (testId) => {
+    const el = document.querySelector('[data-testid="' + testId + '"]')
+    const n = Number(el?.getAttribute('data-value'))
+    return Number.isFinite(n) ? n : -1
+  }
+  /*
+   * 顶栏每一枚应有按钮的逐项体检，清单从主进程传进来（同一份
+   * EDITOR_TOP_BAR_ACTIONS，不在这里再抄一遍）。选择器与 topBarButtons 同源，
+   * 所以 shaped 与「在不在那份列表里」等价 —— 多出来的是 present 与 className：
+   * 「真删了」和「还在但形状类被换掉了」是两种病，报出来的话却都是「少了按钮」。
+   */
+  const expectedBar = ${JSON.stringify(EDITOR_TOP_BAR_ACTIONS)}
+  const barDetail = expectedBar.map((id) => {
+    const el = document.querySelector('.editor-topbar [data-testid="' + id + '"]')
+    return {
+      id,
+      present: !!el,
+      shaped: !!el && el.classList.contains('app-icon-button'),
+      className: el ? el.getAttribute('class') || '' : ''
+    }
+  })
+  return {
+    hash: location.hash,
+    hasEditorPage: !!document.querySelector('.editor-page'),
+    hasCatalog: !!document.querySelector('[data-testid="chapter-catalog"]'),
+    hasStatusbar: !!document.querySelector('.editor-statusbar'),
+    hasTitleInput: !!document.querySelector('[data-testid="chapter-title-input"]'),
+    bookTitle: (document.querySelector('.editor-topbar__book')?.textContent || '').trim(),
+    emptyZone: document.querySelector('[data-empty-zone]')?.getAttribute('data-empty-zone') || '',
+    topBarButtons: Array.prototype.map.call(
+      document.querySelectorAll('.editor-topbar .app-icon-button'),
+      (el) => el.getAttribute('data-testid') || ''
+    ),
+    topBarButtonDetail: barDetail,
+    legacyChapterTable: !!document.querySelector('[data-testid="chapter-table"]'),
+    legacyOverviewCards: !!document.querySelector('[data-card-row="书籍概览"]'),
+    legacyVolumeCard: !!document.querySelector('.volume-list'),
+    bookVolumes: intOf('editor-book-volumes'),
+    bookChapters: intOf('editor-book-chapters'),
+    bookHanzi: intOf('editor-book-hanzi'),
+    bookProgress: intOf('editor-book-progress'),
+    chapterHanzi: intOf('editor-hanzi')
+  }
+})()`
+
+async function readWorkspace(
+  window: BrowserWindow,
+  done: (state: WorkspaceSnapshot) => boolean,
+  timeoutMs = 8000
+): Promise<WorkspaceSnapshot> {
+  const deadline = Date.now() + timeoutMs
+  let last = EMPTY_WORKSPACE
+
+  while (Date.now() < deadline) {
+    last = (await window.webContents.executeJavaScript(WORKSPACE_PROBE_JS)) as WorkspaceSnapshot
+    if (done(last)) return last
+    await delay(100)
+  }
+
+  return last
+}
+
+/** 直接改 hash 进某个路由（HashRouter 认的就是它，等价于点了一次链接） */
+async function gotoHash(window: BrowserWindow, hash: string): Promise<void> {
+  await window.webContents.executeJavaScript(
+    `(() => { location.hash = ${JSON.stringify(hash)}; return true })()`
+  )
+}
+
+/**
+ * 等 `location.hash` 变成某个样子。
+ *
+ * 它比 `waitForTestId` 严的地方在于**认的是整个字符串**：路由跳转常常先落一个
+ * 中间态（比如先 `#/books/3` 再由编辑器重定向到 `#/books/3/chapters/12`），
+ * 只判「开头匹配」会把中间态当成终点，后面量的就是错页面。
+ */
+async function waitForHash(
+  window: BrowserWindow,
+  done: (hash: string) => boolean,
+  timeoutMs = 4000
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs
+  let last = ''
+  while (Date.now() < deadline) {
+    last = (await window.webContents.executeJavaScript('location.hash')) as string
+    if (done(last)) return last
+    await delay(80)
+  }
+  return last
+}
+
+/**
+ * 往某个锚点对应的输入框里打字。
+ *
+ * 必须走原生 setter + 派发 input 事件：直接改 `input.value` 不会触发 React 的
+ * onChange，界面看着填进去了、state 里还是空的，提交时又变回旧值。
+ */
+async function typeIntoTestId(
+  window: BrowserWindow,
+  testId: string,
+  text: string
+): Promise<boolean> {
+  return (await window.webContents.executeJavaScript(`(() => {
+    const raw = document.querySelector('[data-testid="${testId}"]')
+    const input = raw instanceof HTMLInputElement ? raw : (raw && raw.querySelector('input'))
+    if (!input) return false
+    input.focus()
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+    setter.call(input, ${JSON.stringify(text)})
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    return true
+  })()`)) as boolean
+}
+
+/** 轮询主进程，直到按标题查得到（或查不到）某个分卷 */
+async function waitForVolume(
+  lookup: (title: string) => { id: number; title: string } | null,
+  title: string,
+  wantFound: boolean,
+  timeoutMs = 6000
+): Promise<{ id: number; title: string } | null> {
+  const deadline = Date.now() + timeoutMs
+  let last: { id: number; title: string } | null = null
+
+  while (Date.now() < deadline) {
+    last = lookup(title)
+    if ((last !== null) === wantFound) return last
+    await delay(120)
+  }
+
+  return last
+}
+
+/**
+ * 「打开一本书」的落点。
+ *
+ * 覆盖三种进入方式 + 一处底栏口径，全部走**用户真的会走的路**：
+ *   ① 直接打开一本书（`#/books/:id`，书架点卡片走的就是这条）；
+ *   ② 顶栏那枚 `…` 书籍菜单里三项都在、且行首是圆形图标；
+ *   ③ 打开一本一章都没有的书：留在编辑器空态，中央恰好一枚圆形入口；
+ *   ④ 底栏右端的「全书」统计 = 主进程现算的数。
+ */
+async function checkBookWorkspace(
+  window: BrowserWindow,
+  ctx: ShowcaseTargets
+): Promise<StepResult> {
+  const name = '打开书籍'
+  const problems: string[] = []
+  const notes: string[] = []
+
+  try {
+    /* ---------- ① 打开一本有章节的书：直接落在正文编辑页 ---------- */
+    const resumeId = ctx.resumeChapterId(ctx.bookId)
+    if (resumeId === null) {
+      return { name, ok: false, detail: '展示用书里一章都没有，无法验证「打开书籍」的落点' }
+    }
+
+    const openRoute = `#/books/${ctx.bookId}`
+    const chapterRoute = `#/books/${ctx.bookId}/chapters/${resumeId}`
+
+    await gotoHash(window, openRoute)
+    /*
+     * 判据里必须带上**书名**：`location.hash` 是同步改的，React 可能还停在
+     * 上一页 —— 那样读到的就是「上一页的 DOM + 新地址」，所有断言都在量错东西。
+     * 书名是这一页自己渲染出来的，它对了才说明这一页真的换过来了。
+     */
+    const opened = await readWorkspace(
+      window,
+      (state) =>
+        state.hash === chapterRoute &&
+        state.hasEditorPage &&
+        state.hasCatalog &&
+        state.hasTitleInput &&
+        state.bookTitle === ctx.bookTitle
+    )
+
+    if (!opened.hasEditorPage) {
+      problems.push(`打开一本书之后没有落在正文编辑页（hash=${opened.hash || '空'}）`)
+    } else if (opened.hash !== chapterRoute) {
+      problems.push(
+        `打开一本书之后停在 ${opened.hash}，应当接着上次写的那一章（${chapterRoute}）—— ` +
+          '「打开书籍」的落点是正文编辑页，不是一本书的统计页'
+      )
+    }
+    if (!opened.hasCatalog) problems.push('编辑器左侧目录栏没有渲染 —— 卷与章应当都在这一栏里')
+    if (!opened.hasStatusbar) problems.push('编辑器底栏没有渲染 —— 统计信息应当在底部')
+    if (!opened.hasTitleInput) problems.push('正文上方的章节标题输入框没有渲染')
+
+    /* 旧统计页的三件标志物：任何一件出现都说明那一页又回来了 */
+    if (opened.legacyChapterTable || opened.legacyOverviewCards || opened.legacyVolumeCard) {
+      problems.push(
+        `打开一本书又出现了统计界面（${
+          [
+            opened.legacyChapterTable ? '章节表格' : '',
+            opened.legacyOverviewCards ? '概览卡' : '',
+            opened.legacyVolumeCard ? '分卷卡片列表' : ''
+          ]
+            .filter((item) => item.length > 0)
+            .join(' / ')
+        }）—— 用户 2026-09-20：「不应该出现这个统计界面，而且卷和章节还分开了」`
+      )
+    }
+
+    /* ---------- ② 顶栏：六枚圆钮齐备，且**还是圆钮** ---------- */
+    //
+    // 走 `topBarButtonDetail` 而不是 `topBarButtons.includes(id)`：后者只能
+    // 说出「少了按钮」，分不清「真删了」与「还在但形状类被浮层组件换掉了」
+    // （2026-09-20 的 `editor-book-menu` 就是后者 —— 它一直在 DOM 里、点得动、
+    // 菜单也打得开，所以「按钮在不在」「菜单项在不在」这类断言全绿，
+    // 只有按类采的探针看得见它已经不是一枚正圆按钮了）。
+    const missingButtons = opened.topBarButtonDetail.filter((item) => !item.shaped)
+    for (const item of missingButtons) {
+      if (!item.present) {
+        problems.push(`有章节的编辑器顶栏少了 [${item.id}] 按钮`)
+        continue
+      }
+      problems.push(
+        `有章节的编辑器顶栏的 [${item.id}] 按钮没有 .app-icon-button 类（实测 class="${item.className}"）` +
+          '—— 它还在 DOM 里、也点得动，但已经不再是一枚圆钮。' +
+          '最常见成因：浮层组件（Dropdown / Popconfirm / Tooltip）会把自己的 className' +
+          '注入被包裹的子元素，而组件内部又自己生成类名，两边一叠加就把形状类整条换掉了（见 IconButton）'
+      )
+    }
+
+    /* ---------- ③ 底栏的全书统计 = 主进程现算的数 ---------- */
+    const totals = ctx.bookTotals(ctx.bookId)
+    if (opened.bookVolumes !== totals.volumes) {
+      problems.push(`底栏「分卷」显示 ${opened.bookVolumes}，库里有 ${totals.volumes} 卷`)
+    }
+    if (opened.bookChapters !== totals.chapters) {
+      problems.push(`底栏「章节」显示 ${opened.bookChapters}，库里有 ${totals.chapters} 章`)
+    }
+    if (opened.bookHanzi !== totals.hanzi) {
+      problems.push(
+        `底栏「全书」显示 ${opened.bookHanzi} 汉字，库里各章合计 ${totals.hanzi} —— ` +
+          '这个数必须按章节现算，读书籍列表项里的缓存聚合就会是旧值'
+      )
+    }
+    if (opened.chapterHanzi !== totals.hanzi && totals.chapters === 1) {
+      // 只有一章时「本章」与「全书」必然相等。多章时两者本就不同，
+      // 所以只在单章这一种情形下额外核对一次口径是否同源
+      problems.push(
+        `这本书只有一章，底栏「本章」${opened.chapterHanzi} 与「全书」${totals.hanzi} 却不相等`
+      )
+    }
+
+    await captureIfRequested(window, 'book-workspace')
+
+    /* ---------- ④ 顶栏 `…` 书籍菜单：三项都在，行首是圆形图标 ---------- */
+    const menu = await openMenu(window, 'editor-book-menu', BOOK_MENU_ITEMS)
+    for (const def of BOOK_MENU_ITEMS) {
+      const item = menu.items.find((entry) => entry.key === def.key)
+      if (!item || !item.found || !item.visible) {
+        problems.push(`书籍菜单里没有「${def.name}」（[${def.testId}]）`)
+        continue
+      }
+      if (item.text.length === 0) {
+        problems.push(`书籍菜单的「${def.name}」一行没有任何文字`)
+      }
+      if (item.iconWidth <= 0 || item.iconWidth !== item.iconHeight) {
+        problems.push(
+          `书籍菜单的「${def.name}」行首图标不是正方形（${item.iconWidth}×${item.iconHeight}）`
+        )
+      } else if (Math.abs(item.iconRadiusPx - item.iconWidth / 2) > 1) {
+        problems.push(
+          `书籍菜单的「${def.name}」行首图标不是正圆（宽 ${item.iconWidth}px，圆角 ${item.iconRadiusPx}px）`
+        )
+      }
+    }
+    /*
+     * 截图之前再读一次菜单 —— 这张图的**标签就写着「菜单展开的样子」**，
+     * 如果拍的时候菜单已经合上，图里就什么都没有，而所有断言照样全绿
+     * （菜单项的文字与圆形图标在前一步已经量过了）。这正是本项目一直在防的
+     * 「断言全绿、图是坏的」：图是给人看的，它坏掉时没有任何断言会响。
+     *
+     * 判读必须是**等待式**的而不是单次读：后台窗口里合成器被节流，浮层的
+     * 进退场帧不按 16ms 推进，单次读会撞上「关闭帧」—— 实测就是循环里读到的
+     * 是开的、紧接着单次一读是关的、再隔 120ms 一读又是开的（浮层在稳定之前
+     * 会闪）。所以这里等「连续若干次读都开着」才认账，拍完再复核一次，
+     * 撞上关闭帧就等它再开、重拍，至多三次。
+     */
+    await captureMenuOpen(window, 'book-menu', 'editor-book-menu', BOOK_MENU_ITEMS)
+    await closeMenu(window, BOOK_MENU_ITEMS)
+
+    if (problems.length === 0) {
+      notes.push(
+        `打开《${ctx.bookTitle}》直落那一章（${chapterRoute}），顶栏 ${
+          opened.topBarButtons.length
+        } 枚圆钮、` +
+          `底栏全书 ${totals.chapters} 章 / ${totals.hanzi} 汉字（与库一致），` +
+          `书籍菜单三项（${BOOK_MENU_ITEMS.map((def) => def.name).join(' / ')}）行首均为正圆图标`
+      )
+    }
+
+    /* ---------- ⑤ 打开一本空书：留在编辑器空态 ---------- */
+    const emptyRoute = `#/books/${ctx.emptyBookId}`
+    await gotoHash(window, emptyRoute)
+    /*
+     * 空书这一段的判据更要紧：这一页**留在原地**，hash 从改的那一刻起就是
+     * `${emptyRoute}`，而上一本书的编辑器还挂在那儿。所以必须等到「书名换成
+     * 这本空书」+「正文区没有标题输入框」+「空状态区块挂上来了」三件事同时
+     * 成立 —— 只等 hash 的话，下面每一条断言量的都是上一本书。
+     */
+    const empty = await readWorkspace(
+      window,
+      (state) =>
+        state.hash === emptyRoute &&
+        state.hasEditorPage &&
+        state.hasCatalog &&
+        state.bookTitle === ctx.emptyBookTitle &&
+        !state.hasTitleInput &&
+        state.emptyZone === 'editor-book',
+      12_000
+    )
+
+    if (empty.hash !== emptyRoute) {
+      problems.push(
+        `打开一本还没有章节的书之后跳到了 ${empty.hash}，应当留在 ${emptyRoute} —— ` +
+          '空书没有可跳的目标，页面自己停住才是对的'
+      )
+    }
+    if (!empty.hasEditorPage || !empty.hasCatalog || !empty.hasStatusbar) {
+      problems.push('空书的页面上缺了编辑器的框架（顶栏 / 左侧目录 / 底栏之一）')
+    }
+    if (empty.bookTitle !== ctx.emptyBookTitle) {
+      problems.push(
+        `空书页顶栏显示的书名是「${empty.bookTitle}」，应为「${ctx.emptyBookTitle}」`
+      )
+    }
+    if (empty.hasTitleInput) {
+      problems.push('空书里出现了章节标题输入框 —— 没有任何章节时它不是有效的输入')
+    }
+    if (empty.bookChapters !== 0 || empty.bookHanzi !== 0 || empty.bookVolumes !== 0) {
+      problems.push(
+        `空书的底栏统计应为 0，实测 分卷 ${empty.bookVolumes} / 章节 ${empty.bookChapters} / 全书 ${empty.bookHanzi}`
+      )
+    }
+    if (empty.chapterHanzi !== -1) {
+      problems.push('空书里出现了「本章」字数 —— 没有章节时左端那三项都不该在')
+    }
+    // 空书里顶栏只该剩两枚：返回书架 + 书籍菜单。查找 / 取名 / 专注 / 导出
+    // 都要有正文才谈得上，摆着只是四个点了没反应的圆球。
+    const expectedEmptyBar = ['editor-back', 'editor-book-menu']
+    const extraEmptyButtons = empty.topBarButtons.filter(
+      (id) => !expectedEmptyBar.includes(id)
+    )
+    if (extraEmptyButtons.length > 0) {
+      problems.push(
+        `空书的顶栏多出了 ${extraEmptyButtons.join(' / ')} —— 没有正文时这些操作无从谈起`
+      )
+    }
+    for (const id of expectedEmptyBar) {
+      // 与 ② 同一条道理：分不清「删了」和「还在但不是圆钮了」的断言等于没测
+      const item = empty.topBarButtonDetail.find((entry) => entry.id === id)
+      if (item?.shaped) continue
+      if (item?.present) {
+        problems.push(
+          `空书顶栏的 [${id}] 按钮没有 .app-icon-button 类（实测 class="${item.className}"）—— 它在 DOM 里，但不是一枚圆钮`
+        )
+      } else {
+        problems.push(`空书的顶栏少了 [${id}]`)
+      }
+    }
+
+    /* 空态区块本身：外观规矩与首页、书架页共用同一份（见 checkEmptyZones） */
+    const emptyState = await readRouteState(window, (state) => state.emptyZones.length > 0)
+    if (emptyState.emptyZones.length === 0) {
+      problems.push('空书里没有任何空状态区块 —— 用户会看到一个什么都没有的页面，无处可点')
+    } else {
+      problems.push(...checkEmptyZones(emptyState.emptyZones, '空书编辑器'))
+    }
+    problems.push(...checkIconButtons(emptyState.iconButtons, '空书编辑器'))
+    if (emptyState.duplicateButtonTestIds.length > 0) {
+      problems.push(
+        `空书编辑器里有重复的按钮锚点：${emptyState.duplicateButtonTestIds.join('、')}`
+      )
+    }
+
+    await captureIfRequested(window, 'book-empty')
+
+    if (problems.length === 0) {
+      notes.push(
+        `空书《${ctx.emptyBookTitle}》留在 ${emptyRoute}，` +
+          `顶栏仅 ${empty.topBarButtons.length} 枚圆钮（返回书架 + 书籍菜单），` +
+          `中央空态 ${emptyState.emptyZones.length} 个区块、恰好一枚圆形新建入口`
+      )
+    }
+
+    return {
+      name,
+      ok: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? notes.join('；')
+          : `${problems.join('；')}｜实测：开书后 hash=${opened.hash}，编辑器=${
+              opened.hasEditorPage ? '在' : '不在'
+            }，目录=${opened.hasCatalog ? '在' : '不在'}，底栏=${opened.hasStatusbar ? '在' : '不在'}，` +
+            `顶栏按钮=[${opened.topBarButtons.join(',')}]，底栏全书=${opened.bookVolumes}/${opened.bookChapters}/${opened.bookHanzi}（库 ${totals.volumes}/${totals.chapters}/${totals.hanzi}），` +
+            `空书 hash=${empty.hash}，空书顶栏=[${empty.topBarButtons.join(',')}]，空书状态区块=${emptyState.emptyZones.length}`
+    }
+  } catch (error) {
+    return { name, ok: false, detail: messageOf(error) }
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 左侧目录栏的卷管理
+ *
+ * 用户 2026-09-20：「左侧可以新建卷和章节」。在「书籍详情页」被取消之前，
+ * 目录栏的「新建卷」是一句**谎话**：它只弹一条「请先在书籍详情页创建分卷」，
+ * 然后把用户送去那一页。而那一页已经不存在了 —— 所以这一段必须落到库里验证，
+ * 只断「点了有反应」是测不出这个 bug 的（它"有反应"，只是没建出任何东西）。
+ *
+ * 三条路径逐个走完：建卷 → 改名 → 删除，每一步都回主进程按标题读库。
+ * ------------------------------------------------------------------ */
+
+const VOLUME_MENU_ITEMS = [
+  'catalog-volume-menu-rename',
+  'catalog-volume-menu-up',
+  'catalog-volume-menu-down',
+  'catalog-volume-menu-export',
+  'catalog-volume-menu-remove'
+] as const
+
+async function checkCatalogVolumeMenu(
+  window: BrowserWindow,
+  ctx: ShowcaseTargets
+): Promise<StepResult> {
+  const name = '左侧目录建卷'
+  const problems: string[] = []
+  const createdTitle = `冒烟-空卷-${STAMP}`
+  const renamedTitle = `冒烟-空卷改名-${STAMP}`
+
+  try {
+    await gotoHash(window, `#/books/${ctx.bookId}/chapters/${ctx.chapterId}`)
+    const editor = await waitForEditor(window)
+    if (!editor.mounted || !editor.hasCatalog) {
+      return {
+        name,
+        ok: false,
+        detail: '当前不在带左侧目录的编辑器页面上，无法验证分卷管理'
+      }
+    }
+
+    /* ---------- ① 新建分卷：弹窗提交，真的落库 ---------- */
+    if (!(await clickTestId(window, 'catalog-new-volume'))) {
+      problems.push('点不到目录栏头部的「新建卷」按钮')
+    } else if (!(await waitForTestId(window, 'volume-title-input', 3000))) {
+      problems.push('点了「新建分卷」但弹窗没有打开（找不到名称输入框）')
+    } else if (!(await typeIntoTestId(window, 'volume-title-input', createdTitle))) {
+      problems.push('填不进分卷弹窗的名称输入框')
+    } else if (!(await clickTestId(window, 'volume-modal-ok'))) {
+      problems.push('点不到分卷弹窗的确认按钮')
+    }
+
+    const created = await waitForVolume(ctx.lookupVolume, createdTitle, true)
+    if (created === null) {
+      return {
+        name,
+        ok: false,
+        detail: `在分卷弹窗里新建「${createdTitle}」，但库里查不到它 —— 「新建分卷」没有真的写库`
+      }
+    }
+
+    /*
+     * 空卷也要在目录树里站住一行（用户 2026-09-20：「无论卷中有没有章节都要
+     * 显示」）。刚建好的卷必然是 0 章 —— 这时目录里必须有它这一组；
+     * 章节列表为空时整个目录落进空状态、连卷一起吞掉的旧毛病在这里拦住。
+     */
+    const emptyGroupShown = await window.webContents.executeJavaScript(
+      `(() => {
+        const group = document.querySelector(
+          '[data-testid="catalog-volume-group"][data-volume-id="' + ${JSON.stringify(created.id)} + '"]'
+        )
+        const row = group ? group.querySelector('[data-testid="catalog-volume"]') : null
+        return {
+          group: !!group,
+          title: (row?.querySelector('.catalog__volume-title')?.textContent || '').trim(),
+          count: (row?.querySelector('.catalog__count')?.textContent || '').trim()
+        }
+      })()`
+    ) as { group: boolean; title: string; count: string }
+    if (!emptyGroupShown.group) {
+      problems.push(`新卷「${createdTitle}」一章都没有，目录树里却没有它的行 —— 空卷被吞掉了`)
+    } else if (emptyGroupShown.title !== createdTitle || emptyGroupShown.count !== '0') {
+      problems.push(
+        `空卷行显示异常：应为「${createdTitle} · 0」，实际是「${emptyGroupShown.title} · ${emptyGroupShown.count}」`
+      )
+    }
+
+    /* ---------- ② 右键菜单：五项都在 ---------- */
+    const openedMenu = await openVolumeMenu(window, created.id)
+    if (!openedMenu.open) {
+      problems.push('在分卷行上右键没有弹出菜单')
+    } else {
+      const missing = VOLUME_MENU_ITEMS.filter((id) => !openedMenu.items.includes(id))
+      if (missing.length > 0) {
+        problems.push(`分卷右键菜单里少了：${missing.join(' / ')}`)
+      }
+    }
+    if (problems.length > 0) {
+      return { name, ok: false, detail: problems.join('；') }
+    }
+
+    /* ---------- ③ 改名：编辑弹窗，改的是库里的那一行 ---------- */
+    if (!(await clickMenuItem(window, 'catalog-volume-menu-rename'))) {
+      problems.push('点不到分卷菜单里的「编辑分卷」')
+    } else {
+      const modalShown = await waitForTestId(window, 'volume-title-input', 3000)
+      if (!modalShown) {
+        problems.push('点了「编辑分卷」但弹窗没有打开')
+      } else if (!(await typeIntoTestId(window, 'volume-title-input', renamedTitle))) {
+        problems.push('填不进编辑弹窗的名称输入框')
+      } else if (!(await clickTestId(window, 'volume-modal-ok'))) {
+        problems.push('点不到编辑弹窗的确认按钮')
+      }
+
+      const renamed = await waitForVolume(ctx.lookupVolume, renamedTitle, true)
+      if (renamed === null) {
+        problems.push(`分卷改名后库里仍然没有「${renamedTitle}」`)
+      } else {
+        const stale = ctx.lookupVolume(createdTitle)
+        if (stale !== null) {
+          problems.push(`改名后「${createdTitle}」还在库里 —— 改名应当改掉原来那一行，而不是新建一行`)
+        }
+      }
+
+      /* ---------- ④ 删除：回库确认它真的没了 ---------- */
+      const target = renamed ?? created
+      const menuAgain = await openVolumeMenu(window, target.id)
+      if (!menuAgain.open) {
+        problems.push('改完名后再右键，菜单没有弹出来')
+      } else if (!(await clickMenuItem(window, 'catalog-volume-menu-remove'))) {
+        problems.push('点不到分卷菜单里的「删除分卷」')
+      } else if (!(await clickConfirmOk(window))) {
+        problems.push('「删除分卷」没有弹出二次确认（或确认按钮点不到）')
+      } else {
+        const gone = await waitForVolume(ctx.lookupVolume, renamedTitle, false)
+        if (gone !== null) {
+          problems.push(`确认删除之后，库里还能查到分卷「${renamedTitle}」`)
+        }
+      }
+    }
+
+    return {
+      name,
+      ok: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? `目录栏头部「新建卷」按钮 → 弹窗提交 → 库中出现「${createdTitle}」且空卷在目录树里占一行；右键该卷 → 菜单五项齐备 → 编辑弹窗改名为「${renamedTitle}」（旧名已不在库中）→ 二次确认后删除（库中查不到）`
+          : problems.join('；')
+    }
+  } catch (error) {
+    return { name, ok: false, detail: messageOf(error) }
+  }
+}
+
+interface ReturnTicketSnapshot {
+  present: boolean
+  /** 还带着 `.app-icon-button` 这个形状类 */
+  shaped: boolean
+  className: string
+  width: number
+  height: number
+  radiusPx: number
+  /** `aria-label` —— 图标按钮唯一的说明渠道 */
+  label: string
+  /** 悬浮按钮不在布局流里，跑到视口之外不会被挤回来，得单独量 */
+  inViewport: boolean
+  bottom: number
+  viewportHeight: number
+}
+
+const EMPTY_RETURN_TICKET: ReturnTicketSnapshot = {
+  present: false,
+  shaped: false,
+  className: '',
+  width: 0,
+  height: 0,
+  radiusPx: 0,
+  label: '',
+  inViewport: false,
+  bottom: 0,
+  viewportHeight: 0
+}
+
+const RETURN_TICKET_PROBE_JS = `(() => {
+  const el = document.querySelector('[data-testid="return-to-origin"]')
+  if (!el) {
+    return ${JSON.stringify(EMPTY_RETURN_TICKET)}
+  }
+  const rect = el.getBoundingClientRect()
+  const rawRadius = getComputedStyle(el).borderTopLeftRadius
+  return {
+    present: true,
+    shaped: el.classList.contains('app-icon-button'),
+    className: typeof el.className === 'string' ? el.className : '',
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+    // border-radius 写成 50% 时 computedStyle 原样返回 "50%"，parseFloat 会
+    // 得到 50 这个「像素数」—— 必须按宽度折算，否则正圆会被判成不是圆
+    radiusPx: String(rawRadius).trim().endsWith('%')
+      ? Math.round((rect.width * parseFloat(rawRadius)) / 100)
+      : Math.round(parseFloat(rawRadius)),
+    label: el.getAttribute('aria-label') || '',
+    inViewport:
+      rect.top >= 0 &&
+      rect.left >= 0 &&
+      rect.bottom <= window.innerHeight &&
+      rect.right <= window.innerWidth,
+    bottom: Math.round(rect.bottom),
+    viewportHeight: window.innerHeight
+  }
+})()`
+
+/**
+ * 「临时外出」的回程票。
+ *
+ * 用户 2026-09-20：「在正文编辑的时候，点击『大纲』和『卡片』菜单按钮跳转
+ * 界面之后就回不来了，没有回到正文编辑窗口的入口。」
+ *
+ * 这一条断的是**回程**，不是「跳过去」—— 跳过去从来没坏过，坏的是过去了
+ * 就回不来。所以它走完整的一趟：编辑器 → 大纲 → 点回程票 → **必须回到
+ * 同一章**（不是首页、不是书架）。顺带再走一趟卡片库，因为两个入口是同一
+ * 段代码生成的、却各自指向不同的模块 —— 只验一个的话，另一个照样是死胡同。
+ *
+ * 反向那条同样要紧：从首页正常进模块时，这枚按钮**必须不存在**。
+ * 它是「外出的回程票」而不是常驻导航，摆得到处都是就又变回一条常驻导航栏 ——
+ * 那正是上一轮刚拆掉的东西。
+ */
+async function checkOriginReturn(window: BrowserWindow, ctx: ShowcaseTargets): Promise<StepResult> {
+  const name = '外出后返回正文'
+  const problems: string[] = []
+
+  try {
+    const resumeId = ctx.resumeChapterId(ctx.bookId)
+    if (resumeId === null) {
+      return { name, ok: false, detail: '展示用书里一章都没有，无法验证「外出后返回」' }
+    }
+    const chapterRoute = `#/books/${ctx.bookId}/chapters/${resumeId}`
+
+    /* ---------- ① 两趟外出，每趟都回到同一章 ---------- */
+    for (const trip of [
+      { rail: 'rail-outline', target: '#/outline', label: '大纲' },
+      { rail: 'rail-characters', target: '#/cards', label: '角色' }
+    ]) {
+      await gotoHash(window, chapterRoute)
+      const editor = await waitForEditor(window)
+      if (!editor.mounted) {
+        problems.push(`进入编辑器失败，无法验证「${trip.label}」的回程（hash=${editor.hash}）`)
+        continue
+      }
+
+      if (!(await clickTestId(window, trip.rail))) {
+        problems.push(`点不到右侧竖栏的「${trip.label}」`)
+        continue
+      }
+
+      const arrived = await waitForHash(window, (hash) => hash.startsWith(`${trip.target}?from=`), 6000)
+      if (!arrived.startsWith(`${trip.target}?from=`)) {
+        problems.push(
+          `点「${trip.label}」之后停在 ${arrived || '(空)'}，应当是 ${trip.target}?from=… —— ` +
+            '不带来源参数就没有回程票'
+        )
+        continue
+      }
+
+      /*
+       * 等这枚按钮**渲染出来**再量它。`location.hash` 是同步改的、React 滞后一帧，
+       * 只等 hash 就读的话，量到的是「上一页的 DOM + 新地址」—— 那一刻它确实
+       * 「不存在」，报出来却像按钮被删了。
+       */
+      const ticketShown = await waitForTestId(window, 'return-to-origin', 4000)
+      const ticket = (await window.webContents.executeJavaScript(
+        RETURN_TICKET_PROBE_JS
+      )) as ReturnTicketSnapshot
+
+      if (!ticketShown || !ticket.present) {
+        problems.push(
+          `在${trip.label}页看不到「返回正文编辑」圆钮 —— 跳过去之后就回不来了（` +
+            '用户 2026-09-20 的原话：「没有回到正文编辑窗口的入口」）'
+        )
+        continue
+      }
+      if (!ticket.shaped) {
+        problems.push(`「返回正文编辑」按钮没有 .app-icon-button 类（class="${ticket.className}"）`)
+      }
+      if (ticket.width !== ticket.height || ticket.width === 0) {
+        problems.push(`「返回正文编辑」按钮不是正圆（${ticket.width}×${ticket.height}）`)
+      } else if (Math.abs(ticket.radiusPx - ticket.width / 2) > 1) {
+        problems.push(
+          `「返回正文编辑」按钮的圆角 ${ticket.radiusPx}px 不是半宽（${ticket.width / 2}px）`
+        )
+      }
+      if (ticket.label.length === 0) {
+        problems.push('「返回正文编辑」按钮没有提示文案也没有 aria-label')
+      }
+      // 悬浮按钮跑到视口之外等于没有 —— 它不在任何布局流里，不会被挤回来
+      if (!ticket.inViewport) {
+        problems.push(
+          `「返回正文编辑」按钮落在可视区之外（bottom=${ticket.bottom} / 视口高 ${ticket.viewportHeight}）`
+        )
+      }
+
+      /*
+       * 留一张「回程票长什么样」的实拍。这类悬浮按钮是**新增的界面元素**，
+       * 几何都量过了，但「它压住了什么没有、叠在返回首页上方好不好看」
+       * 只有肉眼判得出来 —— 留图至少让下一次改动有对照。
+       */
+      if (trip.rail === 'rail-outline') {
+        await captureIfRequested(window, 'origin-return')
+      }
+
+      /* 点了它必须回到**刚才那一章**，不是首页、不是书架 */
+      if (!(await clickTestId(window, 'return-to-origin'))) {
+        problems.push(`点不到「${trip.label}」页的返回按钮`)
+        continue
+      }
+      const back = await readWorkspace(
+        window,
+        (state) =>
+          state.hash === chapterRoute && state.hasEditorPage && state.bookTitle === ctx.bookTitle,
+        8000
+      )
+      if (back.hash !== chapterRoute) {
+        problems.push(
+          `从${trip.label}页点返回之后停在 ${back.hash || '(空)'}，应当回到刚才那一章 ${chapterRoute}`
+        )
+      } else if (!back.hasEditorPage) {
+        problems.push(`从${trip.label}页返回 ${chapterRoute} 之后没有渲染出正文编辑页`)
+      }
+    }
+
+    /* ---------- ② 反向：正常进模块时不该出现这枚按钮 ---------- */
+    await gotoHash(window, '#/outline')
+    const plain = await waitForHash(window, (hash) => hash === '#/outline', 6000)
+    if (plain !== '#/outline') {
+      problems.push(`直接进大纲页之后 hash 是 ${plain || '(空)'}`)
+    }
+    /*
+     * 必须等**这一页真的渲染出来**再断「没有按钮」：读得太早会读到
+     * 「还没渲染完」而不是「没有这个按钮」—— 那是一条假失败，
+     * 而假失败的结局通常是有人把它改成「等更久」甚至删掉这条断言。
+     */
+    const outlineShown = await waitForTestId(window, 'outline-page', 5000)
+    if (!outlineShown) {
+      problems.push('直接进 `#/outline` 之后大纲页没有渲染出来，无法核对「不该有回程票」')
+    }
+    await delay(300)
+    const stray = (await window.webContents.executeJavaScript(
+      RETURN_TICKET_PROBE_JS
+    )) as ReturnTicketSnapshot
+    if (stray.present) {
+      problems.push(
+        '从首页正常进大纲页也出现了「返回正文编辑」按钮 —— 它是外出的回程票，' +
+          '不是常驻导航，摆得到处都是就等于把刚拆掉的导航栏加回来'
+      )
+    }
+
+    await gotoHash(window, '#/')
+
+    return {
+      name,
+      ok: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? '编辑器右侧竖栏「大纲 / 角色」→ 目标页右下角出现 40px 正圆回程票 → 点它回到**同一章**；从首页直接进模块时不出现这枚按钮'
+          : problems.join('；')
+    }
+  } catch (error) {
+    return { name, ok: false, detail: messageOf(error) }
+  }
+}
+
+/**
+ * 「正文自动保存往返」—— 用户 2026-09-20 报的第二个问题：
+ * 「输入的时候需要添加自动保存，防止输入文字后点击到其它地方返回来后
+ * 输入的文字消失不见。」
+ *
+ * 自动保存本身一直在（2 秒防抖 + 离开页面强制落盘），真正丢字的凶手在
+ * **读取**那头：章节详情缓存是 `staleTime: Infinity`（编辑器重新挂载时直接
+ * 用缓存起稿），而保存成功后只更新了列表缓存的字数、**没更新详情缓存的正文**。
+ * 于是「输入 → 跳去别处 → 回来」读到的是这一章**第一次加载时的旧正文** ——
+ * 字已经在库里了，画面上却消失，重启应用才回来。这条路径在「外出回程票」
+ * 出现之后变得人人都会踩。
+ *
+ * 所以这一条走的是**行为的全程**：打进一段新文字 → 等到底栏真的报「已保存」
+ * → 离开 → 回来 → 刚打的那段字必须在画面上。
+ *
+ * **盲区要写在明处**（对照实验实测过）：这一步排在很多会调 `invalidateLibrary`
+ * 的检查之后，而它会把章节详情也标成过期 —— 于是「回来」时查询会重新拉库，
+ * 恰好把缓存不同步掩盖掉。把修复摘掉这条守卫照样绿。真实用户路径（写完
+ * 直接切章回看、期间没人做过任何结构性变更）不享受这层重拉，旧缓存就会
+ * 直接上屏。所以这条守卫锁的是**不变量**（保存后，无论走哪条路回来，正文都在），
+ * 而不是「能抓住缓存回归」；后者靠 code review 与上面对照实验的记录。
+ */
+async function checkEditorRoundTrip(window: BrowserWindow, ctx: ShowcaseTargets): Promise<StepResult> {
+  const name = '正文自动保存往返'
+  const problems: string[] = []
+  const stamp = `冒烟往返${STAMP}`
+
+  try {
+    const chapterRoute = `#/books/${ctx.bookId}/chapters/${ctx.chapterId}`
+    await gotoHash(window, chapterRoute)
+    const editor = await waitForEditor(window)
+    if (!editor.mounted) {
+      return { name, ok: false, detail: `进不了编辑器（hash=${editor.hash}），无法验证正文往返` }
+    }
+
+    /* ---------- ① 往正文末尾打一段新文字 ---------- */
+    const typed = (await window.webContents.executeJavaScript(
+      `(() => {
+        const content = document.querySelector('.winbook-editor__content')
+        if (!content) return false
+        content.focus()
+        const selection = window.getSelection()
+        if (!selection) return false
+        const range = document.createRange()
+        range.selectNodeContents(content)
+        range.collapse(false) /* 光标落到文档末尾 */
+        selection.removeAllRanges()
+        selection.addRange(range)
+        document.execCommand('insertText', false, ${JSON.stringify(stamp)})
+        return content.textContent.includes(${JSON.stringify(stamp)})
+      })()`
+    )) as boolean
+    if (!typed) {
+      return { name, ok: false, detail: '往正文里插不进文字，无法验证自动保存往返' }
+    }
+
+    /*
+     * 等底栏报「已保存」。防抖 2 秒 + 一次 IPC，所以要等而不是立刻读；
+     * 状态值（saved / saving / error）取自 `data-value` —— 文案里带着
+     * 「N 分钟前」这种相对时间，没法做相等匹配。
+     */
+    const saved = await waitForSaveState(window, 'saved', 10_000)
+    if (saved !== 'saved') {
+      problems.push(`打字之后 10 秒内底栏没有报「已保存」（实测状态：${saved || '无'}）`)
+    }
+
+    /* ---------- ② 离开，再回来 ---------- */
+    await gotoHash(window, '#/')
+    await waitForHash(window, (hash) => hash === '#/', 4000)
+    await gotoHash(window, chapterRoute)
+    const again = await waitForEditor(window)
+    if (!again.mounted) {
+      problems.push(`回到 ${chapterRoute} 之后编辑器没有渲染出来`)
+    } else {
+      const text = (await window.webContents.executeJavaScript(
+        `(document.querySelector('.winbook-editor__content')?.textContent || '')`
+      )) as string
+      if (!text.includes(stamp)) {
+        problems.push(
+          `输入并「已保存」后离开再回来，正文里找不到刚打的「${stamp}」—— ` +
+            '这就是用户报的「返回来后输入的文字消失不见」：字在库里，画面读的是旧缓存'
+        )
+      }
+    }
+
+    await gotoHash(window, '#/')
+
+    return {
+      name,
+      ok: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? `正文末尾输入「${stamp}」→ 底栏报「已保存」→ 离开再回来，那段字仍在画面上（保存成功后同步详情缓存，回来不再读旧正文）`
+          : problems.join('；')
+    }
+  } catch (error) {
+    return { name, ok: false, detail: messageOf(error) }
+  }
+}
+
+/** 轮询底栏保存状态的原始值（`data-value`），直到等于期望或超时 */
+async function waitForSaveState(
+  window: BrowserWindow,
+  expected: 'saved' | 'saving' | 'error',
+  timeoutMs: number
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs
+  let last = ''
+  while (Date.now() < deadline) {
+    last = (await window.webContents.executeJavaScript(
+      `document.querySelector('[data-testid="editor-save-state"]')?.getAttribute('data-value') || ''`
+    )) as string
+    if (last === expected) return last
+    await delay(120)
+  }
+  return last
 }
 
 /**
@@ -4971,6 +6231,24 @@ async function captureIfRequested(window: BrowserWindow, label: string): Promise
     const wasVisible = window.isVisible()
     await setWindowVisible(window, true)
 
+    /*
+     * 拍之前强制重绘一帧。
+     *
+     * `capturePage` 拿回的是**合成器当前那一帧**，而 `setWindowVisible` 在窗口
+     * 已经可见时是空操作（它只在「本来隐藏」时才 `showInactive` + 等 800ms）——
+     * 于是连着拍两张时，第二张可能拿回与第一张**逐字节相同**的旧帧，
+     * 中间开着的浮层（下拉菜单、右键菜单）压根没进画面。
+     * 实测过一次：`shot-book-menu.png` 与 `shot-book-workspace.png` 的 md5 完全一样，
+     * 而拍它之前刚断过「三个菜单项都可见」。
+     *
+     * 截图只是辅助手段，所以这里不改判据，只让画面真的重绘一次：
+     * 代价是每张图多等 120ms。
+     */
+    if (wasVisible) {
+      window.webContents.invalidate()
+      await delay(120)
+    }
+
     const image = await window.webContents.capturePage()
     writeFileSync(target, image.toPNG())
     const bounds = window.getBounds()
@@ -4984,6 +6262,54 @@ async function captureIfRequested(window: BrowserWindow, label: string): Promise
     // 截图只是辅助手段，失败了不该把冒烟测试带成红灯
     console.warn(`[winbook] ${label} 截图失败：`, messageOf(error))
   }
+}
+
+/**
+ * 拍一张「菜单开着」的图，并**保证图里真的有菜单**。
+ *
+ * 「拍之前菜单开着」用等待式的判读而不是单次读：后台窗口里合成器被节流，
+ * 浮层的进退场帧不按 16ms 推进，单次读会撞上「关闭帧」—— 实测顺序是
+ * 等待循环里读是开的、紧接着单次一读是关的、再过 120ms 一读又是开的
+ * （浮层在稳定之前会闪）。所以拍之前多确认一帧，拍完再复核一次；
+ * 撞上关闭帧就等它重新展开、重拍，至多三次。三次都不成再把测试带红 ——
+ * 那说明浮层真的在自行开合（真缺陷），而不是截图的问题。
+ */
+async function captureMenuOpen(
+  window: BrowserWindow,
+  label: string,
+  triggerTestId: string,
+  defs: MenuItemDefs
+): Promise<void> {
+  const configured = process.env.WINBOOK_SMOKE_CAPTURE
+  if (configured === undefined || configured.length === 0) return
+
+  const allVisible = (snapshot: MenuSnapshot): boolean =>
+    snapshot.items.every((item) => item.found && item.visible)
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const opened = await openMenu(window, triggerTestId, defs)
+    if (!allVisible(opened)) {
+      const timeline = await traceMenu(window, defs, 6, 120)
+      throw new Error(
+        `菜单（[${triggerTestId}]）在截图前一直没能稳定展开｜可见项随时间：${timeline}`
+      )
+    }
+
+    // openMenu 返回的那一刻可能正处在会闪的进退场段，隔一帧再确认一次
+    await delay(150)
+    if (!allVisible(await readMenu(window, defs))) {
+      console.warn(`[winbook] ${label} 截图前菜单闪合（第 ${attempt} 次），等它重新展开`)
+      continue
+    }
+
+    await captureIfRequested(window, label)
+
+    // 拍完复核：刚才那一帧要是又撞上关闭帧，就重拍
+    if (allVisible(await readMenu(window, defs))) return
+    console.warn(`[winbook] ${label} 截图时菜单恰好合上了（第 ${attempt} 次），重拍`)
+  }
+
+  throw new Error(`「${label}」连拍三次都没能拍到菜单展开的画面（每次拍完都复核，读到的仍是关闭帧）`)
 }
 
 /** 把标签插到扩展名之前；没有扩展名时直接追加 */
@@ -5012,6 +6338,15 @@ async function waitForEditor(
   const deadline = Date.now() + timeoutMs
   let last = EMPTY_EDITOR_SNAPSHOT
 
+  /*
+   * 「渲染齐备」的定义。
+   *
+   * 最后两条看着细，却都是被真事件逼出来的：
+   *   - 顶栏齐备（六枚圆钮）：书名与书籍菜单都要等 `useBook` 回来才渲染，
+   *     而章节详情是**另一支并行的查询**。只等正文，很容易在书还没到手时
+   *     就读到顶栏 —— 那一刻少了「书籍菜单」，报出来却是「按钮被删了」。
+   *   - 纸面有底色：纸面与面板同色那条断言读的就是这两个颜色。
+   */
   const rendered = (state: EditorSnapshot): boolean =>
     state.mounted &&
     state.hasCatalog &&
@@ -5022,7 +6357,8 @@ async function waitForEditor(
     state.catalogRows >= 1 &&
     state.proofreadCount >= 1 &&
     state.textColor.length > 0 &&
-    state.statusbarVisible
+    state.statusbarVisible &&
+    EDITOR_TOP_BAR_ACTIONS.every((id) => state.iconButtons.some((item) => item.testId === id))
 
   while (Date.now() < deadline) {
     last = (await window.webContents.executeJavaScript(EDITOR_SNAPSHOT_SCRIPT)) as EditorSnapshot
@@ -5216,12 +6552,16 @@ async function waitForTooltip(
 }
 
 /* ---------------------------------------------------------------- *
- * 顶栏「更多功能」菜单
+ * 下拉菜单项的行（圆形图标 + 两行文字）
+ *
+ * 顶栏「更多功能」与编辑器顶栏的「书籍菜单」用的是同一个形状（同一份
+ * `MenuRow` 组件、同一套 `.topbar-menu__*` 样式），所以读法与点法也只有
+ * 一份 —— 两份实现迟早会在某一次改动里只改到一半。
  * ---------------------------------------------------------------- */
 
-interface TopBarMenuSnapshot {
+interface MenuSnapshot {
   /**
-   * 菜单项，顺序与 `TOP_BAR_MENU_ITEMS` 一致。菜单没展开时每项 `found` 都是 false
+   * 菜单项，顺序与传入的清单一致。菜单没展开时每项 `found` 都是 false
    * （下拉浮层是懒渲染的，未展开时 DOM 里根本没有）。
    */
   items: Array<{
@@ -5236,16 +6576,21 @@ interface TopBarMenuSnapshot {
   }>
 }
 
-const EMPTY_TOP_BAR_MENU: TopBarMenuSnapshot = {
-  items: TOP_BAR_MENU_ITEMS.map((def) => ({
-    key: def.key,
-    found: false,
-    visible: false,
-    text: '',
-    iconWidth: -1,
-    iconHeight: -1,
-    iconRadiusPx: -1
-  }))
+/** 菜单项清单的形状：一份 key→testId 的对应表 */
+type MenuItemDefs = ReadonlyArray<{ key: string; testId: string }>
+
+function emptyMenu(defs: MenuItemDefs): MenuSnapshot {
+  return {
+    items: defs.map((def) => ({
+      key: def.key,
+      found: false,
+      visible: false,
+      text: '',
+      iconWidth: -1,
+      iconHeight: -1,
+      iconRadiusPx: -1
+    }))
+  }
 }
 
 /**
@@ -5255,9 +6600,9 @@ const EMPTY_TOP_BAR_MENU: TopBarMenuSnapshot = {
  * 用户说的是「每个菜单项对应一个圆形功能图标」，一个方形图标或干脆没有图标
  * 同样能通过存在性断言。
  */
-function readTopBarMenuScript(): string {
+function readMenuScript(defs: MenuItemDefs): string {
   return `(() => {
-  const defs = ${JSON.stringify(TOP_BAR_MENU_ITEMS.map((def) => ({ key: def.key, testId: def.testId })))}
+  const defs = ${JSON.stringify(defs.map((def) => ({ key: def.key, testId: def.testId })))}
   const circle = (el) => {
     const rect = el.getBoundingClientRect()
     const raw = window.getComputedStyle(el).borderTopLeftRadius || '0'
@@ -5288,45 +6633,84 @@ function readTopBarMenuScript(): string {
 })()`
 }
 
-async function readTopBarMenu(window: BrowserWindow): Promise<TopBarMenuSnapshot> {
+async function readMenu(window: BrowserWindow, defs: MenuItemDefs): Promise<MenuSnapshot> {
   try {
     const snapshot = (await window.webContents.executeJavaScript(
-      readTopBarMenuScript()
-    )) as TopBarMenuSnapshot
+      readMenuScript(defs)
+    )) as MenuSnapshot
     // executeJavaScript 回来的对象没有原型，用展开成新对象即可（后面只读不写）
     return { items: snapshot.items.map((item) => ({ ...item })) }
-  } catch {
-    return EMPTY_TOP_BAR_MENU
+  } catch (error) {
+    /*
+     * 别把异常吞成「读不到 = 没展开」。
+     *
+     * 这个 catch 原来是一条静默的 `return emptyMenu(defs)`，于是
+     * 「页面正在导航 / 执行上下文被销毁 / 脚本抛错」与「浮层真的没展开」
+     * 变成了同一种观测结果 —— 调用方只会看到「菜单没开」，然后往错的方向查
+     * （同类的错向失败信息见 `editor-book-menu` 那次：报「少了按钮」，
+     * 而按钮一直在 DOM 里）。
+     *
+     * 仍然是宽松的（读失败不直接把测试带红），但**留下痕迹**。
+     */
+    console.warn('[winbook] 读下拉菜单失败：', messageOf(error))
+    return emptyMenu(defs)
   }
 }
 
 /**
- * 展开顶栏「更多功能」菜单，并等到三项都真的可见。
+ * 展开一个 `MenuRow` 型菜单，并等到每一项都真的可见。
  *
  * 先把窗口显出来：隐藏窗口的合成器被节流，浮层的进退场帧可能不推进，
  * 「其实已经关了」会被读成「还开着」，于是下一次点击变成 toggle 而不是展开
  * （同类坑见「等 DOM 属性不够」那条：浮层要在可见窗口里读）。
  */
-async function openTopBarMenu(window: BrowserWindow): Promise<TopBarMenuSnapshot> {
-  const already = await readTopBarMenu(window)
+/**
+ * 把「菜单还开着没」按时间采几笔，用于失败时**说清楚它是怎么合上的**。
+ *
+ * 采的是「可见项数 / 应有项数」这条曲线：一开就合上（进场动画没过、或
+ * 读本身失败）与过一会儿才合上（有定时器把它关了）是完全不同的原因，
+ * 而单次读给出的观测结果一模一样 —— 都是「没展开」。
+ */
+async function traceMenu(
+  window: BrowserWindow,
+  defs: MenuItemDefs,
+  samples: number,
+  intervalMs: number
+): Promise<string> {
+  const points: string[] = []
+  for (let index = 0; index < samples; index += 1) {
+    if (index > 0) await delay(intervalMs)
+    const snapshot = await readMenu(window, defs)
+    const visible = snapshot.items.filter((item) => item.found && item.visible).length
+    points.push(`${index * intervalMs}ms=${visible}/${defs.length}`)
+  }
+  return points.join(' ')
+}
+
+async function openMenu(
+  window: BrowserWindow,
+  triggerTestId: string,
+  defs: MenuItemDefs
+): Promise<MenuSnapshot> {
+  const already = await readMenu(window, defs)
   if (already.items.every((item) => item.found && item.visible)) return already
 
   await setWindowVisible(window, true)
 
   const clicked = (await window.webContents.executeJavaScript(
     `(() => {
-      const el = document.querySelector('[data-testid="${TOP_BAR_MORE_ID}"]')
+      const el = document.querySelector('[data-testid="${triggerTestId}"]')
       if (!el) return false
       el.click()
       return true
     })()`
   )) as boolean
-  if (!clicked) return EMPTY_TOP_BAR_MENU
+  if (!clicked) return emptyMenu(defs)
 
   const deadline = Date.now() + 4000
-  let last = EMPTY_TOP_BAR_MENU
+  let last = emptyMenu(defs)
   while (Date.now() < deadline) {
-    last = await readTopBarMenu(window)
+    last = await readMenu(window, defs)
     if (last.items.every((item) => item.found && item.visible)) return last
     await delay(120)
   }
@@ -5334,7 +6718,7 @@ async function openTopBarMenu(window: BrowserWindow): Promise<TopBarMenuSnapshot
 }
 
 /** 关掉菜单。判据是「不再可见」而不是「从 DOM 消失」—— 离场动画里元素还在 */
-async function closeTopBarMenu(window: BrowserWindow): Promise<void> {
+async function closeMenu(window: BrowserWindow, defs: MenuItemDefs): Promise<void> {
   await window.webContents.executeJavaScript(
     `(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -5345,10 +6729,18 @@ async function closeTopBarMenu(window: BrowserWindow): Promise<void> {
 
   const deadline = Date.now() + 3000
   while (Date.now() < deadline) {
-    const snapshot = await readTopBarMenu(window)
+    const snapshot = await readMenu(window, defs)
     if (snapshot.items.every((item) => !item.visible)) return
     await delay(120)
   }
+}
+
+async function openTopBarMenu(window: BrowserWindow): Promise<MenuSnapshot> {
+  return openMenu(window, TOP_BAR_MORE_ID, TOP_BAR_MENU_ITEMS)
+}
+
+async function closeTopBarMenu(window: BrowserWindow): Promise<void> {
+  return closeMenu(window, TOP_BAR_MENU_ITEMS)
 }
 
 /** 点某个菜单项。返回是否点到了（点不到时调用方要报失败，不能静默继续） */
@@ -5781,8 +7173,8 @@ interface RenderSnapshot {
   hasTopNav: boolean
   /**
    * 页标题在画面上是否占位。**首页应当为 false** —— 首页的标题是导航标签，
-   * 已不显示（只做隐藏锚点）。唯一显示标题的是书籍详情页（书名是内容），
-   * 那一步不在这个快照里，走 checkBooks 的断言。
+   * 已不显示（只做隐藏锚点）。全应用现在都是这个规矩，没有例外：曾经显示
+   * 书名的那一页（书籍详情页）已经取消，书名改挂在编辑器顶栏上。
    */
   titleVisible: boolean
   /** 页面标题（= 窗口标题栏文字），应等于产品名 winbook */
@@ -5887,7 +7279,7 @@ const SNAPSHOT_SCRIPT = `(() => {
     .sort((a, b) => a.left - b.left)
   // 页标题是否在画面上占位。首页的标题是 sr-only（1px），这里读的是实测
   // 面积而不是类名：类名怎么改都行，「占不占纵向空间」才是事实。
-  // （书籍详情页是例外 —— 那里显示书名，由 checkBooks 单独断言。）
+  // （曾经有过唯一一个例外 —— 书籍详情页显示书名，那一页已取消。）
   const titleEl = document.querySelector('[data-testid="page-title"]')
   const titleRect = titleEl?.getBoundingClientRect()
   const titleVisible = !!titleRect && titleRect.width > 2 && titleRect.height > 2

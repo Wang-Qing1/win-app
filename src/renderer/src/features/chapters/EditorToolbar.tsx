@@ -5,9 +5,11 @@ import {
   BgColorsOutlined,
   BoldOutlined,
   ClearOutlined,
+  FontSizeOutlined,
   ItalicOutlined,
   LeftOutlined,
   OrderedListOutlined,
+  PicLeftOutlined,
   PlusOutlined,
   RedoOutlined,
   RightOutlined,
@@ -188,15 +190,24 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
           </Tooltip>
 
           {/* ---------------- 背景 ---------------- */}
+          {/* 悬浮提示说明它是什么，点击弹出的面板负责真正的内容：两层各管一件事 */}
           <Popover
             trigger="click"
             placement="bottomLeft"
             title="纸面背景"
             content={<PaperPanel prefs={prefs} onPrefsChange={onPrefsChange} />}
           >
-            <Button size="small" type="text" icon={<BgColorsOutlined />}>
-              背景
-            </Button>
+            <Tooltip title="纸面背景">
+              <Button
+                size="small"
+                type="text"
+                shape="circle"
+                icon={<BgColorsOutlined />}
+                aria-label="纸面背景"
+                data-testid="editor-paper"
+                disabled={disabled}
+              />
+            </Tooltip>
           </Popover>
 
           <Divider type="vertical" />
@@ -206,7 +217,9 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
             <Button
               size="small"
               type={editor?.isActive('bold') ? 'primary' : 'text'}
+              shape="circle"
               icon={<BoldOutlined />}
+              aria-label="加粗（Ctrl+B）"
               disabled={disabled}
               onClick={() => editor?.chain().focus().toggleBold().run()}
             />
@@ -215,7 +228,9 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
             <Button
               size="small"
               type={editor?.isActive('italic') ? 'primary' : 'text'}
+              shape="circle"
               icon={<ItalicOutlined />}
+              aria-label="斜体（Ctrl+I）"
               disabled={disabled}
               onClick={() => editor?.chain().focus().toggleItalic().run()}
             />
@@ -224,7 +239,9 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
             <Button
               size="small"
               type={editor?.isActive('underline') ? 'primary' : 'text'}
+              shape="circle"
               icon={<UnderlineOutlined />}
+              aria-label="下划线（Ctrl+U）"
               data-testid="editor-underline"
               disabled={disabled}
               onClick={() => editor?.chain().focus().toggleUnderline().run()}
@@ -234,7 +251,9 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
             <Button
               size="small"
               type={editor?.isActive('strike') ? 'primary' : 'text'}
+              shape="circle"
               icon={<StrikethroughOutlined />}
+              aria-label="删除线"
               disabled={disabled}
               onClick={() => editor?.chain().focus().toggleStrike().run()}
             />
@@ -246,27 +265,31 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
             <Button
               size="small"
               type={editor?.isActive('heading', { level: 3 }) ? 'primary' : 'text'}
+              shape="circle"
+              icon={<FontSizeOutlined />}
+              aria-label="小标题"
               disabled={disabled}
               onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
-            >
-              H
-            </Button>
+            />
           </Tooltip>
           <Tooltip title="引用段落">
             <Button
               size="small"
               type={editor?.isActive('blockquote') ? 'primary' : 'text'}
+              shape="circle"
+              icon={<PicLeftOutlined />}
+              aria-label="引用段落"
               disabled={disabled}
               onClick={() => editor?.chain().focus().toggleBlockquote().run()}
-            >
-              引
-            </Button>
+            />
           </Tooltip>
           <Tooltip title="无序列表">
             <Button
               size="small"
               type={editor?.isActive('bulletList') ? 'primary' : 'text'}
+              shape="circle"
               icon={<UnorderedListOutlined />}
+              aria-label="无序列表"
               disabled={disabled}
               onClick={() => editor?.chain().focus().toggleBulletList().run()}
             />
@@ -275,7 +298,9 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
             <Button
               size="small"
               type={editor?.isActive('orderedList') ? 'primary' : 'text'}
+              shape="circle"
               icon={<OrderedListOutlined />}
+              aria-label="有序列表"
               disabled={disabled}
               onClick={() => editor?.chain().focus().toggleOrderedList().run()}
             />
@@ -287,7 +312,9 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
             <Button
               size="small"
               type="text"
+              shape="circle"
               icon={<UndoOutlined />}
+              aria-label="撤销（Ctrl+Z）"
               disabled={disabled || !editor?.can().undo()}
               onClick={() => editor?.chain().focus().undo().run()}
             />
@@ -296,7 +323,9 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
             <Button
               size="small"
               type="text"
+              shape="circle"
               icon={<RedoOutlined />}
+              aria-label="重做（Ctrl+Shift+Z）"
               disabled={disabled || !editor?.can().redo()}
               onClick={() => editor?.chain().focus().redo().run()}
             />
@@ -309,13 +338,13 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
             <Button
               size="small"
               type="text"
+              shape="circle"
               icon={<ClearOutlined />}
+              aria-label="整理格式"
               data-testid="editor-tidy"
               disabled={disabled}
               onClick={handleTidy}
-            >
-              整理格式
-            </Button>
+            />
           </Tooltip>
 
           <Popover
@@ -324,9 +353,17 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
             title="排版"
             content={<LayoutPanel prefs={prefs} onPrefsChange={onPrefsChange} />}
           >
-            <Button size="small" type="text" icon={<AlignLeftOutlined />}>
-              排版
-            </Button>
+            <Tooltip title="排版">
+              <Button
+                size="small"
+                type="text"
+                shape="circle"
+                icon={<AlignLeftOutlined />}
+                aria-label="排版"
+                data-testid="editor-layout"
+                disabled={disabled}
+              />
+            </Tooltip>
           </Popover>
 
           {/* ---------------- 插入 ---------------- */}
@@ -336,9 +373,17 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
             title="插入"
             content={<InsertPanel editor={editor} disabled={disabled} />}
           >
-            <Button size="small" type="text" icon={<PlusOutlined />}>
-              插入
-            </Button>
+            <Tooltip title="插入分隔线与引号">
+              <Button
+                size="small"
+                type="text"
+                shape="circle"
+                icon={<PlusOutlined />}
+                aria-label="插入分隔线与引号"
+                data-testid="editor-insert"
+                disabled={disabled}
+              />
+            </Tooltip>
           </Popover>
         </Flex>
       </div>
@@ -348,6 +393,7 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
           <Button
             size="small"
             type="text"
+            shape="circle"
             className="editor-toolbar__scroll"
             icon={<RightOutlined />}
             aria-label="工具栏向右滑动"

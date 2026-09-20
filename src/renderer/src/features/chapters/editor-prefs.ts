@@ -146,7 +146,11 @@ export const DEFAULT_EDITOR_PREFS: EditorPrefs = {
   // 这样纸面底色与面板底色是同一个值，冒烟断言才能直接比这对颜色
   paperKey: 'panel',
   paperOpacity: 1,
-  showParagraphRules: false
+  // 段落虚线分隔**默认开**（用户 2026-09-20：「编辑框中没有分割线？」）。
+  // 它藏在「排版」面板里、默认关，等于没有人知道它存在 —— 一条默认关闭
+  // 的辅助线和不提供几乎没有区别。已在偏好里明确关掉的人不受影响：
+  // readEditorPrefs 只在 localStorage 里没有这个 key 时才用默认值。
+  showParagraphRules: true
 }
 
 const STORAGE_KEY = 'winbook.editor.prefs'

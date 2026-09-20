@@ -1,16 +1,16 @@
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react'
+import {Button, Dropdown, Empty, Flex, Select, Skeleton, Typography, type MenuProps} from 'antd'
 import {
-  Button,
-  Dropdown,
-  Empty,
-  Flex,
-  Input,
-  Select,
-  Skeleton,
-  Typography,
-  type MenuProps
-} from 'antd'
-import { CheckOutlined, CloseOutlined, LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons'
+  ArrowDownOutlined,
+  ArrowUpOutlined,
+  CheckOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  ExportOutlined,
+  LeftOutlined,
+  PlusOutlined,
+  RightOutlined
+} from '@ant-design/icons'
 import {
   CHAPTER_STATUSES,
   CHAPTER_STATUS_LABELS,
@@ -21,7 +21,7 @@ import { DEFAULT_BOOK_QUERY, type BookListQuery } from '@shared/modules/books'
 import type { VolumeListItem } from '@shared/modules/volumes'
 import { formatCount } from '../../lib/format'
 import { useBookList } from '../books/use-books'
-import { ChapterCreateModal, type ChapterCreateValues } from './ChapterCreateModal'
+import { VolumeFormModal, type VolumeFormValues } from './VolumeFormModal'
 
 const { Text } = Typography
 
@@ -58,20 +58,45 @@ export interface ChapterPatch {
   volumeId?: number | null
 }
 
+/**
+ * 章节菜单里「不是改字段」的那几项 —— 它们动的是顺序或存在性。
+ *
+ * 与 `ChapterPatch` 分开：补丁是「改这个字段的值」，而这三项要的是
+ * 「拿这一章去做一件别的事」，处理方式完全不同（重排要提交整个容器的
+ * 完整顺序、删除要先确认）。
+ */
+export type ChapterMenuAction = 'up' | 'down' | 'remove'
+
+/** 分卷菜单里的动作。改名收进了弹窗，不再当「动作」发出去 */
+export type VolumeMenuAction = 'up' | 'down' | 'export' | 'remove'
+
 interface ChapterCatalogProps {
   bookId: number
   activeChapterId: number | null
   chapters: ChapterListItem[] | undefined
   volumes: VolumeListItem[] | undefined
   loading: boolean
-  /** 书籍的「每章最少字数」，透传给新建章弹窗做说明 */
-  chapterWords: number
-  onCreateChapter: (values: ChapterCreateValues) => Promise<boolean>
-  onCreateVolume: (title: string) => void
+  /**
+   * 打开「新建章」弹窗。
+   *
+   * 弹窗本身**不在这里**：空书打开时，正文区中央那枚「新建第一章」也要能
+   * 打开同一个弹窗（用户 2026-09-20：「打开书籍后直接就是正文编辑界面，
+   * 左侧可以新建卷和章节」），而它渲染在目录栏外面。弹窗由页面持有，
+   * 两处入口都调这一个回调 —— 两个入口两份弹窗的实现，迟早会长歪。
+   */
+  onOpenChapterModal: () => void
+  onCreateVolume: (title: string) => Promise<boolean>
+  /** 分卷改名。返回是否真的改成了，失败时弹窗留着别把用户敲的字吃掉 */
+  onRenameVolume: (volume: VolumeListItem, title: string) => Promise<boolean>
   onSelectChapter: (chapterId: number) => void
   onSwitchBook: (bookId: number) => void
   /** 目录行右键菜单里改状态 / 移分卷时回调 */
   onPatchChapter: (chapter: ChapterListItem, patch: ChapterPatch) => void
+  /** 目录行右键菜单里的上移 / 下移 / 删除 */
+  onChapterAction: (chapter: ChapterListItem, action: ChapterMenuAction) => void
+  /** 分卷行右键菜单里的全部动作 */
+  onVolumeAction: (volume: VolumeListItem, action: VolumeMenuAction) => void
+  /** 建卷 / 改名进行中，用来让弹窗的确认键进入加载态 */
   savingTitle: boolean
 }
 
@@ -82,19 +107,28 @@ interface ChapterCatalogProps {
  * 「写作之前的准备工作」，所以放在最左、最窄的一列 —— 一旦开始写，
  * 视线就应该停在中间的正文上。
  *
- * **新建的入口只有头部那一个**（[+新建章] / [新建卷]）。这里刻意没有
+ * **新建的入口只有头部那两枚**（[+ 新建章] / [+ 新建卷]）。这里刻意没有
  * 「分卷行上的 +」和「列表底部的 + 新建章节」：同一件事在一屏里给三个入口，
  * 唯一的效果是让人每次都要先做一次无意义的选择（点哪个都一样），
  * 而目录栏本身窄，这些按钮还挤占了本该给章节标题的宽度。
  *
+ * **这两枚是全项目唯一保留文字的按钮**（用户 2026-09-20 点名例外）：别的
+ * 按钮都改成了圆形图标 + 悬浮提示，而它们两个图标都是加号，圆钮化之后
+ * 「章」与「卷」就分不出来了 —— 详见头部那段注释。
+ *
+ * **新建卷与编辑卷都是弹窗**（用户 2026-09-20：「新建/编辑卷也要是弹窗的
+ * 形式」）。以前是目录栏里的行内输入条 —— 184px 宽的列里挤一条输入框，
+ * 顺带把「简介」这个字段整个藏没了；弹窗不占布局，两个字段都放得下。
+ *
+ * **空卷也要显示**（同一天追加的要求）：一卷书常常是先建卷、后写章的，
+ * 卷建好而章还是零的时候，卷必须在目录树里站住那一行，而不是跟着
+ * 「还没有章节」的空状态一起消失。
+ *
  * 章节列表带上每章字数，这是有实际用途的：作者靠它快速判断哪一章
  * 偏短（网文单章通常 2000–4000 字），而不用逐章点开。
  *
- * **事后修改分卷与状态走行的右键菜单**（见 CatalogRow）。它们原先只在新
- * 建章弹窗里能设，而状态是会随写作推进变化的（草稿→修订中→已完成），
- * 设完就再也改不了等于这个字段是死的。放在右键菜单而不是行内加控件：
- * 目录栏只有 180px，塞不下两个下拉；而且这两项都是低频操作，
- * 不值得长期占着那一行的宽度。
+ * **事后修改走行的右键菜单**：章节行能改状态 / 分卷 / 顺序，也能删；
+ * 分卷行能改名（弹窗）/ 排序 / 导出本卷 / 删除。
  *
  * 用 React.memo 包起来：正文每敲一个字都会触发页面重新渲染，而目录
  * 可能有上千行 —— 不做记忆化的话，每次按键都会把所有行重渲一遍。
@@ -105,19 +139,21 @@ export const ChapterCatalog = memo(function ChapterCatalog({
   chapters,
   volumes,
   loading,
-  chapterWords,
-  onCreateChapter,
+  onOpenChapterModal,
   onCreateVolume,
+  onRenameVolume,
   onPatchChapter,
+  onChapterAction,
+  onVolumeAction,
   onSelectChapter,
   onSwitchBook,
   savingTitle
 }: ChapterCatalogProps) {
   const { data: bookList } = useBookList(BOOK_SWITCHER_QUERY)
   const [collapsedVolumes, setCollapsedVolumes] = useState<ReadonlySet<number>>(new Set())
-  const [chapterModalOpen, setChapterModalOpen] = useState(false)
-  const [volumeDraftOpen, setVolumeDraftOpen] = useState(false)
-  const [volumeTitle, setVolumeTitle] = useState('')
+  /** 分卷弹窗：null = 新建，非 null = 编辑这一卷 */
+  const [volumeModalVolume, setVolumeModalVolume] = useState<VolumeListItem | null>(null)
+  const [volumeModalOpen, setVolumeModalOpen] = useState(false)
 
   const grouped = useMemo(() => {
     const loose: ChapterListItem[] = []
@@ -152,60 +188,42 @@ export const ChapterCatalog = memo(function ChapterCatalog({
     })
   }, [])
 
-  /* 新建章：弹窗一次收齐标题 / 分卷 / 状态 */
-  const openChapterModal = useCallback((): void => {
-    setChapterModalOpen(true)
+  const openCreateVolumeModal = useCallback((): void => {
+    setVolumeModalVolume(null)
+    setVolumeModalOpen(true)
   }, [])
 
-  const submitChapter = useCallback(
-    async (values: ChapterCreateValues): Promise<boolean> => {
-      const created = await onCreateChapter(values)
-      // 建成了才关。留在原地（这是之前的实际行为）会让作者看到「弹窗还在、
-      // 后面的章节其实已经建好了」，第一反应是「没成功吧」再点一次 ——
-      // 于是建出两章同名。
-      if (created) setChapterModalOpen(false)
-      return created
+  const openEditVolumeModal = useCallback((volume: VolumeListItem): void => {
+    setVolumeModalVolume(volume)
+    setVolumeModalOpen(true)
+  }, [])
+
+  /** 弹窗提交：按打开时的模式分发给建卷 / 改名。成功了才关弹窗 */
+  const handleVolumeSubmit = useCallback(
+    async (values: VolumeFormValues): Promise<boolean> => {
+      const title = values.title.trim()
+      if (title.length === 0) return false
+
+      const ok =
+        volumeModalVolume === null
+          ? await onCreateVolume(title)
+          : await onRenameVolume(volumeModalVolume, title)
+      if (ok) setVolumeModalOpen(false)
+      return ok
     },
-    [onCreateChapter]
+    [onCreateVolume, onRenameVolume, volumeModalVolume]
   )
-
-  /* 新建卷：只有一个字段，用行内输入就够，不必再弹一层 */
-  const openVolumeDraft = useCallback((): void => {
-    setVolumeDraftOpen(true)
-    setVolumeTitle('')
-  }, [])
-
-  const commitVolumeDraft = useCallback((): void => {
-    const trimmed = volumeTitle.trim()
-    if (trimmed.length === 0) return
-    onCreateVolume(trimmed)
-    setVolumeDraftOpen(false)
-    setVolumeTitle('')
-  }, [onCreateVolume, volumeTitle])
 
   const totalHanzi = useMemo(
     () => (chapters ?? []).reduce((sum, chapter) => sum + chapter.hanziCount, 0),
     [chapters]
   )
 
-  /**
-   * 新建章节时默认落在哪一卷。
-   *
-   * 用「当前正在编辑的那一章所属的卷」而不是「最后一卷」：作者通常是在
-   * 连续写同一卷的内容，新建时把它放进当前卷是常见的期待。当前没有
-   * 章节时就退回未分卷，由作者在弹窗里自行归置。
-   */
-  const defaultVolumeId = useMemo(() => {
-    if (!chapters || activeChapterId === null) return null
-    return chapters.find((chapter) => chapter.id === activeChapterId)?.volumeId ?? null
-  }, [activeChapterId, chapters])
-
-  /** 预填标题：「第 N 章」。作者连着往下写时多半就是这个，不必手打 */
-  const suggestTitle = `第 ${(chapters ?? []).length + 1} 章`
+  const hasAnything = (chapters ?? []).length > 0 || volumeItems.length > 0
 
   return (
     <aside className="catalog" data-testid="chapter-catalog">
-      {/* ---------------- 书籍切换 + 唯一的两个新建入口 ---------------- */}
+      {/* ---------------- 书籍切换 + 唯一的两枚新建圆钮 ---------------- */}
       <div className="catalog__head">
         <Select
           size="small"
@@ -218,13 +236,26 @@ export const ChapterCatalog = memo(function ChapterCatalog({
           optionFilterProp="label"
         />
 
+        {/*
+          这两枚是**带文字的按钮**，不是圆形图标钮 —— 用户 2026-09-20 点名：
+          「目录栏头部按钮不用改成图标 + 鼠标悬浮提示的形式」。
+
+          道理也确实在这两枚身上成立：它们是这一栏**唯一的常驻动作**，而
+          「新建章」与「新建卷」是两件不同的事，圆钮化之后两枚都只剩一个
+          加号，第一次进来的人只能靠悬停挨个猜。别处的按钮之所以能圆钮化，
+          是因为它们的图标本身已经把话说清了（铅笔=写、书本=打开）；两个
+          一模一样的加号则相反 —— 在这里省掉文字等于把区分成本转嫁给作者。
+
+          所以这是全项目「圆钮 + 悬浮提示」这套规矩**唯一登记的例外**：
+          其它地方新增按钮仍走 `IconButton`，只有这里保留文字。
+        */}
         <Flex gap={6}>
           <Button
             size="small"
             type="primary"
             block
             icon={<PlusOutlined />}
-            onClick={openChapterModal}
+            onClick={onOpenChapterModal}
             data-testid="catalog-new-chapter"
           >
             新建章
@@ -232,39 +263,13 @@ export const ChapterCatalog = memo(function ChapterCatalog({
           <Button
             size="small"
             block
-            onClick={openVolumeDraft}
             icon={<PlusOutlined />}
+            onClick={openCreateVolumeModal}
             data-testid="catalog-new-volume"
           >
             新建卷
           </Button>
         </Flex>
-
-        {volumeDraftOpen ? (
-          <Flex gap={4} className="catalog__draft">
-            <Input
-              size="small"
-              autoFocus
-              value={volumeTitle}
-              placeholder="分卷名称"
-              onChange={(event) => setVolumeTitle(event.target.value)}
-              onPressEnter={commitVolumeDraft}
-              disabled={savingTitle}
-            />
-            <Button
-              size="small"
-              type="primary"
-              icon={<CheckOutlined />}
-              loading={savingTitle}
-              onClick={commitVolumeDraft}
-            />
-            <Button
-              size="small"
-              icon={<CloseOutlined />}
-              onClick={() => setVolumeDraftOpen(false)}
-            />
-          </Flex>
-        ) : null}
       </div>
 
       {/* ---------------- 目录 ---------------- */}
@@ -280,46 +285,50 @@ export const ChapterCatalog = memo(function ChapterCatalog({
       <div className="catalog__list">
         {loading ? (
           <Skeleton active paragraph={{ rows: 8 }} title={false} />
-        ) : (chapters ?? []).length === 0 ? (
+        ) : !hasAnything ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={<Text type="secondary">还没有章节</Text>}
+            description={<Text type="secondary">还没有分卷和章节</Text>}
           />
         ) : (
           <>
-            {volumeItems.map((volume) => {
+            {/*
+              卷先渲染、章跟在卷里：**哪怕一卷的章节数是 0**，这一行也在
+              （先建卷后写章是常规操作，卷建好了却从树上消失，作者会以为没建成）。
+            */}
+            {volumeItems.map((volume, volumeIndex) => {
               const items = grouped.byVolume.get(volume.id) ?? []
               const collapsed = collapsedVolumes.has(volume.id)
+
               return (
                 <div
                   key={`volume-${volume.id}`}
                   data-testid="catalog-volume-group"
                   data-volume-id={volume.id}
                 >
-                  <Flex
-                    align="center"
-                    gap={4}
-                    className="catalog__volume"
-                    onClick={() => toggleVolume(volume.id)}
-                  >
-                    {collapsed ? <RightOutlined /> : <LeftOutlined rotate={-90} />}
-                    <Text className="catalog__volume-title" ellipsis>
-                      {volume.title}
-                    </Text>
-                    <Text type="secondary" className="catalog__count">
-                      {items.length}
-                    </Text>
-                  </Flex>
+                  <VolumeRow
+                    volume={volume}
+                    count={items.length}
+                    collapsed={collapsed}
+                    first={volumeIndex === 0}
+                    last={volumeIndex === volumeItems.length - 1}
+                    onToggle={toggleVolume}
+                    onAction={onVolumeAction}
+                    onEdit={openEditVolumeModal}
+                  />
 
                   {collapsed
                     ? null
-                    : items.map((chapter) => (
+                    : items.map((chapter, index) => (
                         <CatalogRow
                           key={chapter.id}
                           chapter={chapter}
                           active={chapter.id === activeChapterId}
                           volumes={volumeItems}
+                          first={index === 0}
+                          last={index === items.length - 1}
                           onPatch={onPatchChapter}
+                          onAction={onChapterAction}
                           onSelect={onSelectChapter}
                         />
                       ))}
@@ -339,52 +348,162 @@ export const ChapterCatalog = memo(function ChapterCatalog({
                     </Text>
                   </Flex>
                 ) : null}
-                {grouped.loose.map((chapter) => (
+                {grouped.loose.map((chapter, index) => (
                   <CatalogRow
                     key={chapter.id}
                     chapter={chapter}
                     active={chapter.id === activeChapterId}
                     volumes={volumeItems}
+                    first={index === 0}
+                    last={index === grouped.loose.length - 1}
                     onPatch={onPatchChapter}
+                    onAction={onChapterAction}
                     onSelect={onSelectChapter}
                   />
                 ))}
               </div>
             ) : null}
+
+            {(chapters ?? []).length === 0 ? (
+              <Text type="secondary" className="catalog__summary">
+                还没有章节
+              </Text>
+            ) : null}
           </>
         )}
       </div>
 
-      <ChapterCreateModal
-        open={chapterModalOpen}
-        volumes={volumeItems}
-        defaultVolumeId={defaultVolumeId}
-        suggestTitle={suggestTitle}
-        chapterWords={chapterWords}
+      {/* 新建与编辑共用这一个弹窗，两种入口不会长成两种样子 */}
+      <VolumeFormModal
+        open={volumeModalOpen}
+        volume={volumeModalVolume}
         submitting={savingTitle}
-        onSubmit={submitChapter}
-        onCancel={() => setChapterModalOpen(false)}
+        onSubmit={handleVolumeSubmit}
+        onCancel={() => setVolumeModalOpen(false)}
       />
     </aside>
   )
 })
 
+/* ------------------------------------------------------------------ *
+ * 分卷行
+ * ------------------------------------------------------------------ */
+
+interface VolumeRowProps {
+  volume: VolumeListItem
+  /** 这一卷下的章节数。0 也要照常显示这一行 */
+  count: number
+  collapsed: boolean
+  first: boolean
+  last: boolean
+  onToggle: (volumeId: number) => void
+  onAction: (volume: VolumeListItem, action: VolumeMenuAction) => void
+  /** 「重命名分卷」→ 打开编辑弹窗（不再走行内输入） */
+  onEdit: (volume: VolumeListItem) => void
+}
+
+/**
+ * 一行分卷：点一下折叠 / 展开，右键出菜单。
+ */
+function VolumeRow({ volume, count, collapsed, first, last, onToggle, onAction, onEdit }: VolumeRowProps) {
+  const menuItems = useMemo<MenuProps['items']>(
+    () => [
+      {
+        key: 'rename',
+        icon: <EditOutlined />,
+        label: <span data-testid="catalog-volume-menu-rename">编辑分卷</span>
+      },
+      { type: 'divider' },
+      {
+        key: 'up',
+        icon: <ArrowUpOutlined />,
+        disabled: first,
+        label: <span data-testid="catalog-volume-menu-up">上移</span>
+      },
+      {
+        key: 'down',
+        icon: <ArrowDownOutlined />,
+        disabled: last,
+        label: <span data-testid="catalog-volume-menu-down">下移</span>
+      },
+      { type: 'divider' },
+      {
+        key: 'export',
+        icon: <ExportOutlined />,
+        label: <span data-testid="catalog-volume-menu-export">导出本卷</span>
+      },
+      {
+        key: 'remove',
+        icon: <DeleteOutlined />,
+        danger: true,
+        label: <span data-testid="catalog-volume-menu-remove">删除分卷</span>
+      }
+    ],
+    [first, last]
+  )
+
+  const handleMenuClick = useCallback<NonNullable<MenuProps['onClick']>>(
+    (info): void => {
+      const action = String(info.key) as VolumeMenuAction | 'rename'
+      // 改名不发「动作」事件：它打开的是编辑弹窗，由目录栏自己处理
+      if (action === 'rename') onEdit(volume)
+      else onAction(volume, action)
+    },
+    [onAction, onEdit, volume]
+  )
+
+  return (
+    <Dropdown
+      trigger={['contextMenu']}
+      menu={{ items: menuItems, onClick: handleMenuClick }}
+      overlayClassName="catalog__menu"
+    >
+      <Flex
+        align="center"
+        gap={4}
+        className="catalog__volume"
+        data-testid="catalog-volume"
+        data-volume-id={volume.id}
+        // 右键菜单是个看不见的入口，title 是它唯一的「被发现」渠道
+        title={`${volume.title}｜${count} 章｜右键可编辑 / 排序 / 导出 / 删除`}
+        onClick={() => onToggle(volume.id)}
+      >
+        {collapsed ? <RightOutlined /> : <LeftOutlined rotate={-90} />}
+        <Text className="catalog__volume-title" ellipsis>
+          {volume.title}
+        </Text>
+        <Text type="secondary" className="catalog__count">
+          {count}
+        </Text>
+      </Flex>
+    </Dropdown>
+  )
+}
+
+/* ------------------------------------------------------------------ *
+ * 章节行
+ * ------------------------------------------------------------------ */
+
 interface CatalogRowProps {
   chapter: ChapterListItem
   active: boolean
   volumes: VolumeListItem[]
+  /** 在这一卷（或「未分卷」）里的位置，用来决定上移 / 下移能不能点 */
+  first: boolean
+  last: boolean
   onPatch: (chapter: ChapterListItem, patch: ChapterPatch) => void
+  onAction: (chapter: ChapterListItem, action: ChapterMenuAction) => void
   onSelect: (chapterId: number) => void
 }
 
 /**
- * 一行章节，右键出菜单改「状态」与「所属分卷」。
+ * 一行章节，右键出菜单改状态 / 分卷 / 顺序，或删掉它。
  *
- * 为什么右键而不是行内控件：这一行只有 180px 宽，还挤着标题和字数。
- * 而这两项都是低频操作（状态一章改几次、分卷基本只在一卷写完时动一次），
+ * 为什么右键而不是行内控件：这一行只有 184px 宽，还挤着标题和字数。
+ * 而这些都是低频操作（状态一章改几次、分卷基本只在一卷写完时动一次），
  * 让它们常驻会一直吃掉标题的宽度 —— 而标题宽度是这一列唯一真正稀缺的东西。
  *
- * 菜单**不用子菜单**（悬停展开的那种），而是把两组选项直接平铺在同一个
+ * 菜单**不用子菜单**（悬停展开的那种），而是把各组选项直接平铺在同一个
  * 浮层里：分卷通常只有几卷，平铺一眼就能看全，比「悬停等一下再展开」
  * 少一次试错；也顺带避免了一个具体问题 —— 后台窗口 / 无 GPU 环境下
  * 悬停展开的子浮层不一定会被渲染出来，那会让这一整块行为没法自动验证。
@@ -396,7 +515,10 @@ const CatalogRow = memo(function CatalogRow({
   chapter,
   active,
   volumes,
+  first,
+  last,
   onPatch,
+  onAction,
   onSelect
 }: CatalogRowProps) {
   const menuItems = useMemo<MenuProps['items']>(() => {
@@ -449,28 +571,53 @@ const CatalogRow = memo(function CatalogRow({
             )
           }))
         ]
+      },
+      { type: 'divider' },
+      {
+        key: 'up',
+        icon: <ArrowUpOutlined />,
+        // 排在最前 / 最后时置灰。点它其实也无害（实现里会判越界直接返回），
+        // 但一枚「点了没反应」的菜单项会让人以为界面卡住了
+        disabled: first,
+        label: <span data-testid="catalog-menu-chapter-up">上移</span>
+      },
+      {
+        key: 'down',
+        icon: <ArrowDownOutlined />,
+        disabled: last,
+        label: <span data-testid="catalog-menu-chapter-down">下移</span>
+      },
+      {
+        key: 'remove',
+        icon: <DeleteOutlined />,
+        danger: true,
+        label: <span data-testid="catalog-menu-chapter-remove">删除本章</span>
       }
     ]
-  }, [chapter.status, chapter.volumeId, volumes])
+  }, [chapter.status, chapter.volumeId, first, last, volumes])
 
   const handleMenuClick = useCallback<NonNullable<MenuProps['onClick']>>(
     (info): void => {
-      const [kind, raw] = String(info.key).split(':')
+      const key = String(info.key)
 
-      if (kind === 'status') {
-        const status = raw as ChapterStatus
+      if (key.startsWith('status:')) {
+        const status = key.slice('status:'.length) as ChapterStatus
         // 点在当前值上不是「改」：放过去会白写一次库，还会把列表的
         // updatedAt 推新，让「最近修改」这类排序凭据无端变动
         if (status !== chapter.status) onPatch(chapter, { status })
         return
       }
 
-      if (kind === 'volume') {
+      if (key.startsWith('volume:')) {
+        const raw = key.slice('volume:'.length)
         const volumeId = raw === 'none' ? null : Number(raw)
         if (volumeId !== chapter.volumeId) onPatch(chapter, { volumeId })
+        return
       }
+
+      if (key === 'up' || key === 'down' || key === 'remove') onAction(chapter, key)
     },
-    [chapter, onPatch]
+    [chapter, onAction, onPatch]
   )
 
   return (
@@ -488,7 +635,7 @@ const CatalogRow = memo(function CatalogRow({
         data-status={chapter.status}
         // 右键菜单是个看不见的入口，这两张标签是它唯一的「被发现」渠道：
         // 悬停时能读到本章状态，并被告知这里可以右键
-        title={`${CHAPTER_STATUS_LABELS[chapter.status]}｜右键可改状态与分卷`}
+        title={`${CHAPTER_STATUS_LABELS[chapter.status]}｜右键可改状态、分卷、顺序或删除`}
         onClick={() => onSelect(chapter.id)}
       >
         {/*

@@ -1,17 +1,21 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Button, Flex, Select, Tabs, Tooltip, Typography } from 'antd'
+import { Flex, Select, Tabs, Tooltip, Typography } from 'antd'
 import {
+  AimOutlined,
   AppstoreOutlined,
   AuditOutlined,
   ClearOutlined,
   PartitionOutlined,
+  SelectOutlined,
   ThunderboltOutlined,
   TeamOutlined
 } from '@ant-design/icons'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import { PLATFORM_SPECS, platformOf } from './platform-preview'
 import { PlatformPreview } from './PlatformPreview'
 import { FillerPanel, ProofreadPanel } from './ProofreadPanel'
+import { IconButton } from '../../components/IconButton'
+import { withOrigin } from '../../components/OriginReturn'
 import type { ProofreadState } from './use-proofread'
 
 const { Text } = Typography
@@ -65,6 +69,7 @@ export function EditorInspector({
   onRevealParagraph
 }: EditorInspectorProps) {
   const navigate = useNavigate()
+  const location = useLocation()
   const [view, setView] = useState<InspectorView>('proofread')
   const [previewFocus, setPreviewFocus] = useState<number | null>(null)
   const previewRef = useRef<HTMLDivElement | null>(null)
@@ -137,15 +142,15 @@ export function EditorInspector({
       key: 'outline',
       label: '大纲',
       icon: <PartitionOutlined />,
-      hint: '卷章树与情节节点，可落地成章节（第二期）',
-      onClick: () => void navigate('/outline')
+      hint: '卷章树与情节节点（右下角有回到正文的圆钮）',
+      onClick: () => void navigate(withOrigin('/outline', location.pathname))
     },
     {
       key: 'characters',
       label: '角色',
       icon: <TeamOutlined />,
-      hint: '人物卡与关系设定（第二期）',
-      onClick: () => void navigate('/cards')
+      hint: '人物卡与关系设定（右下角有回到正文的圆钮）',
+      onClick: () => void navigate(withOrigin('/cards', location.pathname))
     },
     {
       key: 'setups',
@@ -215,18 +220,18 @@ export function EditorInspector({
                       />
                     </div>
 
-                    <Flex gap={6}>
-                      <Button size="small" block onClick={locatePreviewFromCursor}>
-                        定位右侧内容
-                      </Button>
-                      <Button
-                        size="small"
-                        block
+                    <Flex gap={6} align="center">
+                      <IconButton
+                        label="定位右侧预览"
+                        icon={<AimOutlined />}
+                        onClick={locatePreviewFromCursor}
+                      />
+                      <IconButton
+                        label="定位左侧正文"
+                        icon={<SelectOutlined />}
                         disabled={previewFocus === null}
                         onClick={locateCursorFromPreview}
-                      >
-                        定位左侧正文
-                      </Button>
+                      />
                     </Flex>
 
                     <Text type="secondary" className="inspector__hint">
@@ -249,6 +254,7 @@ export function EditorInspector({
               type="button"
               className={`rail__item${item.active ? ' rail__item--active' : ''}`}
               disabled={item.disabled}
+              data-testid={`rail-${item.key}`}
               onClick={item.onClick}
             >
               <span className="rail__icon">{item.icon}</span>

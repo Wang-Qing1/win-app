@@ -397,6 +397,15 @@ body {
   transform: translateY(-2px);
 }
 
+/*
+  「返回来源」叠在「返回首页」正上方（间距 12px = 40 + 12 + 24）。
+  两枚都是 40px 正圆，并排摆会让右下角那一撮变宽、压住内容区；
+  上下叠成一列更像一个「导航出口」而不是两个随手摆的按钮。
+*/
+.app-icon-button--floating-return {
+  bottom: 76px;
+}
+
 .app-header__left {
   min-width: 0;
 }
@@ -915,6 +924,28 @@ body {
   padding: 24px;
 }
 
+/*
+  空书（这本书一章都还没有）：中间那块是空的，四周的框架还在
+  —— 顶栏、左侧目录、底栏统计都在，用户看到的是一间「还没有东西的空房间」，
+  而不是一张另起的欢迎页。所以这里只负责让内容居中，不铺底色、不加边框。
+*/
+.editor-main__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 24px;
+}
+
+/* 书籍简介。空书时它是屏幕上唯一的「内容」，所以允许它比正文窄、居中 */
+.editor-main__empty-summary {
+  max-width: 520px;
+  text-align: center;
+}
+
 .editor-metabar {
   flex: 0 0 auto;
   padding: 10px 20px 10px;
@@ -957,10 +988,6 @@ body {
 
 .catalog__book-select {
   width: 100%;
-}
-
-.catalog__draft {
-  margin-top: 2px;
 }
 
 .catalog__section {
@@ -1289,9 +1316,10 @@ html[data-theme='dark'] .editor-surface {
 
 .editor-surface--rules .winbook-editor__content p {
   /* 段落之间的虚线辅助线：帮助判断单行长度，不打字时几乎看不见。
-     颜色从墨色派生而不是写死黑色 —— 深色纸面上黑虚线反而成了最显眼的东西 */
+     颜色从墨色派生而不是写死黑色 —— 深色纸面上黑虚线反而成了最显眼的东西。
+     浓度 22%：再淡（14% 时代）在默认纸面上淡得像没画，用户会以为功能没生效 */
   padding-bottom: var(--editor-paragraph-gap, 8px);
-  border-bottom: 1px dashed color-mix(in srgb, var(--paper-ink) 14%, transparent);
+  border-bottom: 1px dashed color-mix(in srgb, var(--paper-ink) 22%, transparent);
 }
 
 .editor-surface--rules .winbook-editor__content p:last-child {
@@ -1790,6 +1818,19 @@ html[data-theme='dark'] .rail__badge {
 
 .editor-statusbar__stats {
   min-width: 0;
+}
+
+/*
+  底栏右端那一组「全书」统计（分卷 / 章节 / 全书汉字 / 目标进度）。
+
+  它和左边那组（本章计划 / 纠错 / 字数）是**两本书的账**：一个是这一章，
+  一个是整本。中间留一段空隙（space-between 天然给到），不靠一条竖线去分
+  —— 34px 高的带子里画竖线会显得比相邻的边框还重。
+*/
+.editor-statusbar__book {
+  min-width: 0;
+  /* 数字变长（章节数从 9 变 10、字数从 4 位到 5 位）时不该带着整条带子抖 */
+  font-variant-numeric: tabular-nums;
 }
 
 .editor-statusbar__item {

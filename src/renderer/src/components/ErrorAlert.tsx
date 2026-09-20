@@ -1,5 +1,7 @@
-import { Alert, Button, Typography } from 'antd'
+import { Alert, Typography } from 'antd'
+import { ReloadOutlined } from '@ant-design/icons'
 import { ApiError, toUserMessage } from '../lib/api-client'
+import { IconButton } from './IconButton'
 
 const { Text } = Typography
 
@@ -47,9 +49,7 @@ export function ErrorAlert({ error, title, onRetry }: ErrorAlertProps) {
       description={description}
       action={
         onRetry ? (
-          <Button size="small" onClick={onRetry}>
-            重试
-          </Button>
+          <IconButton label="重试" icon={<ReloadOutlined />} onClick={onRetry} />
         ) : undefined
       }
     />

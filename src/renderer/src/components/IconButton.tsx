@@ -45,13 +45,26 @@ export interface IconButtonProps
  * 形状仍然由样式表里的 `.app-icon-button` 定义（正圆 = 圆角 50%，跟着宽度走），
  * 这里只负责挑规格与语气，不自己写 px。
  *
- * 三件容易漏掉的事已经收进来：
+ * 四件容易漏掉的事已经收进来：
  *   1. **`aria-label` 与提示文案同源**。文字从画面上移走 ≠ 可以删掉 ——
  *      读屏软件只能靠 `aria-label` 知道这枚圆球是什么。
  *   2. **禁用时外面套一层 `span`**。禁用按钮不派发鼠标事件，Tooltip 永远
  *      不会出现；调用方不必各自记得这件事。
  *   3. **`ref` 透传**。`Popconfirm` / `Dropdown` 这类浮层触发器需要拿到真实
  *      DOM 节点才能把自己定位到按钮旁边，函数组件不透传 ref 就会飘到屏幕角落。
+ *   4. **`className` 必须与外部传入的合并，不能直接覆盖**（2026-09-20 踩到）。
+ *      浮层组件会把 `className` 塞进 clone 出来的子元素里，而它们合并的是
+ *      **子元素的 `className` 这个 prop** —— 这个组件偏偏把类名写在自己内部、
+ *      对外不暴露 `className`，于是 `child.props.className` 是 `undefined`，
+ *      外部传进来的类名就变成了「唯一」的类名。原来 `{...rest}` 又排在
+ *      `className` 之后，两者一叠加，`app-icon-button` 被**整条换掉**：
+ *      编辑器顶栏那枚 `…` 于是不再是一枚 40px 正圆，而是退化成一个没有形状
+ *      的裸文字按钮；同时它也从「按 `.app-icon-button` 类采」的探针里消失了，
+ *      所有量形状的断言都测不到它。
+ *
+ *      所以这里把 `className` 从 `rest` 里摘出来拼接。真正的教训不是「漏了
+ *      一个 prop」，而是：**这套形状的唯一定义是那个类名，任何能让它被替换
+ *      掉的写法都等于把这套形状的唯一定义挪走了**。
  */
 export function IconButton({
   label,
@@ -60,14 +73,17 @@ export function IconButton({
   large = false,
   tipTestId,
   disabled,
+  // className 要**从 rest 里摘出来合并**，不能留给 `{...rest}`：见下方说明
+  className,
   ref,
   ...rest
 }: IconButtonProps) {
-  const className = [
+  const mergedClassName = [
     'app-icon-button',
     large ? '' : 'app-icon-button--compact',
     tone === 'primary' ? 'app-icon-button--primary' : '',
-    tone === 'danger' ? 'app-icon-button--danger' : ''
+    tone === 'danger' ? 'app-icon-button--danger' : '',
+    className ?? ''
   ]
     .filter((item) => item.length > 0)
     .join(' ')
@@ -76,7 +92,7 @@ export function IconButton({
     <Button
       ref={ref}
       type="text"
-      className={className}
+      className={mergedClassName}
       aria-label={label}
       icon={icon}
       disabled={disabled}

@@ -91,12 +91,46 @@ export function useMoveChapter() {
  * 就地改写还要一个好处：列表里显示的字数与数据库里存的**永远是同一个值**，
  * 因为这个值就是服务端自己算出来并回传的，而不是前端另算一遍。
  */
+/**
+ * 保存正文。
+ *
+ * 成功后**不整体失效章节缓存**，而是就地写回两处：
+ * 列表缓存里那个章节的字数（`patchChapterCounts`），以及**详情缓存里的正文**。
+ *
+ * 不整体 invalidate 的原因是这个接口调用得极其频繁（打字时每 2 秒一次）。
+ * 若每次都 invalidate，章节列表会被反复重取，而且编辑器自身的数据也会被
+ * 判定过期 —— 在我们的实现里那意味着一次全文比对，光标位置很可能丢失。
+ *
+ * 但**详情缓存必须跟着写**：详情查询是 `staleTime: Infinity`（见 `useChapter`），
+ * 编辑器重新挂载时直接用缓存里的 `contentHtml` 起稿。只存库、不写缓存的话，
+ * 「输入 → 跳去别处 → 回来」读到的是**这一章第一次加载时的旧正文** ——
+ * 字其实已经存进库了，画面上却消失了，要重启应用才回来。
+ * 用户 2026-09-20 报的就是这个：「输入文字后点击到其它地方返回来后
+ * 输入的文字消失不见」。
+ *
+ * 就地写回不会打断正在编辑的人：编辑器实例只在「换了章节」时重建
+ * （`RichTextEditor` 的依赖是 `chapterKey`），同章的缓存更新不会碰 doc。
+ * 列表字数写的是服务端回传的权威值，前端不另算一遍。
+ */
 export function useSaveChapterContent() {
   const queryClient = useQueryClient()
 
   return useMutation<ChapterSaveResult, ApiError, ChapterSaveContentInput>({
     mutationFn: (input) => invoke(() => getBridge().chapters.saveContent(input)),
-    onSuccess: (result) => patchChapterCounts(queryClient, result)
+    onSuccess: (result, input) => {
+      patchChapterCounts(queryClient, result)
+      queryClient.setQueryData<Chapter>(queryKeys.chapters.detail(result.id), (old) =>
+        old === undefined
+          ? old
+          : {
+              ...old,
+              contentHtml: input.contentHtml,
+              hanziCount: result.hanziCount,
+              charCount: result.charCount,
+              updatedAt: result.updatedAt
+            }
+      )
+    }
   })
 }
 
