@@ -1,9 +1,7 @@
 import { Button, Flex, Layout, Tooltip } from 'antd'
 import { HomeOutlined } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router'
-import { BackupButton } from './BackupButton'
-import { HealthBadge } from './HealthBadge'
-import { ThemeToggle } from './ThemeToggle'
+import { TopBarMenu } from './TopBarMenu'
 import { findActiveModule, HOME_PATH } from './nav'
 import { GlobalSearch } from '../features/search/GlobalSearch'
 
@@ -47,7 +45,7 @@ export function AppHeader() {
         >
           <Button
             type="text"
-            className="app-home-fab"
+            className="app-icon-button app-icon-button--floating"
             aria-label="返回首页"
             data-testid="home-button"
             icon={<HomeOutlined />}
@@ -75,11 +73,15 @@ export function AppHeader() {
           <GlobalSearch />
         </div>
 
-        <Flex align="center" gap={16}>
-          <HealthBadge />
-          <BackupButton />
-          <ThemeToggle />
-        </Flex>
+        {/*
+          右侧只有**一枚**圆形 `…` 按钮（用户 2026-09-20：「如果是多个功能按钮，
+          则首先只展示一个 [...]（省略号）图标按钮，点击后展开下拉菜单，每个菜单项
+          对应一个圆形功能图标（并排展示的功能图标取消）」）。
+
+          主进程健康 / 备份数据库 / 主题切换三件事都在它的菜单里，
+          见 `TopBarMenu`——那里也写了为什么不再并排摆三个圆钮。
+        */}
+        <TopBarMenu />
       </Header>
     </>
   )

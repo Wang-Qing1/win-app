@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Empty, Flex, Select, Skeleton, Tag, Tooltip, Typography } from 'antd'
+import { Button, Empty, Flex, Select, Skeleton, Tag, Typography } from 'antd'
 import type { Key } from 'react'
 import { CompressOutlined, ExpandOutlined, PlusOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router'
@@ -10,6 +10,7 @@ import {
   type OutlineTreeNode
 } from '@shared/modules/outline'
 import { ErrorAlert } from '../../components/ErrorAlert'
+import { IconButton } from '../../components/IconButton'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
 import { useBookList } from '../books/use-books'
@@ -294,32 +295,34 @@ export function OutlinePage() {
             onChange={(value: number) => setBookId(value)}
             options={books.map((book) => ({ value: book.id, label: book.title }))}
           />
-          <Tooltip title="展开整棵树">
-            <Button
-              icon={<ExpandOutlined />}
-              disabled={nodes.length === 0}
-              onClick={() => setExpandedKeys(collectAllKeys(nodes))}
-            />
-          </Tooltip>
-          <Tooltip title="只留下有子节点的层级">
-            <Button
-              icon={<CompressOutlined />}
-              disabled={nodes.length === 0}
-              onClick={() => setExpandedKeys([])}
-            />
-          </Tooltip>
-          <Tooltip title="新增一个根节点">
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              data-testid="outline-add-root"
-              loading={createNode.isPending}
-              disabled={bookId === null}
-              onClick={() => void handleAdd(null)}
-            >
-              根节点
-            </Button>
-          </Tooltip>
+          {/*
+            三枚圆形图标按钮（用户 2026-09-20：「各个界面中的图标也要跟着改，
+            比如…大纲页…」）。前两枚本来就是纯图标，改的只是形状（圆角矩形 → 正圆）；
+            第三枚原来带「根节点」三个字，文字移进悬浮提示。
+          */}
+          <IconButton
+            label="展开整棵树"
+            icon={<ExpandOutlined />}
+            data-testid="outline-expand-all"
+            disabled={nodes.length === 0}
+            onClick={() => setExpandedKeys(collectAllKeys(nodes))}
+          />
+          <IconButton
+            label="只留下有子节点的层级"
+            icon={<CompressOutlined />}
+            data-testid="outline-collapse-all"
+            disabled={nodes.length === 0}
+            onClick={() => setExpandedKeys([])}
+          />
+          <IconButton
+            label="新增根节点"
+            tone="primary"
+            icon={<PlusOutlined />}
+            data-testid="outline-add-root"
+            loading={createNode.isPending}
+            disabled={bookId === null}
+            onClick={() => void handleAdd(null)}
+          />
         </>
       }
     />

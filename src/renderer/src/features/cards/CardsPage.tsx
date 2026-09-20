@@ -324,13 +324,6 @@ export function CardsPage() {
           ]}
         />
 
-        {/*
-         * 新建按钮固定在工具栏最左端（用户指定的位置，勿动）。
-         * 卡片库有两个筛选器排在搜索框前面，所以它不会紧贴搜索框 ——
-         * 冒烟断言只要求「落在工具栏内且在搜索框左侧」，不强制间距。
-         */}
-        {addCardButton}
-
         <Input
           data-testid="cards-keyword"
           className="cards-keyword"

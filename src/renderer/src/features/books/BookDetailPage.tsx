@@ -34,6 +34,7 @@ import type { Book } from '@shared/modules/books'
 import { CHAPTER_STATUS_LABELS, type ChapterListItem } from '@shared/modules/chapters'
 import type { VolumeListItem } from '@shared/modules/volumes'
 import { ErrorAlert } from '../../components/ErrorAlert'
+import { IconButton } from '../../components/IconButton'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
 import { formatCompact, formatCount, formatDateTime, formatRelativeTime, progressPercent } from '../../lib/format'
@@ -425,24 +426,35 @@ export function BookDetailPage() {
          */
         showTitle
         extra={
+          /*
+           * 四枚圆形图标按钮（用户 2026-09-20：「各个界面中的图标也要跟着改，
+           * 比如书籍详情页…」）。文字全部移进悬浮提示 —— 它们每个都只干一件事，
+           * 图标已经说得清，而四个带文字的按钮并排起来有 400px 宽，
+           * 会把书名挤到一行里放不下。
+           *
+           * 「删除书籍」跟着改成图标：它跟另外三枚是同一排的操作，单独留文字
+           * 就变成这一行里唯一一个长条。真正的保险在 Popconfirm 上，不在文案长度上。
+           */
           <>
-            <Button
-              size="middle"
+            <IconButton
+              label="返回书架"
               icon={<ArrowLeftOutlined />}
+              data-testid="book-detail-back"
               onClick={() => void navigate('/books')}
-            >
-              返回书架
-            </Button>
-            <Button icon={<EditOutlined />} onClick={() => setFormOpen(true)}>
-              编辑信息
-            </Button>
-            <Button
+            />
+            <IconButton
+              label="编辑信息"
+              icon={<EditOutlined />}
+              data-testid="book-detail-edit"
+              onClick={() => setFormOpen(true)}
+            />
+            <IconButton
+              label="导出整本书"
               icon={<ExportOutlined />}
+              data-testid="book-detail-export"
               loading={exportBook.isPending}
               onClick={() => void handleExportBook()}
-            >
-              导出整本书
-            </Button>
+            />
             <Popconfirm
               title={`删除《${data.title}》？`}
               description={`这本书的 ${chapters.data?.length ?? 0} 章正文会一并删除，且无法恢复。`}
@@ -461,9 +473,12 @@ export function BookDetailPage() {
                   )
               }}
             >
-              <Button danger icon={<DeleteOutlined />}>
-                删除书籍
-              </Button>
+              <IconButton
+                label="删除书籍"
+                tone="danger"
+                icon={<DeleteOutlined />}
+                data-testid="book-detail-remove"
+              />
             </Popconfirm>
           </>
         }
@@ -477,20 +492,29 @@ export function BookDetailPage() {
         </Card>
       ) : null}
 
-      {/* ---------------- 概览 ---------------- */}
-      <Row gutter={[16, 16]}>
+      {/*
+       * 概览四张卡：并排就必须等高（用户 2026-09-20：「上方的四个并排卡片没有
+       * 高度对齐？并排的卡片都需要高度对齐」）。之前这四张卡一张高一张矮 ——
+       * 「分卷 / 章节」只有两行（78.5px），「全书汉字」多一行小字（93px），
+       * 「目标进度」有进度条加两行小字（90px），底边参差 15px 且越靠右垂得越低。
+       * Row 只负责把列拉齐，卡片吃满列高靠 `.card-fill`（见 styles.css）。
+       *
+       * data-card-row 是给冒烟测试的锚点：它按行量「同一行里的卡片是否等高」，
+       * 量的是实测几何，所以只加类名不加标记的话这一段就是漏检的。
+       */}
+      <Row gutter={[16, 16]} data-card-row="书籍概览">
         <Col xs={12} lg={6}>
-          <Card>
+          <Card className="card-fill">
             <Statistic title="分卷" value={volumes.data?.length ?? 0} />
           </Card>
         </Col>
         <Col xs={12} lg={6}>
-          <Card>
+          <Card className="card-fill">
             <Statistic title="章节" value={chapters.data?.length ?? 0} />
           </Card>
         </Col>
         <Col xs={12} lg={6}>
-          <Card>
+          <Card className="card-fill">
             <Statistic title="全书汉字" value={hanziTotal} />
             <Text type="secondary" className="book-stat__hint">
               含标点 {charTotal.toLocaleString('zh-CN')}
@@ -498,7 +522,7 @@ export function BookDetailPage() {
           </Card>
         </Col>
         <Col xs={12} lg={6}>
-          <Card>
+          <Card className="card-fill">
             {percent === null ? (
               <>
                 <Statistic title="目标字数" value="未设" />
@@ -533,14 +557,13 @@ export function BookDetailPage() {
       <Card
         title="分卷"
         extra={
-          <Button
-            size="small"
-            type="text"
+          <IconButton
+            label="新建分卷"
+            tone="primary"
             icon={<PlusOutlined />}
+            data-testid="book-add-volume"
             onClick={() => setCreatingVolume(true)}
-          >
-            新建分卷
-          </Button>
+          />
         }
       >
         {creatingVolume ? (
@@ -673,14 +696,13 @@ export function BookDetailPage() {
       <Card
         title="章节"
         extra={
-          <Button
-            size="small"
-            type="text"
+          <IconButton
+            label="新建章节"
+            tone="primary"
             icon={<PlusOutlined />}
+            data-testid="book-add-chapter"
             onClick={() => setCreatingChapter(true)}
-          >
-            新建章节
-          </Button>
+          />
         }
       >
         {creatingChapter ? (

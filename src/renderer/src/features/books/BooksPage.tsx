@@ -209,10 +209,10 @@ export function BooksPage() {
       {list.isError ? (
         <ErrorAlert error={list.error} title="书架加载失败" onRetry={() => void list.refetch()} />
       ) : list.isPending ? (
-        <Row gutter={[16, 16]}>
+        <Row gutter={[16, 16]} data-card-row="书架骨架">
           {[0, 1, 2, 3].map((key) => (
             <Col xs={24} sm={12} xl={8} key={key}>
-              <Card>
+              <Card className="card-fill">
                 <Skeleton active paragraph={{ rows: 3 }} />
               </Card>
             </Col>
@@ -238,13 +238,18 @@ export function BooksPage() {
           />
         </Card>
       ) : (
-        <Row gutter={[16, 16]} data-testid="book-grid">
+        /*
+         * 书架是并排的卡片网格，所以每张卡都要吃满列高：每本书的简介长短不一，
+         * 不填充的话同一行里「三行的」会把「一行的」衬出一大截空白底边
+         * （用户 2026-09-20：「并排的卡片都需要高度对齐」）。
+         */
+        <Row gutter={[16, 16]} data-testid="book-grid" data-card-row="书架">
           {items.map((book) => {
             const percent = progressPercent(book.hanziCount, book.targetWords)
             return (
               <Col xs={24} sm={12} xl={8} key={book.id}>
                 <Card
-                  className="book-card"
+                  className="book-card card-fill"
                   data-testid="book-card"
                   hoverable
                   onClick={() => void navigate(`/books/${book.id}`)}

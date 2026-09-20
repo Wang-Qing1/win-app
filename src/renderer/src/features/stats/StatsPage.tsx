@@ -79,7 +79,7 @@ export function StatsPage() {
       ) : null}
 
       {/* ---------------- 区间指标 ---------------- */}
-      <Row gutter={[16, 16]} data-testid="stats-metrics">
+      <Row gutter={[16, 16]} data-testid="stats-metrics" data-card-row="区间指标">
         <Col xs={12} lg={6}>
           <MetricCard
             label={`${STATS_RANGE_LABELS[range]}写作量`}
@@ -133,9 +133,10 @@ export function StatsPage() {
       </Row>
 
       {/* ---------------- 趋势 ---------------- */}
-      <Row gutter={[16, 16]}>
+      {/* 两张图并排，所以两张卡都要吃满列高（内部图表高度都是 240，但标题与小字行数不同） */}
+      <Row gutter={[16, 16]} data-card-row="趋势图">
         <Col xs={24} xl={14}>
-          <Card title="写作量趋势" extra={<Text type="secondary" className="card__extra">按会话的「净写进去的字」统计</Text>}>
+          <Card className="card-fill" title="写作量趋势" extra={<Text type="secondary" className="card__extra">按会话的「净写进去的字」统计</Text>}>
             {days.length > 0 ? (
               <TrendChart
                 data={days}
@@ -151,7 +152,7 @@ export function StatsPage() {
           </Card>
         </Col>
         <Col xs={24} xl={10}>
-          <Card title="每日写作时长">
+          <Card className="card-fill" title="每日写作时长">
             {days.length > 0 ? (
               <WritingDurationChart data={days} height={240} />
             ) : (
@@ -221,7 +222,11 @@ interface MetricCardProps {
 
 function MetricCard({ label, value, icon, footer, loading }: MetricCardProps) {
   return (
-    <Card className="metric-card__card">
+    // card-fill：四张指标卡并排，必须等高（见 styles.css「并排卡片等高」）。
+    // 注意这里是**本页自己的一份 MetricCard**（没有外壳 div），首页那份外面
+    // 套了一层挂着 data-testid 的透明壳 —— 两处都要 card-fill，
+    // 冒烟量的时候会穿过透明壳看里面那张真卡片。
+    <Card className="metric-card__card card-fill">
       <Flex vertical gap={4}>
         <Flex align="center" justify="space-between" gap={8}>
           <Text type="secondary" className="metric-card__label">

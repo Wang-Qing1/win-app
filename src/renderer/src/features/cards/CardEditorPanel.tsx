@@ -10,7 +10,6 @@ import {
   Select,
   Space,
   Tag,
-  Tooltip,
   Typography
 } from 'antd'
 import { CopyOutlined, DeleteOutlined, SaveOutlined, UndoOutlined } from '@ant-design/icons'
@@ -26,6 +25,7 @@ import {
   type CardType
 } from '@shared/modules/cards'
 import { useToast } from '../../components/Toast'
+import { IconButton } from '../../components/IconButton'
 import { formatDateTime } from '../../lib/format'
 import { CARD_TYPE_COLORS, CARD_TYPE_ICONS } from './card-meta'
 
@@ -196,17 +196,19 @@ export function CardEditorPanel({
             </Text>
           </Space>
           {card === null ? null : (
-            <Tooltip title="复制一张同样的卡再改几笔 —— 同一阵营的配角常常只差一两处">
-              <Button
-                size="small"
-                icon={<CopyOutlined />}
-                data-testid="card-duplicate"
-                loading={busy}
-                onClick={() => run(() => onDuplicate(card))}
-              >
-                复制
-              </Button>
-            </Tooltip>
+            /*
+             * 面板头部右侧这一枚跟着统一成圆形图标按钮（用户 2026-09-20：
+             * 「各个界面中的图标也要跟着改」）。它和下方表单区里的保存 / 还原
+             * 不是一类：那两个是**表单动作**，文字得留着；这一枚是标题行上的操作，
+             * 和书籍详情页卡片头里的「新建分卷」是同一形态。
+             */
+            <IconButton
+              label="复制这张卡（复制一张同样的卡再改几笔）"
+              icon={<CopyOutlined />}
+              data-testid="card-duplicate"
+              loading={busy}
+              onClick={() => run(() => onDuplicate(card))}
+            />
           )}
         </Flex>
 

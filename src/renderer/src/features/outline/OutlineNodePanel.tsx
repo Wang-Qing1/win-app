@@ -12,11 +12,11 @@ import {
   Select,
   Space,
   Tag,
-  Tooltip,
   Typography
 } from 'antd'
 import {
   DeleteOutlined,
+  InsertRowBelowOutlined,
   PlusOutlined,
   RocketOutlined,
   SaveOutlined,
@@ -35,6 +35,7 @@ import {
   type OutlineTreeNode
 } from '@shared/modules/outline'
 import type { VolumeListItem } from '@shared/modules/volumes'
+import { IconButton } from '../../components/IconButton'
 import { useToast } from '../../components/Toast'
 import { NODE_TYPE_COLORS } from './outline-meta'
 
@@ -164,20 +165,27 @@ export function OutlineNodePanel({
             </Text>
           </Space>
           <Space size={4}>
-            <Tooltip title="在这条下面加一个子节点">
-              <Button
-                size="small"
-                icon={<PlusOutlined />}
-                onClick={() => onAddChild(node.id)}
-              >
-                子节点
-              </Button>
-            </Tooltip>
-            <Tooltip title="在它后面加一个同级节点">
-              <Button size="small" onClick={() => onAddSibling(node)}>
-                同级
-              </Button>
-            </Tooltip>
+            {/*
+              面板头部这一对跟着统一成圆形图标按钮（用户 2026-09-20：
+              「各个界面中的图标也要跟着改，比如…大纲页…」）。
+
+              「同级」原来没有图标（只有文字），这里给它配了一个「在下面插入一行」
+              的图形：两枚并排的按钮若一枚有图一枚没有，圆形之后就没法看了。
+              两枚的语义靠悬浮提示区分，所以提示文案必须写全 —— 只说「子节点」
+              和「同级」，等于把原来写在按钮上的两个字挪了个地方，没丢东西。
+            */}
+            <IconButton
+              label="在这条下面加一个子节点"
+              icon={<PlusOutlined />}
+              data-testid="outline-add-child"
+              onClick={() => onAddChild(node.id)}
+            />
+            <IconButton
+              label="在它后面加一个同级节点"
+              icon={<InsertRowBelowOutlined />}
+              data-testid="outline-add-sibling"
+              onClick={() => onAddSibling(node)}
+            />
           </Space>
         </Flex>
 

@@ -79,7 +79,7 @@ export function DashboardPage() {
 
       {/* ---------------- 功能模块（应用的导航） ---------------- */}
       <div data-testid="module-grid">
-        <Row gutter={[16, 16]} className="module-grid equal-height-row">
+        <Row gutter={[16, 16]} className="module-grid" data-card-row="功能模块">
           {MODULE_ITEMS.map((module) => (
             <Col xs={24} sm={12} xl={6} key={module.key}>
               {/*
@@ -90,7 +90,7 @@ export function DashboardPage() {
                */}
               <Card
                 hoverable
-                className="module-card"
+                className="module-card card-fill"
                 data-testid="module-entry"
                 data-module-key={module.key}
                 onClick={() => void navigate(module.path)}
@@ -127,7 +127,7 @@ export function DashboardPage() {
 
       {/* ---------------- 四个总指标 ---------------- */}
       <div data-testid="dashboard-metrics" data-loading={isLoading ? 'true' : 'false'}>
-        <Row gutter={[16, 16]} className="equal-height-row">
+        <Row gutter={[16, 16]} data-card-row="首页指标">
           <Col xs={12} lg={6}>
             <MetricCard
               testId="metric-book-count"
@@ -192,12 +192,15 @@ export function DashboardPage() {
       </div>
 
       {/* ---------------- 趋势 + 今日 ---------------- */}
-      {/* 卡片类名 .dashboard-trend / .dashboard-today 供等高样式与冒烟几何断言使用 */}
-      <Row gutter={[16, 16]} className="equal-height-row">
+      {/*
+       * 卡片类名 .dashboard-trend / .dashboard-today 供冒烟的几何断言使用；
+       * 等高由 `.card-fill` 统一负责（见 styles.css 的「并排卡片等高」）。
+       */}
+      <Row gutter={[16, 16]} data-card-row="趋势与今日">
         <Col xs={24} xl={15}>
           <Card
             title="近 30 天写作量"
-            className="dashboard-trend"
+            className="dashboard-trend card-fill"
             extra={
               <Text type="secondary" className="card__extra">
                 合计 {formatCount(trend.data?.totalWordsWritten ?? 0)} 汉字 ·{' '}
@@ -221,7 +224,7 @@ export function DashboardPage() {
         </Col>
 
         <Col xs={24} xl={9}>
-          <Card title="今日" className="dashboard-today">
+          <Card title="今日" className="dashboard-today card-fill">
             <Flex vertical gap={14}>
               <Flex align="baseline" gap={10}>
                 <Statistic
@@ -369,8 +372,14 @@ interface MetricCardProps {
  */
 function MetricCard({ testId, label, value, display, icon, loading, footer }: MetricCardProps) {
   return (
-    <div data-testid={testId} data-value={String(value)} className="metric-card">
-      <Card className="metric-card__card">
+    <div data-testid={testId} data-value={String(value)} className="metric-card card-fill">
+      {/*
+       * 外层 div 是「只为了挂锚点」的壳（透明、无边距），真正的卡片是里面这张。
+       * 壳也吃满列高，并且这张 Card 同样吃满壳高 —— 只给壳写 100% 的话，
+       * 壳被拉高了而白卡片还是按内容收缩，界面上依旧是参差的，
+       * 而「壳等高」的断言会全绿（冒烟因此量到穿透壳之后的那个盒子）。
+       */}
+      <Card className="metric-card__card card-fill">
         <Flex vertical gap={4}>
           <Flex align="center" justify="space-between" gap={8}>
             <Text type="secondary" className="metric-card__label">

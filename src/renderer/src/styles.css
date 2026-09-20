@@ -33,6 +33,9 @@
   --winbook-text-faint: #8a8a8a;
   --winbook-accent: #0f6cbd;
   --winbook-accent-soft: #e6f1fb;
+  /* 实底主按钮上的文字/图形颜色。深色主题的强调色是亮蓝，白字压上去反而糊，
+     所以它不是常量，跟着主题走。 */
+  --winbook-on-accent: #ffffff;
   --winbook-danger: #c42b1c;
   --winbook-warning: #c76a00;
   --winbook-success: #0f7b0f;
@@ -53,6 +56,7 @@ html[data-theme='dark'] {
   --winbook-text-faint: #8a8a8a;
   --winbook-accent: #479ef5;
   --winbook-accent-soft: #14324d;
+  --winbook-on-accent: #10233a;
   --winbook-danger: #ff99a4;
   --winbook-warning: #fce100;
   --winbook-success: #6ccb5f;
@@ -221,38 +225,174 @@ body {
   margin: 0 auto;
 }
 
-/* ---------------- 悬浮的返回首页按钮（窗口右下角） ----------------
+/* ---------------- 圆形图标按钮（顶栏右上角 + 右下角悬浮） ----------------
+ * 用户 2026-09-20 连续提了两轮，第二轮把第一轮的做法也否掉了：
+ *   ① 「头部的所有功能图标都太丑了，需要修正为圆形只展示图标的功能按钮」；
+ *   ② 「如果是多个功能按钮，则首先只展示一个 [...] 图标按钮，点击后展开下拉菜单，
+ *      每个菜单项对应一个圆形功能图标（并排展示的功能图标取消）」。
+ *
+ * 所以顶栏右侧最终只有**一枚** `…` 按钮（`TopBarMenu`），健康 / 备份 / 主题
+ * 都收进它的菜单里；菜单项行首的圆形图标也复用这套「正圆」规矩。
+ * 右下角那枚悬浮按钮（`.app-icon-button--floating`）是同一个形状的第二处使用。
+ *
+ * 形状只有一处定义：40px 正圆、只放一个 18px 图标、按钮上不留任何文字。
+ */
+.app-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  /* 正圆 = 圆角恰好是半宽。写成 50%（而不是 20px 这种硬编码）才不会
+     在以后改尺寸时悄悄变成圆角矩形 —— 冒烟正是拿「半径 ≈ 半宽」判它是圆的 */
+  border-radius: 50%;
+  border: 1px solid var(--winbook-border);
+  background: transparent;
+  color: var(--winbook-text-soft);
+  font-size: 18px;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.app-icon-button:hover {
+  color: var(--winbook-accent);
+  border-color: var(--winbook-accent);
+  background: var(--winbook-accent-soft);
+}
+
+.app-icon-button:focus-visible {
+  outline: 2px solid var(--winbook-accent);
+  outline-offset: 2px;
+}
+
+/* ---- 规格二：32px 紧凑版（页面 / 面板 / 卡片头部） ----
+ * 用户 2026-09-20 把顶栏那套推广到各个界面（「各个界面中的图标也要跟着改，
+ * 比如书籍详情页、大纲页、卡片页等」）时，必须分清两种规格，否则会撞车：
+ *
+ *   - 40px（基础规格）：顶栏那枚 `…` 与右下角悬浮的返回首页。它们各自独立
+ *     站在空白里，没有同排控件要对齐，大一点更像个能点的东西。
+ *   - 32px（`--compact`）：页面头部那些操作按钮。同一行里还站着 `Select` /
+ *     `Segmented` / `Input`（也都是 32px），按钮高出一截整行就参差；
+ *     而且它们改造前就是 32px 高的按钮，保持 32px 意味着**行高一点没变**，
+ *     这次改造是纯粹的外观变化，不会把版面顶开。
+ *
+ * 形状规则仍然只有一条：圆角 50%，跟着宽度走 —— 所以「是不是正圆」
+ * 不会因为换规格而失效。
+ */
+.app-icon-button--compact {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  font-size: 15px;
+}
+
+/* ---- 语气一：主操作（新建 / 新增） ----
+ * 实底。一页里只该有一枚，实底本身就是「那是它」的信号。
+ *
+ * 选择器写成两个类（`.app-icon-button.app-icon-button--primary`）是有意的：
+ * antd 会按自己的 token 给 `.ant-btn-text` 上底色，单个类的权重和它一样，
+ * 谁生效取决于样式注入顺序 —— 那种「本地跑是对的、打包后变透明」的 bug
+ * 不值得赌，直接把权重抬上去。
+ */
+.app-icon-button.app-icon-button--primary {
+  border-color: transparent;
+  background: var(--winbook-accent);
+  color: var(--winbook-on-accent);
+}
+
+.app-icon-button.app-icon-button--primary:hover {
+  border-color: transparent;
+  background: var(--winbook-accent);
+  color: var(--winbook-on-accent);
+  /* 提亮而不是换底色：换色会让「主操作的底色」变成两个值 */
+  filter: brightness(1.12);
+}
+
+/* ---- 语气二：删除 ----
+ * 只把图形染红，不填红底。理由不是审美：一个红球常驻在页面右上角，
+ * 比它该有的分量重得多，而真要删的时候还有 Popconfirm 拦一道。
+ */
+.app-icon-button.app-icon-button--danger {
+  color: var(--winbook-danger);
+}
+
+.app-icon-button.app-icon-button--danger:hover {
+  color: var(--winbook-danger);
+  border-color: var(--winbook-danger);
+  background: transparent;
+}
+
+/* 禁用态：底色留透明，只把图形与描边压淡。
+   antd 的禁用色若被这里的 `background: transparent` 之外的规则抢走，
+   会变成一个看着能点的实心球。 */
+.app-icon-button:disabled {
+  color: var(--winbook-text-faint);
+  border-color: var(--winbook-border);
+  background: transparent;
+}
+
+/* 禁用按钮不派发鼠标事件，所以它的 Tooltip 永远不会弹出来 ——
+   由外面这层壳承接 hover。规则收在 `IconButton` 里，调用方不用各自记得。 */
+.icon-button__slot {
+  display: inline-flex;
+}
+
+/* 主进程状态点。三态各一个颜色 —— 用户扫一眼菜单第一项就知道是否正常，
+   文字摘要就在它右边（原来是直接写在顶栏上的那行字）。
+   14px 是相对行首那枚 34px 圆形图标的比例：再小就像菜单项忘了放图标。 */
+.health-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--winbook-text-faint);
+}
+
+.health-dot--ok {
+  background: var(--winbook-success);
+}
+
+.health-dot--error {
+  background: var(--winbook-danger);
+}
+
+.health-dot--pending {
+  background: var(--winbook-accent);
+  animation: health-dot-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes health-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* ------------- 悬浮在窗口右下角的「返回首页」 -------------
  * 用户 2026-09-20 指定：它应当是**悬浮**的图标，而不是顶栏里的固定图标；
  * 左上角放不下（那里是品牌区，挤开它就得在顶栏留常驻空槽，等于还是顶栏的一部分），
  * 于是落在右下角 —— 浮动按钮的常规位置。
  *
  * 四个角里只有右下角是空的：左上/右上分别是品牌与状态区，左下角在编辑器里是状态栏。
  * position: fixed 让它浮在界面之上、不参与布局流，且不随内容滚动。
+ *
+ * 与顶栏那枚的区别只有「有没有浮起来」：它浮在内容之上，所以实底 + 投影；
+ * 顶栏里的在同一平面里，细描边就够 —— 一个实底圆球压在顶栏上会比品牌还重。
  */
-.app-home-fab {
+.app-icon-button--floating {
   position: fixed;
   right: 24px;
   bottom: 24px;
   z-index: 40;
-  /* 图标按钮做成正方形：antd 的 text 按钮默认按内容撑开，
-     圆形观感要「宽=高 + 内边距 0」，否则是个椭圆 */
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
-  padding: 0;
-  border-radius: 50%;
-  font-size: 18px;
-  color: var(--winbook-text-soft);
-  /* 既然浮在界面之上，就得看起来是浮着的：实底 + 描边 + 投影。
-     少了这三样，它会像页面上一个错位的图标，而不是一个悬浮按钮。 */
   background: var(--winbook-surface);
-  border: 1px solid var(--winbook-border);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
-  transition: color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
-.app-home-fab:hover {
-  color: var(--winbook-accent);
+.app-icon-button--floating:hover {
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
   transform: translateY(-2px);
 }
@@ -295,12 +435,33 @@ body {
   flex: 0 0 auto;
 }
 
-/* ---------------- 首页功能模块卡片（应用的导航） ---------------- */
+/* ---------------- 并排卡片等高 ---------------- */
 
-.module-card,
-.metric-card {
+/*
+ * 用户 2026-09-20：「上方的四个并排卡片没有高度对齐？并排的卡片都需要高度对齐」。
+ *
+ * 没对齐的原因不是「卡片被写了不同高度」，而是**没人给卡片写过高度**：
+ * Row 是 flex 容器，且 antd 不给它设 align-items（默认就是 stretch），
+ * 所以同一行里的 Col 早就被拉到「这一行最高那一列」的高度 —— 但 Col 里的
+ * Card 是块级元素、高度按内容收缩，于是内容多一行的那张就垂得更低。
+ * 书籍详情页四张概览卡实测 78.5 / 78.5 / 93 / 90px，底边参差 15px。
+ *
+ * height: 100% 让卡片吃满所在列。这不是「碰巧能跑」：Flexbox 规范规定
+ * align-self 为 stretch 的弹性项其交叉轴尺寸是 definite，所以卡片上的
+ * 百分比高度有参照物可解析。
+ *
+ * 全套只有一个定义，挂在卡片自己身上（`.card-fill`）—— 之前首页的
+ * `.module-card` / `.metric-card` / `.dashboard-trend` / `.dashboard-today`
+ * 各自写了一遍 height: 100%，四个地方各修各的尺寸，改一次漏三次。
+ *
+ * 冒烟测试按页量「同一行里几张卡是否等高」与「卡片是否吃满所在列」，
+ * 量的是实测几何而不是这个类名（见 `checkCardRows`）。
+ */
+.card-fill {
   height: 100%;
 }
+
+/* ---------------- 首页功能模块卡片（应用的导航） ---------------- */
 
 .module-card {
   cursor: pointer;
@@ -336,34 +497,59 @@ body {
   font-size: 12px;
 }
 
-/* ---------------- 页头健康徽标 ---------------- */
+/* ---------------- 顶栏「更多功能」菜单 ----------------
+ * 用户最终要求（2026-09-20）：「只展示一个 [...]（省略号）图标按钮，点击后展开
+ * 下拉菜单，每个菜单项对应一个圆形功能图标」。所以健康 / 备份 / 主题不再是三枚
+ * 并排的圆钮，而是这一个菜单里的三行。
+ *
+ * 行首的圆形图标复用「正圆」这条规矩（宽=高、圆角 50%）—— 冒烟拿「半径 ≈ 半宽」
+ * 判定，所以这里同样不能硬编码圆角像素值。
+ */
 
-.health-badge {
-  display: inline-flex;
-  align-items: center;
-  cursor: default;
-}
-
-.health-tooltip {
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  min-width: 200px;
-}
-
-.health-tooltip__row {
+.topbar-menu__row {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  line-height: 1.8;
+  align-items: center;
+  gap: 10px;
+  /* 菜单项两行文字，太窄会让副标题频繁折行 */
+  min-width: 220px;
+  padding: 2px 0;
 }
 
-.health-tooltip__label {
-  opacity: 0.72;
-}
-
-.theme-toggle__item {
+.topbar-menu__icon {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--winbook-accent-soft);
+  color: var(--winbook-accent);
+  font-size: 16px;
+}
+
+/* 状态型图标的圆（主进程健康）：中性底 + 描边。
+   用 accent-soft 蓝底会让人以为它也是一个可以点的功能图标。 */
+.topbar-menu__icon--status {
+  background: var(--winbook-surface-soft);
+  border: 1px solid var(--winbook-border);
+}
+
+.topbar-menu__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.topbar-menu__title {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.topbar-menu__hint {
+  color: var(--winbook-text-faint);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 /* ---------------- 错误提示 ---------------- */
@@ -378,20 +564,9 @@ body {
  * ================================================================== */
 
 /*
- * 同一行的卡片必须等高。Row 是 flex 容器，Col 默认拉伸到行高，
- * 但 Card 自己按内容收缩 —— 于是「今日」卡比趋势图卡矮一截。
- * height:100% 让每张卡吃满所在的 Col，行高由内容最多的一张决定。
- * 只挂自己拥有的类名，不依赖组件库的内部类。
+ * 首页这张趋势图与「今日」卡也吃满列高 —— 规则在 `.card-fill`（见「并排卡片等高」），
+ * 这里不再重复写 height: 100%。
  */
-.dashboard-trend,
-.dashboard-today,
-.metric-card {
-  height: 100%;
-}
-
-.metric-card__card {
-  height: 100%;
-}
 
 .metric-card__label {
   font-size: 12px;

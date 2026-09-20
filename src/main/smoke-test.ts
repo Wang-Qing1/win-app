@@ -86,6 +86,107 @@ const HOME_MODULES = [
 ] as const
 
 /**
+ * 每个页面上「至少应当量到几行并排卡片」。
+ *
+ * 作用是让「标记丢了 / 整行被删」变红：`[data-card-row]` 探针采到 0 行时
+ * 会安安静静地通过，而「一行卡片全没了」正是最该拦住的情况。
+ *
+ * 写的是**下限**而不是精确值：栅格是响应式的（`xs={12}` 在窄窗口折成两行），
+ * 精确计数会把窄窗口下的正确实现判成失败 —— 这是「写死落点」的老毛病。
+ *
+ * 数字独立写一遍（同 `HOME_MODULES` 的理由）：从渲染进程 import 的话，
+ * 两边一起改错就永远测不出来。
+ */
+const CARD_ROWS_MIN: Readonly<Record<string, number>> = {
+  '/': 3, // 功能模块 / 首页指标 / 趋势与今日
+  '/books': 1, // 书架卡片网格（另一行骨架只在加载时存在）
+  '/outline': 0,
+  '/cards': 0,
+  '/stats': 2, // 区间指标 / 趋势图
+  'book-detail': 1 // 书籍概览四张卡
+}
+
+/**
+ * 书籍详情页头部那四枚圆形图标按钮的期望清单。
+ *
+ * 同样**独立写一遍**（同上：清单是产品约定，共用一份就永远测不出「清单被改错」）。
+ *
+ * 为什么这四枚值得逐个点名：把「图标 + 文字」改成「图标 + 悬浮提示」时，
+ * 最典型的失手是**文字删掉了、按钮也顺手删掉了**（改造时只盯着「把这行文字
+ * 拿掉」），或者两枚按钮复制粘贴成同一个 `testId` / 同一个 label。
+ * 只断「页面上有几枚圆钮」这两种错都发现不了。
+ */
+const BOOK_DETAIL_ACTIONS = [
+  { testId: 'book-detail-back', label: '返回书架' },
+  { testId: 'book-detail-edit', label: '编辑信息' },
+  { testId: 'book-detail-export', label: '导出整本书' },
+  { testId: 'book-detail-remove', label: '删除书籍' }
+] as const
+
+/**
+ * 章节编辑器顶栏那几枚功能按钮的锚点（同上一份清单，独立写一遍）。
+ *
+ * 五枚 = 返回书籍详情 + 查找替换 / 取名 / 专注 / 发布草稿。
+ *
+ * 只点名锚点、不点名文案：其中一枚（专注模式）的提示文案**随状态变**
+ * （「专注模式：…」/「退出专注模式」），写死文案的断言会在切到专注模式后
+ * 变成假失败。形状与「label 非空」由 `checkIconButtons` 统一管，
+ * 这里只负责「五枚都还在」。
+ */
+const EDITOR_TOP_BAR_ACTIONS = [
+  'editor-back',
+  'editor-find-toggle',
+  'editor-name',
+  'editor-focus-toggle',
+  'editor-export'
+] as const
+
+/**
+ * 顶栏 `…` 菜单里的三项，与 `TopBarMenu` 的 items 一一对应。
+ *
+ * 同上：独立写一遍而不是从渲染进程 import —— 菜单项是产品约定，
+ * 两边一起改错的话共用清单永远测不出来。
+ */
+const TOP_BAR_MENU_ITEMS: ReadonlyArray<{ key: string; testId: string; name: string }> = [
+  { key: 'health', testId: 'topbar-menu-health', name: '主进程健康' },
+  { key: 'backup', testId: 'topbar-menu-backup', name: '备份数据库' },
+  { key: 'theme', testId: 'topbar-menu-theme', name: '主题切换' }
+]
+
+/** 「更多功能」按钮的锚点，多处用 */
+const TOP_BAR_MORE_ID = 'topbar-more-button'
+
+/**
+ * **允许重复**的按钮锚点：列表行。
+ *
+ * 这些锚点挂在「一屏里有很多个」的行上（卡片行 / 目录行 / 进度行 / 首页模块卡），
+ * 本来就该出现多次 —— 读它们的地方用的也是 `querySelectorAll`。
+ *
+ * 除此之外的按钮锚点必须唯一。用白名单而不是自动识别：自动识别的启发式
+ * （「文本不同就是列表」）一旦判错，要么放走真 bug、要么变成天天有人来绕过的误报；
+ * 白名单则是「新增一个列表锚点时测试会红」，逼着人显式声明「这个是列表行」。
+ * 边界就是这句：**按 `querySelector` 读的锚点必须唯一，按 `querySelectorAll` 读的
+ * 才允许重复** —— 前者出现两枚时，断言只会读到第一枚，另一枚没人看得见。
+ */
+const REPEATABLE_BUTTON_ANCHORS = ['card-row', 'catalog-row', 'progress-row', 'module-entry']
+
+/**
+ * 大纲页右侧节点面板头部的两枚图标按钮（子节点 / 同级），独立写一遍清单。
+ *
+ * 为什么要按**显式清单**挑而不是前缀匹配：页头还有一枚 `outline-add-root`，
+ * 用 `startsWith('outline-add-')` 会把它也算进「面板头部」，2 枚变成 3 枚
+ * —— 第一版就是这么误报的。前缀匹配看着省事，其实是把两个不同位置的
+ * 按钮当成了一类。
+ */
+const OUTLINE_PANEL_ACTIONS = ['outline-add-child', 'outline-add-sibling'] as const
+
+/**
+ * 主题三档的循环顺序，与 `TopBarMenu` 里的 `THEME_ITEMS` 对齐。
+ * 独立写一遍，否则「顺序被改错」两边一起错、断言照样全绿。
+ */
+const THEME_ORDER = ['system', 'light', 'dark'] as const
+
+/**
  * 展示用书籍的「每章最少字数」。
  *
  * 刻意取一个不是默认值的数（默认 2000），而且是**本章 targetWords 之外**的
@@ -1822,6 +1923,48 @@ async function checkDashboard(window: BrowserWindow): Promise<StepResult> {
     }
 
     if (rendered.pageTitle !== '首页') problems.push(`页面标题异常：${rendered.pageTitle}`)
+
+    /*
+     * 顶栏右上角：**只有一枚**圆形 `…` 按钮。
+     *
+     * 用户 2026-09-20 的要求分两轮，最终形态是「只展示一个 [...] 图标按钮，
+     * 点击后展开下拉菜单，每个菜单项对应一个圆形功能图标（并排展示的功能图标取消）」
+     * —— 所以三件事分别断：
+     *   「只有一枚」→ inlineIconButtons 必须为 1（并排的图标又冒出来时，
+     *                 菜单那边的断言照样全绿，只有这个计数会红）
+     *   「圆形」「只有图标」→ 几何与 textContent
+     *   「读屏仍然知道它是什么」→ aria-label 非空（文字挪走 ≠ 文字可以删）
+     */
+    if (rendered.inlineIconButtons !== 1) {
+      problems.push(
+        `顶栏里有 ${rendered.inlineIconButtons} 个圆形图标按钮，应为 1 个 —— 多个功能按钮要收进「…」的菜单，不再并排展示`
+      )
+    }
+    const moreButton = rendered.moreButton
+    if (!moreButton) {
+      problems.push('顶栏找不到「更多功能」（…）按钮')
+    } else {
+      if (moreButton.text !== '') {
+        problems.push(`「更多功能」按钮上还有文字「${moreButton.text}」—— 它应当只有一个图标`)
+      }
+      if (moreButton.label === '') {
+        problems.push('「更多功能」按钮没有 aria-label，读屏念不出它是什么')
+      }
+      if (
+        Math.abs(moreButton.width - moreButton.height) > 1 ||
+        Math.abs(moreButton.radiusPx - moreButton.width / 2) > 1
+      ) {
+        problems.push(
+          `「更多功能」按钮不是正圆（${moreButton.width}×${moreButton.height}px，圆角 ${moreButton.radiusPx}px）`
+        )
+      }
+    }
+    // 主进程状态必须随时可读，而不是「点开菜单才知道」。它挂在 `…` 按钮上，
+    // 画面上不显示 —— 所以读不到时说明这份状态副本丢了，而不是「没渲染」。
+    if (rendered.healthState === '') {
+      problems.push('顶栏没有可读的主进程状态（data-health-state 缺失）')
+    }
+
     // 产品名：窗口标题栏显示的就是页面 <title>，而 BrowserWindow 自己也有
     // title 选项（在页面加载完成前生效）。两处都查 —— 它们是用户第一眼
     // 看到的东西，「wapp 应改为 winbook」那次反馈正是从这里来的。
@@ -1904,27 +2047,93 @@ async function checkDashboard(window: BrowserWindow): Promise<StepResult> {
 
     await captureIfRequested(window, 'dashboard')
 
+    /*
+     * 「更多功能」菜单：三项各配一个圆形图标。（放在截图之后 —— 浮层会挡进画面里，
+     * 而这张图是给用户看首页长相的。）
+     *
+     * 断的是「每一项的图标是正圆 + 文字没丢」：用户明确说了「每个菜单项对应一个
+     * 圆形功能图标」。方形图标、或者为了省事只留文字，都能通过「菜单项在不在」的断言。
+     */
+    const menu = await openTopBarMenu(window)
+    const menuProblems: string[] = []
+    const missing = TOP_BAR_MENU_ITEMS.filter(
+      (def) => !menu.items.some((item) => item.key === def.key && item.found && item.visible)
+    )
+    if (missing.length > 0) {
+      menuProblems.push(`菜单里缺少：${missing.map((def) => def.name).join('、')}（菜单没展开？）`)
+    } else if (menu.items.length !== TOP_BAR_MENU_ITEMS.length) {
+      menuProblems.push(`菜单有 ${menu.items.length} 项，应为 ${TOP_BAR_MENU_ITEMS.length} 项`)
+    } else {
+      for (const item of menu.items) {
+        const name = TOP_BAR_MENU_ITEMS.find((def) => def.key === item.key)?.name ?? item.key
+        if (item.text === '') {
+          menuProblems.push(`菜单项「${name}」没有任何文字 —— 图标并排展示取消之后，文字必须落在菜单里`)
+        }
+        if (
+          Math.abs(item.iconWidth - item.iconHeight) > 1 ||
+          Math.abs(item.iconRadiusPx - item.iconWidth / 2) > 1
+        ) {
+          menuProblems.push(
+            `菜单项「${name}」的图标不是正圆（${item.iconWidth}×${item.iconHeight}px，圆角 ${item.iconRadiusPx}px）`
+          )
+        }
+      }
+
+      const iconWidths = menu.items.map((item) => item.iconWidth)
+      if (Math.max(...iconWidths) - Math.min(...iconWidths) > 1) {
+        menuProblems.push(`菜单项的圆形图标大小不一致（各 ${iconWidths.join('/')}px）`)
+      }
+    }
+    problems.push(...menuProblems)
+
+    // 菜单平时不在画面上（它只在被点开时存在），按页截图永远拍不到它 ——
+    // 所以趁它开着单独截一张。位置在这段断言之后：截图只负责换个画面，
+    // 不该有本事把测试带成红灯（同目录右键菜单那张的约定）。
+    //
+    // 先等它把进场动画跑完再截：轮询判「可见」读的是实测尺寸，而浮层是
+    // opacity 从 0 渐显的 —— 尺寸早就有了、画面还是全透明，直接抓只能得到
+    // 一张「有按钮、没有菜单」的图（实测踩过一次）。
+    await delay(600)
+    await captureIfRequested(window, 'topbar-menu')
+
+    // 主题项：从菜单里连点三档，必须每次前进一档、点满一圈回到原点。
+    // 这条同时证明「菜单项真的可点」—— 一个点不动的菜单项在其它断言下是全绿的。
+    const themeCycle = await cycleThemeByMenu(window)
+    if (!themeCycle.ok) {
+      problems.push(`主题菜单项没有按「点一次转一档」工作：${themeCycle.detail}`)
+    }
+    await closeTopBarMenu(window)
+    await setWindowVisible(window, false)
+
+
     return {
       name: '渲染进程',
       ok: problems.length === 0,
       detail:
         problems.length === 0
-          ? `React 已挂载，顶部无导航条，首页 ${rendered.modules.length} 张功能卡片一行等宽（各 ${rendered.modules[0].width}px，顺序 ${rendered.modules
+          ? `React 已挂载，顶部无导航条，顶栏只有 ${rendered.inlineIconButtons} 枚圆形「…」按钮（${rendered.moreButton?.width}px 正圆、无文字、aria-label「${rendered.moreButton?.label}」），其菜单 ${
+              menu.items.filter((item) => item.visible).length
+            } 项各配圆形图标（主题循环 ${themeCycle.detail}），首页 ${rendered.modules.length} 张功能卡片一行等宽（各 ${rendered.modules[0].width}px，顺序 ${rendered.modules
               .map((item) => item.key)
-              .join('→')}），渲染 ${rendered.bookCount} 本书 / ${rendered.totalHanzi} 汉字 / ${rendered.progressRowCount} 行进度，健康状态「${rendered.healthText}」，行内卡片等高（指标 ${rendered.rows.metricHeights[0]}px / 趋势与今日 ${rendered.rows.trendHeight}px）`
+              .join('→')}），渲染 ${rendered.bookCount} 本书 / ${rendered.totalHanzi} 汉字 / ${rendered.progressRowCount} 行进度，主进程状态「${rendered.healthText}」，行内卡片等高（指标 ${rendered.rows.metricHeights[0]}px / 趋势与今日 ${rendered.rows.trendHeight}px）`
           : // 失败时把实测快照一并打出来。否则只有一句「没有渲染出数据行」，
             // 还得回头改代码加日志才能知道到底是没挂载、还在 loading 还是选择器写错了
             `${problems.join('；')}｜实测：React ${
               rendered.reactMounted ? '已挂载' : '未挂载'
             }，顶部导航条 ${rendered.hasTopNav ? '还在' : '已移除'}，标题${
               rendered.titleVisible ? '可见' : '隐藏'
-            }，功能卡片=${rendered.modules.length} 张（${rendered.modules
+            }，顶栏圆钮=${rendered.inlineIconButtons} 个（… 按钮 ${
+              rendered.moreButton ? `${rendered.moreButton.width}×${rendered.moreButton.height}px/圆角 ${rendered.moreButton.radiusPx}px/文字「${rendered.moreButton.text}」` : '找不到'
+            }），菜单项=${menu.items
+              .filter((item) => item.visible)
+              .map((item) => item.key)
+              .join('/')}，功能卡片=${rendered.modules.length} 张（${rendered.modules
               .map((item) => item.key || '?')
               .join('/')}），标题「${rendered.pageTitle}」，loading=${
               rendered.metricsLoading
             }，书籍数=${rendered.bookCount}，总字数=${rendered.totalHanzi}，进度行=${
               rendered.progressRowCount
-            }，健康「${rendered.healthText}」`
+            }，主进程「${rendered.healthText}」`
     }
   } catch (error) {
     return { name: '渲染进程', ok: false, detail: messageOf(error) }
@@ -1969,6 +2178,8 @@ interface EditorSnapshot {
   hasCatalog: boolean
   hasToolbar: boolean
   hasInspector: boolean
+  /** 编辑器顶栏上的圆形图标按钮（见 `ICON_BUTTON_PROBE_JS`） */
+  iconButtons: IconButtonProbe[]
   /** 应用主题（'light' | 'dark'）。纸面声明 ink='theme' 时靠它推出期望的墨色 */
   theme: string
   /** 纸面背景层的实测底色与浓度 */
@@ -2039,6 +2250,7 @@ const EMPTY_EDITOR_SNAPSHOT: EditorSnapshot = {
   hasCatalog: false,
   hasToolbar: false,
   hasInspector: false,
+  iconButtons: [],
   theme: '',
   washColor: '',
   washOpacity: -1,
@@ -2069,6 +2281,266 @@ const EMPTY_EDITOR_SNAPSHOT: EditorSnapshot = {
     leftDisabled: true,
     rightDisabled: true
   }
+}
+
+/* ---------------------------------------------------------------- *
+ * 「圆形图标按钮」的通用探针
+ *
+ * 用户 2026-09-20 连着提了两轮：
+ *   ① 「头部的所有功能图标都太丑了，需要修正为圆形只展示图标的功能按钮，
+ *      所有的文字都移动到鼠标悬浮的提示中」（顶栏那枚 `…`）；
+ *   ② 「各个界面中的图标也要跟着改，比如书籍详情页、大纲页、卡片页等」
+ *      （推广到各页头部与面板头部）。
+ *
+ * 这两句拆成四条**可实测**的规矩，写成一份探针、两个快照脚本共用：
+ *   - 圆形：宽 === 高，且圆角半径 ≈ 半宽
+ *   - 只展示图标：按钮渲染出来的文字必须为空
+ *   - 文字没丢:`aria-label` 必须非空（文字从画面上移走 ≠ 可以删掉）
+ *   - 有名字可指认：`data-testid` 便于失败时直接说出是哪一枚
+ * ---------------------------------------------------------------- */
+
+interface IconButtonProbe {
+  /** 失败时用来指认是哪一枚按钮 */
+  testId: string
+  /** 按钮上渲染出来的文字。**必须为空** */
+  text: string
+  /** `aria-label`。**必须非空** */
+  label: string
+  width: number
+  height: number
+  radiusPx: number
+}
+
+/**
+ * 探针本体：采的是 `.app-icon-button` 这个**类**，而不是一份 `data-testid` 清单。
+ *
+ * 为什么按类采：这个类是「圆形图标按钮」这套形状的唯一定义（`IconButton`
+ * 组件、顶栏那枚 `…`、右下角悬浮按钮都挂它）。按清单采的话，「新加了一枚
+ * 按钮但忘了登记」就整枚漏检 —— 而那恰恰是最该拦住的情况。
+ *
+ * 两个快照脚本（路由快照与编辑器快照）共用这一份：各写一遍的话，改了一处
+ * 漏另一处，会出现「有的页面还在量旧规矩」而没人发现。
+ */
+const ICON_BUTTON_PROBE_JS = `Array.prototype.map.call(
+  document.querySelectorAll('.app-icon-button'),
+  (el) => {
+    const rect = el.getBoundingClientRect()
+    const rawRadius = window.getComputedStyle(el).borderTopLeftRadius || '0'
+    return {
+      testId: el.getAttribute('data-testid') || '',
+      // 只读按钮自己渲染出来的文字。「…」那枚的 aria-label 是一整句话，
+      // 两者混着读就分不清「文字到底有没有画到按钮上」。
+      text: (el.textContent || '').trim(),
+      label: el.getAttribute('aria-label') || '',
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      // border-radius 写成 50% 时 computedStyle 原样返回 "50%"，parseFloat 会
+      // 得到 50 这个「像素数」—— 必须按宽度折算，否则正圆会被判成不是圆。
+      radiusPx: rawRadius.trim().endsWith('%')
+        ? Math.round((rect.width * parseFloat(rawRadius)) / 100)
+        : Math.round(parseFloat(rawRadius))
+    }
+  }
+  // 宽为 0 的是「在 DOM 里但不可见」的（比如收起的面板里的按钮）。
+  // 把它们算进来会得出一堆 0×0 的「不是正圆」误报；存在性由别的断言负责。
+).filter((item) => item.width > 0)`
+
+/**
+ * 把探针结果换算成问题清单。写成一个函数是为了让**所有**页面量的是同一套规矩
+ * —— 每页各写一段检查，早晚会漂成几种标准。
+ */
+function checkIconButtons(buttons: IconButtonProbe[], pageLabel: string): string[] {
+  const problems: string[] = []
+
+  if (buttons.length === 0) {
+    problems.push(
+      `「${pageLabel}」页一枚圆形图标按钮都没有 —— 至少右下角那枚「返回首页」应当在这儿`
+    )
+    return problems
+  }
+
+  for (const item of buttons) {
+    const who = item.testId.length > 0 ? `[${item.testId}]` : item.label || '（无 testid 也无 label）'
+
+    if (item.text.length > 0) {
+      problems.push(
+        `「${pageLabel}」页的图标按钮 ${who} 上还写着「${item.text}」—— 文字应当移进鼠标悬浮的提示里`
+      )
+    }
+    if (item.label.length === 0) {
+      problems.push(
+        `「${pageLabel}」页的图标按钮 ${who} 没有 aria-label —— 文字从画面上移走不等于可以删掉，否则读屏读不出它是什么`
+      )
+    }
+    if (Math.abs(item.width - item.height) > 1) {
+      problems.push(
+        `「${pageLabel}」页的图标按钮 ${who} 不是正方形（${item.width}×${item.height}px），圆形的前提是宽高相等`
+      )
+    } else if (Math.abs(item.radiusPx - item.width / 2) > 1) {
+      problems.push(
+        `「${pageLabel}」页的图标按钮 ${who} 不是正圆（宽 ${item.width}px，圆角半径 ${item.radiusPx}px，应为 ${Math.round(
+          item.width / 2
+        )}px）`
+      )
+    }
+  }
+
+  return problems
+}
+
+/* ------------------------------------------------------------------ *
+ * 并排卡片等高
+ *
+ * 用户 2026-09-20：「上方的四个并排卡片没有高度对齐？并排的卡片都需要高度对齐」。
+ *
+ * 为什么不能靠「卡片在不在」这类断言：卡片当然都在，点了也都有反应 ——
+ * 不等高是**纯几何**的症状，只有量渲染出来的盒子才看得见。实测够狠：
+ * 书籍详情页四张概览卡是 78.5 / 78.5 / 93 / 90px，底边参差 15px。
+ *
+ * 探针采的是 `[data-card-row]`（我们自己挂的标记），不是组件库的 `.ant-row`
+ * —— 沿用「不依赖 UI 库内部类」那条约定（README 第 1 条）：库改个类名，
+ * 按内部类采的断言会静默采到 0 个而表现为全绿。
+ *
+ * 代价写在明处：**新加一行并排卡片却忘了挂标记 = 漏检**。所以每个页面
+ * 另有一条「至少量到几行」的计数（见 `CARD_ROWS_MIN`），标记被改掉或
+ * 整行被删时会红。这与图标按钮「按 .app-icon-button 类采」是同一取舍。
+ * ------------------------------------------------------------------ */
+
+interface CardBoxProbe {
+  /** 该列顶边，用来把「同一视觉行」的卡片归到一起（换行后一行里的顶边相同） */
+  top: number
+  /** 列高。卡片应当与它相等，否则卡片没有吃满列 */
+  colHeight: number
+  /** 卡片盒子的实测高度；读不到元素时为 -1 */
+  cardHeight: number
+  /** 卡片元素有没有自己的背景或边框（用来辨认「穿透透明的锚点壳」） */
+  cardPainted: boolean
+}
+
+interface CardRowProbe {
+  /** `data-card-row` 的值，失败时用来指认是哪一行 */
+  name: string
+  boxes: CardBoxProbe[]
+}
+
+/**
+ * 探针本体。每个 `[data-card-row]` 量一遍它每一列里的卡片。
+ *
+ * 「卡片」不是 `col.firstElementChild` 就完事：MetricCard 外面套了一层透明的
+ * 锚点 div（data-testid 挂在那上面），真正的白卡片是它的子元素。只量外壳的话，
+ * 「外壳被拉高、里面那张卡还是按内容收缩」这种真实故障会被判成全绿 ——
+ * 也就是「藏内容要连外壳一起量」的镜像版本。所以壳是透明的（无背景无边框）
+ * 且只有一个子元素时，往下走一层再量。
+ */
+const CARD_ROW_PROBE_JS = `Array.prototype.map.call(
+  document.querySelectorAll('[data-card-row]'),
+  (row) => {
+    const boxes = Array.prototype.filter
+      .call(row.children, (col) => col.getBoundingClientRect().height > 0)
+      .map((col) => {
+        const colRect = col.getBoundingClientRect()
+        let el = col.firstElementChild
+        let cardPainted = false
+        // 最多往下穿 3 层，防手写的嵌套意外把这里变成死循环
+        for (let i = 0; el && i < 3; i++) {
+          const cs = window.getComputedStyle(el)
+          const bg = cs.backgroundColor || ''
+          const bare =
+            (bg === '' || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') &&
+            parseFloat(cs.borderTopWidth || '0') === 0
+          if (bare && el.children.length === 1) {
+            el = el.firstElementChild
+            continue
+          }
+          cardPainted = !bare
+          break
+        }
+        const cardRect = el ? el.getBoundingClientRect() : null
+        return {
+          top: Math.round(colRect.top),
+          colHeight: Math.round(colRect.height),
+          cardHeight: cardRect ? Math.round(cardRect.height) : -1,
+          cardPainted
+        }
+      })
+    return { name: row.getAttribute('data-card-row') || '(未命名)', boxes }
+  }
+)`
+
+/**
+ * 把探针结果换算成问题清单。所有页面共用这一份规矩。
+ *
+ * 分组按**视觉行**而不是按 DOM：`xs={12}` 这类断点会让一行折成两行，
+ * 折行之后的卡片本来就该各按自己那一行比 —— 拿全行一起比会把窄窗口下的
+ * 正确实现判成失败。
+ */
+function checkCardRows(rows: CardRowProbe[], pageLabel: string, minRows: number): string[] {
+  const problems: string[] = []
+
+  if (rows.length < minRows) {
+    problems.push(
+      `「${pageLabel}」页只量到 ${rows.length} 行并排卡片（至少应有 ${minRows} 行）—— ` +
+        'data-card-row 标记丢了，或新加的卡片行没有跟着挂标记'
+    )
+  }
+
+  for (const row of rows) {
+    const lines: CardBoxProbe[][] = []
+    for (const box of [...row.boxes].sort((a, b) => a.top - b.top)) {
+      // 2px 容差：同一行里的列顶边理论上完全相等，亚像素取整会差 1px
+      const line = lines.find((items) => Math.abs(items[0].top - box.top) <= 2)
+      if (line) line.push(box)
+      else lines.push([box])
+    }
+
+    for (const line of lines) {
+      if (line.length < 2) continue
+
+      const unmeasured = line.filter((item) => item.cardHeight < 0)
+      if (unmeasured.length > 0) {
+        problems.push(
+          `「${row.name}」有 ${unmeasured.length} 列里读不到卡片元素，无法验证等高`
+        )
+      }
+
+      const heights = line.map((item) => item.cardHeight)
+      if (Math.max(...heights) - Math.min(...heights) > 2) {
+        problems.push(
+          `「${row.name}」同一行里的卡片不等高（各 ${heights.join(' / ')}px）—— ` +
+            '并排的卡片底边必须齐，卡片要加 `.card-fill`（见 styles.css「并排卡片等高」）'
+        )
+      }
+
+      // 等高还不够：几张卡一起「按内容收缩成一样高」时也可能齐，
+      // 但那一行整体比列矮，卡片下方会空出一条属于列的底色。
+      const notFilled = line.filter(
+        (item) => item.cardHeight >= 0 && Math.abs(item.cardHeight - item.colHeight) > 2
+      )
+      if (notFilled.length > 0) {
+        problems.push(
+          `「${row.name}」有 ${notFilled.length} 张卡片没有吃满所在列（卡高 ${notFilled
+            .map((item) => item.cardHeight)
+            .join('/')}px，列高 ${notFilled.map((item) => item.colHeight).join('/')}px）`
+        )
+      }
+    }
+  }
+
+  return problems
+}
+
+/**
+ * 把实测的卡片行压成一行证据文本：PASS 行里能直接读出「每行几张卡、各多高」。
+ *
+ * 为什么值得往 PASS 行里塞：这四张卡不等高时，失败信息说得出问题，
+ * 但一切正常时没人看得见「量到的到底是 125px 还是 0（没量到）」——
+ * 而 0 与 125 都可能是绿的。
+ */
+function describeCardRows(rows: CardRowProbe[]): string {
+  if (rows.length === 0) return '本页无并排卡片行'
+  return rows
+    .map((row) => `${row.name} ${row.boxes.map((box) => box.cardHeight).join('/')}px`)
+    .join('，')
 }
 
 const EDITOR_SNAPSHOT_SCRIPT = `(() => {
@@ -2168,6 +2640,10 @@ const EDITOR_SNAPSHOT_SCRIPT = `(() => {
     hasCatalog: !!document.querySelector('[data-testid="chapter-catalog"]'),
     hasToolbar: !!document.querySelector('[data-testid="editor-toolbar"]'),
     hasInspector: !!document.querySelector('[data-testid="editor-inspector"]'),
+    // 编辑器顶栏那四枚（查找替换 / 取名 / 专注 / 发布草稿）改造前是「图标 + 文字」，
+    // 一共占掉 300px 宽 —— 而这条顶栏的高度写死 46px，宽的那一排把书名与章名
+    // 挤到只剩省略号。这里量的是它们现在到底是不是正圆、有没有把文字留干净。
+    iconButtons: ${ICON_BUTTON_PROBE_JS},
     theme: document.documentElement.getAttribute('data-theme') ?? '',
     // 纸面底色由背景层承载（正文在它上面一层），所以要量背景层而不是纸面容器
     washColor: washStyle ? washStyle.backgroundColor : '',
@@ -2297,6 +2773,20 @@ async function checkChapterEditor(
       problems.push(
         `编辑器元信息栏除标题外还有 ${snap.metabarExtras} 个控件（应为 0：分卷 / 状态 / 本章目标 / 保存信息已移到新建章弹窗与书籍设置）`
       )
+    }
+
+    /* ---- 顶栏那四枚功能按钮：圆形、只有图标、文字在提示里 ----
+     *
+     * 用户 2026-09-20 先改的顶栏、再要求「各个界面中的图标也要跟着改」。
+     * 编辑器顶栏是这一批里唯一一条**高度写死 46px** 的横条：改造前那四枚
+     * 「图标 + 文字」按钮一共占掉 300px 宽，把书名与章名挤到只剩省略号。
+     * 所以这里除了量形状，还要确认那四枚都在（它们同时也是顶栏变窄的收益方）。
+     */
+    problems.push(...checkIconButtons(snap.iconButtons, '章节编辑器'))
+    for (const id of EDITOR_TOP_BAR_ACTIONS) {
+      if (!snap.iconButtons.some((item) => item.testId === id)) {
+        problems.push(`编辑器顶栏少了 [${id}] 按钮 —— 把文字移进提示时最容易连按钮一起删掉`)
+      }
     }
 
     /* ---- 底栏「计划」的口径必须来自书籍的每章最少字数 ---- */
@@ -3357,6 +3847,38 @@ interface RouteState {
   /** 品牌区的左坐标：用来证明按钮出现/消失不会把顶栏内容挤跑 */
   brandLeft: number
   moduleCount: number
+  /**
+   * 画面上所有圆形图标按钮的实测形态（见 `ICON_BUTTON_PROBE_JS`）。
+   *
+   * 这份探针挂在**路由快照**上，所以首页、四个模块页、书籍详情页都会各量一遍
+   * —— 用户 2026-09-20 要求「各个界面中的图标也要跟着改」，而「各个界面」
+   * 没法用一条断言写完，用「每个页面各量一次、规矩共用同一份」才拦得住
+   * 「只改了一半页面」。
+   */
+  iconButtons: IconButtonProbe[]
+  /**
+   * 同一页上**重复出现**的按钮锚点（按钮级别的 `data-testid`，出现两次以上）。
+   *
+   * 卡片库真出过这个：工具栏上的「新建卡片」被复制成了两份（连同那段
+   * 「固定在工具栏最左端」的注释一起复制），于是两枚一模一样的蓝圆并排站着。
+   * 而所有断言读的都是 `querySelector('[data-testid="cards-add"]')` ——
+   * 永远只读到左边那一枚，右边那枚是「测试看不见的第二份」，
+   * 存在性、几何、提示文案全都查得挺好。
+   *
+   * 只数 `<button>`：列表行的锚点（`progress-row` / `catalog-row` / `module-entry`）
+   * 本来就该出现多次，混进来会变成一堆误报。按钮锚点重复则几乎只可能是
+   * 复制粘贴失手 —— 同一颗按钮在一屏里出现两次没有合理用途。
+   */
+  duplicateButtonTestIds: string[]
+  /**
+   * 每一行并排卡片的实测几何（见 `CARD_ROW_PROBE_JS`）。
+   *
+   * 用户 2026-09-20：「并排的卡片都需要高度对齐」。这件事没有任何
+   * 「存在性」断言能替代 —— 四张卡都在、都能点、内容都对，只是底边参差。
+   * 挂在路由快照上，所以首页、四个模块页、书籍详情页各量一遍，
+   * 规矩共用同一份 `checkCardRows`。
+   */
+  cardRows: CardRowProbe[]
 }
 
 const EMPTY_ROUTE_STATE: RouteState = {
@@ -3372,7 +3894,10 @@ const EMPTY_ROUTE_STATE: RouteState = {
   hasHomeButton: false,
   homeButton: null,
   brandLeft: -1,
-  moduleCount: 0
+  moduleCount: 0,
+  iconButtons: [],
+  duplicateButtonTestIds: [],
+  cardRows: []
 }
 
 /**
@@ -3435,7 +3960,28 @@ const ROUTE_STATE_SCRIPT = `(() => {
     hasHomeButton: !!homeEl,
     homeButton,
     brandLeft: brandEl ? Math.round(brandEl.getBoundingClientRect().left) : -1,
-    moduleCount: document.querySelectorAll('[data-testid="module-entry"]').length
+    moduleCount: document.querySelectorAll('[data-testid="module-entry"]').length,
+    iconButtons: ${ICON_BUTTON_PROBE_JS},
+    // 每一行并排卡片的实测几何。用户 2026-09-20：「并排的卡片都需要高度对齐」。
+    cardRows: ${CARD_ROW_PROBE_JS},
+    // 重复的按钮锚点：同一颗按钮在一屏里出现两次。见 RouteState 里的说明 ——
+    // 这类重复会让所有「按锚点查一次」的断言只查到第一枚，另一枚永远没人看。
+    // 列表行锚点（一屏里本来就很多个、用 querySelectorAll 读）在白名单里。
+    duplicateButtonTestIds: (() => {
+      const repeatable = ${JSON.stringify(REPEATABLE_BUTTON_ANCHORS)}
+      const seen = []
+      const dup = []
+      Array.prototype.forEach.call(document.querySelectorAll('button[data-testid]'), (el) => {
+        const id = el.getAttribute('data-testid')
+        if (repeatable.indexOf(id) >= 0) return
+        if (seen.indexOf(id) >= 0) {
+          if (dup.indexOf(id) < 0) dup.push(id)
+        } else {
+          seen.push(id)
+        }
+      })
+      return dup
+    })()
   }
 })()`
 
@@ -3512,6 +4058,9 @@ async function checkHomeNavigation(window: BrowserWindow): Promise<StepResult> {
       problems.push('首页上也有「返回首页」按钮 —— 在根页面上它是无意义的噪音')
     }
 
+    // 首页有三行并排卡片（功能模块 / 首页指标 / 趋势与今日），每一行内部必须等高
+    problems.push(...checkCardRows(home.cardRows, '首页', CARD_ROWS_MIN['/'] ?? 0))
+
     // 品牌区的左坐标作为「顶栏没被挤动」的基线。悬浮按钮不在布局流里，
     // 它在与不在都不该让顶栏的任何东西挪位置；若有人把它改回顶栏里的普通
     // 按钮，模块页的品牌就会比首页右移一截 —— 用户看到的是「一切换页面，
@@ -3567,6 +4116,39 @@ async function checkHomeNavigation(window: BrowserWindow): Promise<StepResult> {
       }
       if (arrived.hasTopNav) {
         problems.push(`「${module.label}」页又出现了顶部导航条`)
+      }
+
+      /* ② 图标按钮的形态：每一页都量一遍。
+       *
+       * 用户 2026-09-20 先改顶栏、再要求「各个界面中的图标也要跟着改」。这类
+       * 批量外观改造最容易的失败方式是**只改了一半** —— 而「按钮在不在」
+       * 「点了有没有反应」这些断言全都照样绿。所以这一条不看存在性，
+       * 只看形状：圆形、无文字、aria-label 还在。规矩只有一份
+       * （`checkIconButtons`），四个模块页量的是同一套。 */
+      problems.push(...checkIconButtons(arrived.iconButtons, module.label))
+
+      /* 并排卡片必须等高（用户 2026-09-20：「并排的卡片都需要高度对齐」）。
+       *
+       * 与上面那条同源：批量外观/布局改造最容易只改一半，而「卡片在不在」
+       * 「点了有没有反应」全都照样绿。不等高是纯几何症状，只有量盒子看得见。
+       * 规矩共用 `checkCardRows`，四页各量一遍（书籍详情页在 checkBooks 里另量）。 */
+      problems.push(
+        ...checkCardRows(arrived.cardRows, module.label, CARD_ROWS_MIN[module.path] ?? 0)
+      )
+
+      /* 重复的按钮锚点：同一颗按钮在一屏里出现两次。
+       *
+       * 卡片库真出过这个（工具栏上两枚一模一样的「新建卡片」，注释也复制了两遍）——
+       * 而它是**测试查不出来**的一类错：所有断言都用 `querySelector`，永远只读到
+       * 第一枚，第二枚既不会让任何断言变红，也不会被截图之外的眼睛看到。
+       * 判据是锚点重复，不是「按钮数」：一个页面上按钮很多是正常的。 */
+      if (arrived.duplicateButtonTestIds.length > 0) {
+        problems.push(
+          `「${module.label}」页有重复的按钮锚点：${arrived.duplicateButtonTestIds.join(
+            '、'
+          )} —— 同一颗按钮在屏上出现了两次，` +
+            '而按锚点查询的断言只会读到第一枚，另一枚谁都看不见'
+        )
       }
 
       /* ② 返回按钮必须出现，而且是**浮在右下角**的圆形图标。
@@ -3646,7 +4228,7 @@ async function checkHomeNavigation(window: BrowserWindow): Promise<StepResult> {
       ok: problems.length === 0,
       detail:
         problems.length === 0
-          ? `${trips.length} 个模块各自走通「卡片 → 模块页（页标题已移除、右下角悬浮返回按钮）→ 返回首页」：${trips.join(' → ')}；首页上无返回按钮，全程无顶部导航条、无可见页标题、无空壳标题行，顶栏未被挤动（品牌左坐标恒为 ${brandLeftOnHome}px）；${floatingDetail}`
+          ? `${trips.length} 个模块各自走通「卡片 → 模块页（页标题已移除、右下角悬浮返回按钮）→ 返回首页」：${trips.join(' → ')}；首页上无返回按钮，全程无顶部导航条、无可见页标题、无空壳标题行，顶栏未被挤动（品牌左坐标恒为 ${brandLeftOnHome}px）；${floatingDetail}；首页并排卡片行实测：${describeCardRows(home.cardRows)}`
           : problems.join('；')
     }
   } catch (error) {
@@ -3842,12 +4424,48 @@ async function checkOutline(window: BrowserWindow): Promise<StepResult> {
 
     await captureIfRequested(window, 'outline')
 
+    /* 右侧面板头部那两枚按钮（子节点 / 同级）**空状态下根本不在画面上** ——
+     * 没选中节点时右栏是一张空状态插图。它们恰好是本轮改造的对象之一
+     * （用户点名了「大纲页」），而「按页截图 + 按页量」的常规覆盖永远碰不到它们：
+     * 大纲页默认就是空状态。所以这里先选一个节点把面板叫出来，再量一遍。
+     *
+     * 判据用「锚点真的出现了」而不是「等一会儿」：React 回写是异步的，
+     * 点击返回时面板往往还没切过去。 */
+    const nodeClicked = (await window.webContents.executeJavaScript(
+      `(() => {
+        const row = document.querySelector('[data-testid="outline-node-row"]')
+        if (!row) return false
+        row.click()
+        return true
+      })()`
+    )) as boolean
+
+    if (!nodeClicked) {
+      problems.push('点不到树上的节点 —— 右侧面板头部那两枚图标按钮因此无法验证')
+    } else {
+      const panelState = await readRouteState(window, (state) =>
+        state.iconButtons.some((item) => item.testId === 'outline-add-child')
+      )
+      // 按**显式清单**挑，不用前缀匹配：`outline-add-root` 是页头那一枚，
+      // 前缀一把抓会把它也算进来，于是 2 枚变成 3 枚（第一版就这么误报的）。
+      const headIcons = panelState.iconButtons.filter((item) =>
+        (OUTLINE_PANEL_ACTIONS as readonly string[]).includes(item.testId)
+      )
+      if (headIcons.length !== OUTLINE_PANEL_ACTIONS.length) {
+        problems.push(
+          `选中节点后右侧面板头部读到 ${headIcons.length} 枚图标按钮（应为 ${OUTLINE_PANEL_ACTIONS.length}：子节点 / 同级）`
+        )
+      }
+      problems.push(...checkIconButtons(headIcons, '大纲节点面板头部'))
+      await captureIfRequested(window, 'outline-panel')
+    }
+
     return {
       name: '大纲管理',
       ok: problems.length === 0,
       detail:
         problems.length === 0
-          ? `进入 ${route}，标题「${snap.title}」，树渲染 ${snap.nodeRows} 行 / 共 ${snap.total} 个节点，已落地 ${snap.landed} 个，树面板高 ${snap.treeHeight}px`
+          ? `进入 ${route}，标题「${snap.title}」，树渲染 ${snap.nodeRows} 行 / 共 ${snap.total} 个节点，已落地 ${snap.landed} 个，树面板高 ${snap.treeHeight}px；页头 3 枚圆形图标按钮，选中节点后面板头部 2 枚（子节点 / 同级）也是正圆且无文字、提示文案齐全`
           : `${problems.join('；')}｜实测：hash=${snap.hash}，标题「${snap.title}」，树=${
               snap.hasTree ? '有' : '无'
             }，行数=${snap.nodeRows}，总数=${snap.total}，已落地=${snap.landed}，面板=${
@@ -3952,9 +4570,48 @@ async function checkBooks(window: BrowserWindow, ctx: ShowcaseTargets | null): P
         if (detail.emptyHeaderRows > 0) {
           problems.push(`书籍详情页有 ${detail.emptyHeaderRows} 行只剩外壳的标题行，会在页顶撑出空白`)
         }
+
+        /* 概览四张卡必须等高。
+         *
+         * 这是用户 2026-09-20 亲眼看出来的那个问题：「上方的四个并排卡片没有
+         * 高度对齐」。实测过三种高度（78.5 / 78.5 / 93 / 90px）—— 而四张卡
+         * 都在、内容都对、点着都有反应，所有「存在性」断言全绿。
+         * 这类「卡片不齐」的毛病只有量盒子才看得见，所以这里量到底。 */
+        problems.push(...checkCardRows(detail.cardRows, '书籍详情页', CARD_ROWS_MIN['book-detail'] ?? 0))
+
+        /* 四枚操作按钮逐个点名（用户 2026-09-20：「书籍详情页…的图标也要跟着改」）。
+         *
+         * 这一页是本轮改造里最值得单独看的一页：它是全应用唯一**同行里同时**
+         * 有可见标题（书名）与操作按钮的地方，而且改造前那四枚是四个带文字的
+         * 按钮、一共 400px 宽。文字移走之后要保证三件事同时成立：
+         * 圆钮都在（没被顺手删）、label 与按钮一一对应（没有复制粘贴错）、
+         * 书名还在它们左边（书名没被挤到换行）。前两条在这里，第三条在上面。 */
+        problems.push(...checkIconButtons(detail.iconButtons, '书籍详情页'))
+        for (const action of BOOK_DETAIL_ACTIONS) {
+          const found = detail.iconButtons.find((item) => item.testId === action.testId)
+          if (!found) {
+            problems.push(
+              `书籍详情页少了「${action.label}」按钮（[${action.testId}]）—— 把文字移进提示时最容易连按钮一起删掉`
+            )
+          } else if (found.label !== action.label) {
+            problems.push(
+              `书籍详情页 [${action.testId}] 的提示文案是「${found.label}」，应为「${action.label}」`
+            )
+          }
+        }
+
         detailNote = `书籍详情页书名「${detail.pageTitle}」显示在标题位（可见、在操作按钮左侧 ${
           detail.actionsLeft - detail.titleLeft
-        }px，同一行 top 差 ${Math.abs(detail.titleTop - detail.actionsTop)}px）`
+        }px，同一行 top 差 ${Math.abs(detail.titleTop - detail.actionsTop)}px），头部 ${
+          detail.iconButtons.length
+        } 枚圆形图标按钮（${detail.iconButtons
+          .map((item) => item.width)
+          .join('/')}px，全部无文字、提示文案齐全），概览 ${
+          detail.cardRows.find((row) => row.name === '书籍概览')?.boxes.length ?? 0
+        } 张卡实测高 ${detail.cardRows
+          .find((row) => row.name === '书籍概览')
+          ?.boxes.map((box) => box.cardHeight)
+          .join(' / ')}px（等高）`
         await captureIfRequested(window, 'book-detail')
       }
     }
@@ -4558,6 +5215,207 @@ async function waitForTooltip(
   return ''
 }
 
+/* ---------------------------------------------------------------- *
+ * 顶栏「更多功能」菜单
+ * ---------------------------------------------------------------- */
+
+interface TopBarMenuSnapshot {
+  /**
+   * 菜单项，顺序与 `TOP_BAR_MENU_ITEMS` 一致。菜单没展开时每项 `found` 都是 false
+   * （下拉浮层是懒渲染的，未展开时 DOM 里根本没有）。
+   */
+  items: Array<{
+    key: string
+    found: boolean
+    /** 有尺寸才算真的显示出来了 —— 判据不认组件库的 hidden 类名 */
+    visible: boolean
+    text: string
+    iconWidth: number
+    iconHeight: number
+    iconRadiusPx: number
+  }>
+}
+
+const EMPTY_TOP_BAR_MENU: TopBarMenuSnapshot = {
+  items: TOP_BAR_MENU_ITEMS.map((def) => ({
+    key: def.key,
+    found: false,
+    visible: false,
+    text: '',
+    iconWidth: -1,
+    iconHeight: -1,
+    iconRadiusPx: -1
+  }))
+}
+
+/**
+ * 读菜单项的实测形态。
+ *
+ * 读的是每项**行首那个圆形图标**的几何，而不是「菜单项在不在」——
+ * 用户说的是「每个菜单项对应一个圆形功能图标」，一个方形图标或干脆没有图标
+ * 同样能通过存在性断言。
+ */
+function readTopBarMenuScript(): string {
+  return `(() => {
+  const defs = ${JSON.stringify(TOP_BAR_MENU_ITEMS.map((def) => ({ key: def.key, testId: def.testId })))}
+  const circle = (el) => {
+    const rect = el.getBoundingClientRect()
+    const raw = window.getComputedStyle(el).borderTopLeftRadius || '0'
+    return {
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      radiusPx: raw.trim().endsWith('%')
+        ? Math.round((rect.width * parseFloat(raw)) / 100)
+        : Math.round(parseFloat(raw))
+    }
+  }
+  const items = defs.map((def) => {
+    const row = document.querySelector('[data-testid="' + def.testId + '"]')
+    const icon = document.querySelector('[data-testid="' + def.testId + '-icon"]')
+    const rowRect = row?.getBoundingClientRect()
+    const geo = icon ? circle(icon) : { width: -1, height: -1, radiusPx: -1 }
+    return {
+      key: def.key,
+      found: !!row,
+      visible: !!rowRect && rowRect.width > 2 && rowRect.height > 2,
+      text: row ? (row.textContent || '').replace(/\\s+/g, ' ').trim() : '',
+      iconWidth: geo.width,
+      iconHeight: geo.height,
+      iconRadiusPx: geo.radiusPx
+    }
+  })
+  return { items }
+})()`
+}
+
+async function readTopBarMenu(window: BrowserWindow): Promise<TopBarMenuSnapshot> {
+  try {
+    const snapshot = (await window.webContents.executeJavaScript(
+      readTopBarMenuScript()
+    )) as TopBarMenuSnapshot
+    // executeJavaScript 回来的对象没有原型，用展开成新对象即可（后面只读不写）
+    return { items: snapshot.items.map((item) => ({ ...item })) }
+  } catch {
+    return EMPTY_TOP_BAR_MENU
+  }
+}
+
+/**
+ * 展开顶栏「更多功能」菜单，并等到三项都真的可见。
+ *
+ * 先把窗口显出来：隐藏窗口的合成器被节流，浮层的进退场帧可能不推进，
+ * 「其实已经关了」会被读成「还开着」，于是下一次点击变成 toggle 而不是展开
+ * （同类坑见「等 DOM 属性不够」那条：浮层要在可见窗口里读）。
+ */
+async function openTopBarMenu(window: BrowserWindow): Promise<TopBarMenuSnapshot> {
+  const already = await readTopBarMenu(window)
+  if (already.items.every((item) => item.found && item.visible)) return already
+
+  await setWindowVisible(window, true)
+
+  const clicked = (await window.webContents.executeJavaScript(
+    `(() => {
+      const el = document.querySelector('[data-testid="${TOP_BAR_MORE_ID}"]')
+      if (!el) return false
+      el.click()
+      return true
+    })()`
+  )) as boolean
+  if (!clicked) return EMPTY_TOP_BAR_MENU
+
+  const deadline = Date.now() + 4000
+  let last = EMPTY_TOP_BAR_MENU
+  while (Date.now() < deadline) {
+    last = await readTopBarMenu(window)
+    if (last.items.every((item) => item.found && item.visible)) return last
+    await delay(120)
+  }
+  return last
+}
+
+/** 关掉菜单。判据是「不再可见」而不是「从 DOM 消失」—— 离场动画里元素还在 */
+async function closeTopBarMenu(window: BrowserWindow): Promise<void> {
+  await window.webContents.executeJavaScript(
+    `(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      return true
+    })()`
+  )
+
+  const deadline = Date.now() + 3000
+  while (Date.now() < deadline) {
+    const snapshot = await readTopBarMenu(window)
+    if (snapshot.items.every((item) => !item.visible)) return
+    await delay(120)
+  }
+}
+
+/** 点某个菜单项。返回是否点到了（点不到时调用方要报失败，不能静默继续） */
+async function clickTopBarMenuItem(window: BrowserWindow, testId: string): Promise<boolean> {
+  return (await window.webContents.executeJavaScript(
+    `(() => {
+      const el = document.querySelector('[data-testid="${testId}"]')
+      if (!el) return false
+      el.click()
+      return true
+    })()`
+  )) as boolean
+}
+
+/** 读主题当前档位。它由「更多功能」按钮声明（状态事实不能只在菜单展开后才有） */
+async function readThemePreference(window: BrowserWindow): Promise<string> {
+  return (await window.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="${TOP_BAR_MORE_ID}"]')?.getAttribute('data-theme-preference') ?? ''`
+  )) as string
+}
+
+/**
+ * 主题：从菜单里连点三档，必须「每次前进一档」且**点满一圈回到原点**。
+ *
+ * 为什么非要验一遍：并排的三枚圆钮收进菜单后，「主题」从一个三段选择器变成了
+ * 一个循环按钮 —— 这是本轮唯一的**行为**改动，而外观断言（圆形、有图标、有文字）
+ * 全都看不见它。点一次不动、或者卡在某一档再点没反应，只有真的点三下才发现。
+ */
+async function cycleThemeByMenu(window: BrowserWindow): Promise<{ ok: boolean; detail: string }> {
+  const before = await readThemePreference(window)
+  const startIndex = (THEME_ORDER as readonly string[]).indexOf(before)
+  if (startIndex < 0) {
+    return { ok: false, detail: `读不到主题档位（读到「${before || '空'}」）` }
+  }
+
+  const steps: string[] = []
+  for (let i = 1; i <= THEME_ORDER.length; i += 1) {
+    const expected = THEME_ORDER[(startIndex + i) % THEME_ORDER.length]
+
+    // 上一次点击后菜单会自动关闭，所以每次都要重新展开（展开失败会被下面的
+    // 「点不到」判失败，不会静默跳过）
+    await openTopBarMenu(window)
+    if (!(await clickTopBarMenuItem(window, 'topbar-menu-theme'))) {
+      return { ok: false, detail: '菜单里点不到「主题」项' }
+    }
+
+    // React 状态回写是异步的：点完立刻读会读到旧值（规矩 9 的同族陷阱）
+    const deadline = Date.now() + 3000
+    let landed = ''
+    while (Date.now() < deadline) {
+      landed = await readThemePreference(window)
+      if (landed === expected) break
+      await delay(100)
+    }
+    if (landed !== expected) {
+      return {
+        ok: false,
+        detail: `第 ${i} 次点击后档位是「${landed || '空'}」，应为「${expected}」`
+      }
+    }
+    steps.push(landed)
+    await closeTopBarMenu(window)
+  }
+
+  return { ok: true, detail: `${before} → ${steps.join(' → ')}（点满三档回到原点）` }
+}
+
 /**
  * 工具栏「新建」按钮的几何断言，书籍管理与卡片库共用。
  *
@@ -4930,8 +5788,39 @@ interface RenderSnapshot {
   /** 页面标题（= 窗口标题栏文字），应等于产品名 winbook */
   docTitle: string
   pageTitle: string
+  /**
+   * 主进程健康状态。**状态本身必须随时可读**，不能只在菜单展开后才有 ——
+   * 所以它由顶栏那枚 `…` 按钮用 data-health-state / data-health-text 声明，
+   * 按钮画面上并不显示这两个值。
+   */
+  healthState: string
   healthText: string
   healthOk: boolean
+  /**
+   * 顶栏右上角那枚「更多功能」按钮的实测形态。
+   *
+   * 用户 2026-09-20 的要求分两轮，最终形态是：**只展示一个 `…` 图标按钮**，
+   * 点击展开下拉菜单，每个菜单项对应一个圆形功能图标（并排展示的功能图标取消）。
+   * 所以这里量的是：
+   *   - 它是正圆（`width === height` 且 `radiusPx ≈ width / 2`）
+   *   - 它上面没有文字（`text` 为空）
+   *   - 它有个读屏能用的名字（`label` 非空）—— 「文字挪走」不等于「文字可以删」
+   */
+  moreButton: {
+    found: boolean
+    text: string
+    label: string
+    width: number
+    height: number
+    radiusPx: number
+  } | null
+  /**
+   * 顶栏里圆钮图标的数量。**要求恰好 1**（只有 `…` 那一枚）。
+   *
+   * 这条断的是「并排展示的功能图标被取消」：健康 / 备份 / 主题三枚如果又并排
+   * 冒出来，菜单那部分的断言照样全绿（菜单项还在），只有这个计数会变红。
+   */
+  inlineIconButtons: number
   metricsLoading: boolean
   bookCount: number
   totalHanzi: number
@@ -4971,7 +5860,6 @@ interface RenderSnapshot {
  */
 const SNAPSHOT_SCRIPT = `(() => {
   const root = document.getElementById('root')
-  const badge = document.querySelector('[data-testid="health-badge"]')
   const metrics = document.querySelector('[data-testid="dashboard-metrics"]')
   const numberOf = (testId) => {
     const el = document.querySelector('[data-testid="' + testId + '"]')
@@ -5011,6 +5899,33 @@ const SNAPSHOT_SCRIPT = `(() => {
     )
   const trendCard = document.querySelector('.dashboard-trend')
   const todayCard = document.querySelector('.dashboard-today')
+  // 顶栏那枚「更多功能」按钮。三件事都要实测：
+  //   text  —— 按钮上还有没有文字（要求为空，这就是「只展示图标」）
+  //   label —— aria-label 有没有把名字留住（防「文字干脆丢了」）
+  //   几何  —— 宽高相等且圆角半径 ≈ 半宽（是不是正圆）
+  // border-radius 写成 50% 时 computedStyle 原样返回 "50%"，parseFloat 会得到
+  // 50 这个「像素数」，所以要按宽度折算 —— 直接比会把圆判成不是圆。
+  const circleOf = (el) => {
+    const rect = el.getBoundingClientRect()
+    const rawRadius = window.getComputedStyle(el).borderTopLeftRadius || '0'
+    return {
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      radiusPx: rawRadius.trim().endsWith('%')
+        ? Math.round((rect.width * parseFloat(rawRadius)) / 100)
+        : Math.round(parseFloat(rawRadius))
+    }
+  }
+  const moreEl = document.querySelector('[data-testid="${TOP_BAR_MORE_ID}"]')
+  const moreButton = moreEl
+    ? Object.assign(circleOf(moreEl), {
+        found: true,
+        text: (moreEl.textContent || '').trim(),
+        label: moreEl.getAttribute('aria-label') || ''
+      })
+    : null
+  // 顶栏里的圆钮图标数量。要求恰好 1 —— 并排展示的功能图标已被取消（用户 2026-09-20）
+  const inlineIconButtons = document.querySelectorAll('.app-header .app-icon-button').length
   return {
     reactMounted: (root?.children.length ?? 0) > 0,
     hasTopNav: !!navEl,
@@ -5019,8 +5934,13 @@ const SNAPSHOT_SCRIPT = `(() => {
     // 品牌名写错过一次，这里把它锁住
     docTitle: document.title,
     pageTitle: document.querySelector('[data-testid="page-title"]')?.textContent ?? '',
-    healthText: badge?.textContent ?? '',
-    healthOk: badge?.getAttribute('data-state') === 'ok',
+    // 主进程状态由「更多功能」按钮声明（data-health-*）：它画面上不显示，
+    // 但必须随时可读 —— 否则想知道主进程是否正常，得先把菜单点开。
+    healthState: moreEl?.getAttribute('data-health-state') ?? '',
+    healthText: moreEl?.getAttribute('data-health-text') ?? '',
+    healthOk: moreEl?.getAttribute('data-health-state') === 'ok',
+    moreButton,
+    inlineIconButtons,
     metricsLoading: metrics?.getAttribute('data-loading') === 'true',
     bookCount: numberOf('metric-book-count'),
     totalHanzi: numberOf('metric-total-hanzi'),
@@ -5041,8 +5961,11 @@ const EMPTY_SNAPSHOT: RenderSnapshot = {
   titleVisible: false,
   docTitle: '',
   pageTitle: '',
+  healthState: '',
   healthText: '',
   healthOk: false,
+  moreButton: null,
+  inlineIconButtons: 0,
   metricsLoading: false,
   bookCount: -1,
   totalHanzi: -1,

@@ -20,6 +20,7 @@ import {
 import { toUserMessage } from '../../lib/api-client'
 import { formatCount, formatRelativeTime } from '../../lib/format'
 import { useToast } from '../../components/Toast'
+import { IconButton } from '../../components/IconButton'
 import { ChapterCatalog, type ChapterPatch } from './ChapterCatalog'
 import type { ChapterCreateValues } from './ChapterCreateModal'
 import { EditorInspector } from './EditorInspector'
@@ -573,17 +574,15 @@ export function ChapterEditorPage() {
       {/* ---------------- 顶栏 ---------------- */}
       <header className="editor-topbar">
         <Flex align="center" gap={8} className="editor-topbar__left">
-          <Tooltip title="返回书籍详情">
-            <Button
-              size="small"
-              type="text"
-              icon={<ArrowLeftOutlined />}
-              onClick={() => {
-                void flushRef.current()
-                void navigate(`/books/${bookId}`)
-              }}
-            />
-          </Tooltip>
+          <IconButton
+            label="返回书籍详情"
+            icon={<ArrowLeftOutlined />}
+            data-testid="editor-back"
+            onClick={() => {
+              void flushRef.current()
+              void navigate(`/books/${bookId}`)
+            }}
+          />
           <Text className="editor-topbar__book" ellipsis>
             {book.data?.title ?? '…'}
           </Text>
@@ -593,48 +592,39 @@ export function ChapterEditorPage() {
           </Text>
         </Flex>
 
+        {/*
+          四枚圆形图标按钮（用户 2026-09-20：「各个界面中的图标也要跟着改」）。
+          改造前它们是四个「图标 + 文字」按钮，一共占掉 300px 宽 —— 而这一条
+          顶栏的高度是写死的 46px，宽的那一排把书名与章节名挤到只剩省略号。
+          文字移进提示后，标题终于有地方显示了。
+        */}
         <Flex align="center" gap={4}>
-          <Tooltip title="查找替换（Ctrl+F）">
-            <Button
-              size="small"
-              type="text"
-              icon={<SearchOutlined />}
-              onClick={() => setFindOpen((value) => !value)}
-            >
-              查找替换
-            </Button>
-          </Tooltip>
-          <Tooltip title="生成中文人名，可一键插入正文">
-            <Button
-              size="small"
-              type="text"
-              icon={<UserAddOutlined />}
-              onClick={() => setNameOpen(true)}
-            >
-              取名
-            </Button>
-          </Tooltip>
-          <Tooltip title={focusMode ? '退出专注模式' : '专注模式：收起左右两栏，只留正文'}>
-            <Button
-              size="small"
-              type="text"
-              icon={<CompressOutlined />}
-              onClick={() => setFocusMode((value) => !value)}
-            >
-              专注
-            </Button>
-          </Tooltip>
-          <Tooltip title="把本章导出为 .txt 草稿文件">
-            <Button
-              size="small"
-              type="primary"
-              icon={<CloudUploadOutlined />}
-              loading={exportChapter.isPending}
-              onClick={() => void handleExport()}
-            >
-              发布草稿
-            </Button>
-          </Tooltip>
+          <IconButton
+            label="查找替换（Ctrl+F）"
+            icon={<SearchOutlined />}
+            data-testid="editor-find-toggle"
+            onClick={() => setFindOpen((value) => !value)}
+          />
+          <IconButton
+            label="取名（生成中文人名，可一键插入正文）"
+            icon={<UserAddOutlined />}
+            data-testid="editor-name"
+            onClick={() => setNameOpen(true)}
+          />
+          <IconButton
+            label={focusMode ? '退出专注模式' : '专注模式：收起左右两栏，只留正文'}
+            icon={<CompressOutlined />}
+            data-testid="editor-focus-toggle"
+            onClick={() => setFocusMode((value) => !value)}
+          />
+          <IconButton
+            label="发布草稿（把本章导出为 .txt 草稿文件）"
+            tone="primary"
+            icon={<CloudUploadOutlined />}
+            data-testid="editor-export"
+            loading={exportChapter.isPending}
+            onClick={() => void handleExport()}
+          />
         </Flex>
       </header>
 
