@@ -161,7 +161,14 @@ export function BookDetailPage() {
     }
 
     try {
-      const created = await createChapter.mutateAsync({ bookId, volumeId: null, title, targetWords: 0 })
+      const created = await createChapter.mutateAsync({
+        bookId,
+        volumeId: null,
+        title,
+        // 与编辑器里的「新建章」保持同一个口径：建章那一刻把书籍的
+        // 每章最少字数记为快照，而不是留下一个 0（那会变成「未设目标」）
+        targetWords: data?.chapterWords ?? 0
+      })
       setChapterTitle('')
       setCreatingChapter(false)
       void navigate(`/books/${bookId}/chapters/${created.id}`)
@@ -410,6 +417,13 @@ export function BookDetailPage() {
     <Flex vertical gap={16} className="page">
       <PageHeader
         title={data.title}
+        /*
+         * 这一页是全应用唯一把标题显示出来的地方（用户 2026-09-20：
+         * 「书籍详情页需要显示书籍名称，原标题的位置应该显示书籍名称」）——
+         * 因为这里的标题是**书名**，是内容本身，而不是「第几页」这样的导航标签。
+         * 页面上没有别处写着书名（分卷、章节、字数都只是它的属性）。
+         */
+        showTitle
         extra={
           <>
             <Button
@@ -503,6 +517,14 @@ export function BookDetailPage() {
                 </Text>
               </>
             )}
+            {/*
+              每章最少字数放在这张卡里，紧挨着整本目标：两者都是「字数标准」，
+              但量级差两个数量级、用途也不同（一个是全书进度、一个是写单章时的
+              尺子）。放在同一处能让人一眼看出它们不是同一件事。
+            */}
+            <Text type="secondary" className="book-stat__hint" data-testid="book-chapter-words">
+              每章最少 {formatCount(data.chapterWords)} 字 · 全书统一
+            </Text>
           </Card>
         </Col>
       </Row>

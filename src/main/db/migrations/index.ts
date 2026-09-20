@@ -237,5 +237,34 @@ export const migrations: readonly Migration[] = [
       // SQLite 支持的常量默认场景，老数据自动填 0，不需要回填脚本。
       db.exec('ALTER TABLE chapters ADD COLUMN target_words INTEGER NOT NULL DEFAULT 0;')
     }
+  },
+  {
+    name: '005_book_chapter_words',
+    up(db) {
+      // 「每章最少字数」从章节级上提到书籍级。
+      //
+      // 004 给章节加了 target_words，编辑器的「本章目标」让作者逐章去填。
+      // 实际使用下来这是纯粹的重复劳动：「每章至少 2000 字」本来就是一本书
+      // 定一次、全书生效的规则，逐章再填一遍既没人愿意做，填出来的值也必然
+      // 互相打架（同一本书里有的章 2000、有的章 0 未设）。所以把它上提到
+      // books，编辑器那一整行输入也随之删掉。
+      //
+      // chapters.target_words 保留不动：它已经落在用户的库里，删列要重建表；
+      // 而它现在只是「建章那一刻书级设置的快照」，仍被导出与统计读到。
+      db.exec(`
+        ALTER TABLE books ADD COLUMN chapter_words INTEGER NOT NULL DEFAULT 2000;
+      `)
+
+      // 回填：老库里作者认真填过的章节目标字数是他真实意图，直接丢掉会让人
+      // 升级后发现「每章最少字数」全变回 2000。取每本书下章节目标字数的最大值 ——
+      // 一本书里作者手动填过的那些章代表他的标准，没填的 0 是「懒得填」而非「要 0」。
+      db.exec(`
+        UPDATE books
+           SET chapter_words = (
+                 SELECT MAX(target_words) FROM chapters WHERE chapters.book_id = books.id
+               )
+         WHERE (SELECT MAX(target_words) FROM chapters WHERE chapters.book_id = books.id) > 0;
+      `)
+    }
   }
 ]

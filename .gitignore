@@ -2,6 +2,9 @@ node_modules/
 out/
 release/
 dist/
+# electron-vite 每次构建都会在项目根写一个临时的合并配置（带时间戳），
+# 它自己不清理，跑几十次 smoke 就会攒几十个文件
+electron.vite.config.*.mjs
 .env
 .env.local
 .env.*.local

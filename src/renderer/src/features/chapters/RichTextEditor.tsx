@@ -93,7 +93,7 @@ export function RichTextEditor({
       editable: !readOnly,
       editorProps: {
         attributes: {
-          class: 'wapp-editor__content',
+          class: 'winbook-editor__content',
           // 关掉系统拼写检查：中文正文会被划满红波浪线，而它并不懂中文
           spellcheck: 'false',
           autocapitalize: 'off',
@@ -161,7 +161,7 @@ export function RichTextEditor({
   } as CSSProperties
 
   return (
-    <div className="wapp-editor" style={style} data-testid="chapter-editor">
+    <div className="winbook-editor" style={style} data-testid="chapter-editor">
       <EditorToolbar
         editor={editor}
         prefs={prefs}

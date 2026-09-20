@@ -9,7 +9,7 @@ import {
 } from 'react'
 import { App as AntdApp, ConfigProvider, theme as antdTheme } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
-import { THEME_STORAGE_KEY, WAPP_THEMES, type ThemeMode } from './tokens'
+import { THEME_STORAGE_KEY, WINBOOK_THEMES, type ThemeMode } from './tokens'
 
 /**
  * 主题偏好：除了明确的浅色/深色，还保留「跟随系统」。
@@ -97,7 +97,7 @@ export function ThemeModeProvider({ children }: { children: ReactNode }) {
           // 全项目只有一个 antd 版本，关掉类名哈希可以减小样式体积，
           // 调试时类名也更可读
           hashed: false,
-          ...WAPP_THEMES[mode]
+          ...WINBOOK_THEMES[mode]
         }}
       >
         {/* AntdApp 提供 message / notification / modal 的上下文，

@@ -6,7 +6,7 @@
  * 这纯属「这台机器上的人的习惯」，与稿子本身无关，
  * 换台机器重新选一次完全合理。
  */
-const STORAGE_KEY = 'wapp:outline:bookId'
+const STORAGE_KEY = 'winbook:outline:bookId'
 
 /** 读取失败一律当作「没选过」：localStorage 在隐私模式或异常环境下会抛错 */
 export function readOutlineBookId(): number | null {

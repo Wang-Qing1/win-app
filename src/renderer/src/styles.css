@@ -1,5 +1,5 @@
 /* ==================================================================
- * wapp 全局样式
+ * winbook 全局样式
  *
  * 组件样式全部交给 antd（主题令牌在 src/renderer/src/theme/tokens.ts）。
  * 这个文件只负责 antd 管不到的部分：
@@ -14,50 +14,48 @@
  * ================================================================== */
 
 :root {
-  --wapp-font:
+  --winbook-font:
     'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei',
     system-ui, -apple-system, sans-serif;
 
   /* 与 tokens.ts 的浅色主题保持一致 */
-  --wapp-bg: #f3f3f3;
-  --wapp-scrollbar-thumb: rgba(0, 0, 0, 0.22);
-  --wapp-scrollbar-thumb-hover: rgba(0, 0, 0, 0.38);
+  --winbook-bg: #f3f3f3;
+  --winbook-scrollbar-thumb: rgba(0, 0, 0, 0.22);
+  --winbook-scrollbar-thumb-hover: rgba(0, 0, 0, 0.38);
 
-  --wapp-surface: #ffffff;
-  --wapp-surface-soft: #fafafa;
+  --winbook-surface: #ffffff;
+  --winbook-surface-soft: #fafafa;
   /* 顶栏导航条的灰：比页面底色深半档，让白色选中卡片浮起来 */
-  --wapp-nav-band: #ececec;
-  --wapp-nav-band-hover: #e2e2e2;
-  --wapp-border: #e5e5e5;
-  --wapp-border-strong: #d1d1d1;
-  --wapp-text: #1b1b1b;
-  --wapp-text-soft: #5c5c5c;
-  --wapp-text-faint: #8a8a8a;
-  --wapp-accent: #0f6cbd;
-  --wapp-accent-soft: #e6f1fb;
-  --wapp-danger: #c42b1c;
-  --wapp-warning: #c76a00;
+  --winbook-border: #e5e5e5;
+  --winbook-border-strong: #d1d1d1;
+  --winbook-text: #1b1b1b;
+  --winbook-text-soft: #5c5c5c;
+  --winbook-text-faint: #8a8a8a;
+  --winbook-accent: #0f6cbd;
+  --winbook-accent-soft: #e6f1fb;
+  --winbook-danger: #c42b1c;
+  --winbook-warning: #c76a00;
+  --winbook-success: #0f7b0f;
 }
 
 html[data-theme='dark'] {
-  --wapp-bg: #1f1f1f;
-  --wapp-scrollbar-thumb: rgba(255, 255, 255, 0.24);
-  --wapp-scrollbar-thumb-hover: rgba(255, 255, 255, 0.4);
+  --winbook-bg: #1f1f1f;
+  --winbook-scrollbar-thumb: rgba(255, 255, 255, 0.24);
+  --winbook-scrollbar-thumb-hover: rgba(255, 255, 255, 0.4);
 
-  --wapp-surface: #2b2b2b;
-  --wapp-surface-soft: #262626;
+  --winbook-surface: #2b2b2b;
+  --winbook-surface-soft: #262626;
   /* 顶栏导航条的灰：比页面底色浅半档，让选中卡片浮起来 */
-  --wapp-nav-band: #262626;
-  --wapp-nav-band-hover: #333333;
-  --wapp-border: #3d3d3d;
-  --wapp-border-strong: #4a4a4a;
-  --wapp-text: #ffffff;
-  --wapp-text-soft: #d6d6d6;
-  --wapp-text-faint: #8a8a8a;
-  --wapp-accent: #479ef5;
-  --wapp-accent-soft: #14324d;
-  --wapp-danger: #ff99a4;
-  --wapp-warning: #fce100;
+  --winbook-border: #3d3d3d;
+  --winbook-border-strong: #4a4a4a;
+  --winbook-text: #ffffff;
+  --winbook-text-soft: #d6d6d6;
+  --winbook-text-faint: #8a8a8a;
+  --winbook-accent: #479ef5;
+  --winbook-accent-soft: #14324d;
+  --winbook-danger: #ff99a4;
+  --winbook-warning: #fce100;
+  --winbook-success: #6ccb5f;
 }
 
 * {
@@ -80,10 +78,10 @@ body,
 }
 
 body {
-  font-family: var(--wapp-font);
+  font-family: var(--winbook-font);
   font-size: 14px;
   line-height: 1.6;
-  background: var(--wapp-bg);
+  background: var(--winbook-bg);
   -webkit-font-smoothing: antialiased;
   /* 主题切换时让底色有过渡，避免深色模式切换瞬间闪白 */
   transition: background-color 0.2s ease;
@@ -100,7 +98,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--wapp-scrollbar-thumb);
+  background: var(--winbook-scrollbar-thumb);
   border-radius: 999px;
   /* 用透明边框把滑块「收窄」，是模拟浮层滚动条的常用手法 */
   border: 3px solid transparent;
@@ -108,7 +106,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--wapp-scrollbar-thumb-hover);
+  background: var(--winbook-scrollbar-thumb-hover);
   background-clip: content-box;
 }
 
@@ -207,11 +205,6 @@ body {
   border: 0;
 }
 
-.section-title {
-  display: block;
-  margin-bottom: 10px;
-}
-
 .card__extra {
   font-size: 12px;
 }
@@ -228,89 +221,119 @@ body {
   margin: 0 auto;
 }
 
-/* ---------------- 顶部横向导航条 ----------------
- * 上下结构的第二行。选中态 = 柔和底色 + 底部指示条，
- * 与 Win11 的「选项卡」隐喻一致；底部指示条压在导航条自身的
- * 下边框上，视觉上是「这个标签页连着下面的内容区」。
+/* ---------------- 悬浮的返回首页按钮（窗口右下角） ----------------
+ * 用户 2026-09-20 指定：它应当是**悬浮**的图标，而不是顶栏里的固定图标；
+ * 左上角放不下（那里是品牌区，挤开它就得在顶栏留常驻空槽，等于还是顶栏的一部分），
+ * 于是落在右下角 —— 浮动按钮的常规位置。
+ *
+ * 四个角里只有右下角是空的：左上/右上分别是品牌与状态区，左下角在编辑器里是状态栏。
+ * position: fixed 让它浮在界面之上、不参与布局流，且不随内容滚动。
  */
-
-.app-nav {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: stretch;
-  /* 灰色圆角条内缩悬浮：不贴窗口两缘（通栏方形是残留的「直角感」来源），
-     与下方内容区之间也不再需要分割线 —— 靠色块边界分层 */
-  margin: 8px 12px 4px;
-  background: var(--wapp-nav-band);
-  border-radius: 10px;
-  padding: 6px;
+.app-home-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 40;
+  /* 图标按钮做成正方形：antd 的 text 按钮默认按内容撑开，
+     圆形观感要「宽=高 + 内边距 0」，否则是个椭圆 */
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 18px;
+  color: var(--winbook-text-soft);
+  /* 既然浮在界面之上，就得看起来是浮着的：实底 + 描边 + 投影。
+     少了这三样，它会像页面上一个错位的图标，而不是一个悬浮按钮。 */
+  background: var(--winbook-surface);
+  border: 1px solid var(--winbook-border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  transition: color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
-/*
- * 每个标签 flex:1 且 basis 为 0 —— 五个标签拿到完全相等的宽度，
- * 与文字长短无关；min-width:0 防止文字把格子撑宽。
+.app-home-fab:hover {
+  color: var(--winbook-accent);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
+}
+
+.app-header__left {
+  min-width: 0;
+}
+
+/* ---------------- 页面操作行（页标题 + 各页操作区） ----------------
+ *
+ * 标题默认不显示（`PageHeader` 里是 `.sr-only`），所以这一行**通常只装右侧
+ * 的操作区**；标题仍留在 DOM 里当读屏与冒烟测试的锚点。
+ *
+ * 唯一例外是书籍详情页的书名（`showTitle`）：那里标题是内容而不是页面名，
+ * 它回到画面上、贴在这一行的左端，操作按钮在右端。同一行，所以不新增
+ * 纵向高度 —— 这也是「原标题的位置」：它原本就在这里，现在只是换了内容。
  */
-.app-nav__item {
-  position: relative;
-  display: flex;
-  flex: 1 1 0;
+.page-header {
+  flex: 0 0 auto;
+}
+
+/* 可见标题（目前只有书籍详情页的书名）。
+ *
+ * 只清掉 antd `Title` 自带的 margin：h4 的 margin-bottom 会在这一行下面多撑
+ * 出十几像素，而这一行是 `align-items: center` 的，垂直居中会被 margin 带偏。
+ */
+.page-header__title {
+  margin: 0;
+  /* 书名可能很长（二十个字的标题很常见）。不限制的话它会把右侧四个操作按钮
+     挤到换行甚至挤出边界；`min-width: 0` 是让这个 flex 子项能被压缩 ——
+     flex 子项默认 `min-width: auto`，长文本会把整行撑破，省略号也不会出现。 */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.page-header__extra {
+  flex: 0 0 auto;
+}
+
+/* ---------------- 首页功能模块卡片（应用的导航） ---------------- */
+
+.module-card,
+.metric-card {
+  height: 100%;
+}
+
+.module-card {
+  cursor: pointer;
+}
+
+.module-card__icon {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 0;
-  gap: 7px;
-  padding: 9px 12px;
-  overflow: hidden;
-  font: inherit;
-  font-size: 14px;
-  color: var(--wapp-text-soft);
-  text-align: center;
-  white-space: nowrap;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
-}
-
-.app-nav__item:hover:not(:disabled) {
-  color: var(--wapp-text);
-  background: var(--wapp-nav-band-hover);
-}
-
-.app-nav__item:disabled {
-  color: var(--wapp-text-faint);
-  cursor: not-allowed;
-}
-
-/* 选中态：白色圆角卡片浮在灰条上（参考 CC Bridge 的顶栏标签）。
-   等宽排布下胶囊底色会让五个格子视觉重量不均，浮起的卡片则不会。 */
-.app-nav__item--active {
-  font-weight: 500;
-  color: var(--wapp-accent);
-  background: var(--wapp-surface);
-  border-color: var(--wapp-border);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-.app-nav__icon {
-  display: inline-flex;
   flex: 0 0 auto;
-  font-size: 15px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--winbook-accent-soft);
+  color: var(--winbook-accent);
+  font-size: 17px;
 }
 
-.app-nav__pending {
-  color: var(--wapp-text-faint);
+.module-card__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
-@media (max-width: 720px) {
-  .app-nav {
-    margin: 8px 6px 4px;
-    padding: 4px;
-  }
+.module-card__hint {
+  font-size: 12px;
+  line-height: 1.45;
+}
 
-  .app-nav__item {
-    padding: 9px 6px;
-  }
+.module-card__arrow {
+  color: var(--winbook-text-faint);
+  font-size: 12px;
 }
 
 /* ---------------- 页头健康徽标 ---------------- */
@@ -356,14 +379,12 @@ body {
 
 /*
  * 同一行的卡片必须等高。Row 是 flex 容器，Col 默认拉伸到行高，
- * 但 Card 自己按内容收缩 —— 于是「今日」卡比趋势图卡矮一截、
- * 功能模块卡因提示文字 2 行 / 3 行的差别参差不齐。
+ * 但 Card 自己按内容收缩 —— 于是「今日」卡比趋势图卡矮一截。
  * height:100% 让每张卡吃满所在的 Col，行高由内容最多的一张决定。
  * 只挂自己拥有的类名，不依赖组件库的内部类。
  */
 .dashboard-trend,
 .dashboard-today,
-.module-card,
 .metric-card {
   height: 100%;
 }
@@ -383,8 +404,8 @@ body {
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  background: var(--wapp-accent-soft);
-  color: var(--wapp-accent);
+  background: var(--winbook-accent-soft);
+  color: var(--winbook-accent);
   font-size: 14px;
 }
 
@@ -409,40 +430,6 @@ body {
   margin-inline-start: 4px;
 }
 
-.module-grid {
-  margin-top: 0;
-}
-
-.module-card__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--wapp-accent-soft);
-  color: var(--wapp-accent);
-  font-size: 17px;
-}
-
-.module-card__text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.module-card__hint {
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.module-card__arrow {
-  color: var(--wapp-text-faint);
-  font-size: 12px;
-}
-
 .chart-placeholder {
   min-height: 180px;
 }
@@ -457,7 +444,7 @@ body {
 }
 
 .progress-row:hover {
-  background: var(--wapp-surface-soft);
+  background: var(--winbook-surface-soft);
 }
 
 .progress-row__accent {
@@ -482,7 +469,7 @@ body {
 }
 
 .dashboard-today__flame {
-  color: var(--wapp-warning);
+  color: var(--winbook-warning);
 }
 
 .dashboard-today__note {
@@ -504,6 +491,17 @@ body {
 
 .books-toolbar__count {
   font-size: 12px;
+}
+
+/*
+ * 工具栏里的图标按钮插槽（新建书籍 / 新建卡片）。
+ *
+ * 单独存在的理由：按钮处于禁用态时不派发鼠标事件，antd Tooltip 必须由
+ * 外层元素承接 hover；用一个 inline-flex 的 span 兜住，宽度自动贴合按钮，
+ * 不会在 flex 工具栏里多出可见的间隙。
+ */
+.toolbar-icon-slot {
+  display: inline-flex;
 }
 
 .book-card__spine {
@@ -559,6 +557,22 @@ body {
   font-size: 12px;
 }
 
+/*
+  「每章最少字数」下面带着一段说明，是表单里最容易被误解的一项 ——
+  「目标字数」是整本书的量级、「每章最少字数」是写单章时的尺子，
+  两者名字接近、量级差两个数量级，不写清楚必然被当成同一件事。
+*/
+.book-form__chapter-words .ant-form-item-extra {
+  line-height: 1.5;
+}
+
+/* 新建章节弹窗底部那句「本章最少 N 字」。它不进表单，只是一条规则说明 */
+.chapter-create__hint {
+  display: block;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .accent-picker {
   display: flex;
   gap: 8px;
@@ -580,7 +594,7 @@ body {
 }
 
 .accent-swatch--active {
-  border-color: var(--wapp-text);
+  border-color: var(--winbook-text);
 }
 
 .book-summary {
@@ -609,7 +623,7 @@ body {
 .volume-row {
   padding: 6px 8px;
   border-radius: 8px;
-  background: var(--wapp-surface-soft);
+  background: var(--winbook-surface-soft);
 }
 
 .volume-row__index {
@@ -620,8 +634,8 @@ body {
   width: 22px;
   height: 22px;
   border-radius: 6px;
-  background: var(--wapp-accent-soft);
-  color: var(--wapp-accent);
+  background: var(--winbook-accent-soft);
+  color: var(--winbook-accent);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -673,7 +687,7 @@ body {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--wapp-bg);
+  background: var(--winbook-bg);
 }
 
 .editor-topbar {
@@ -684,8 +698,8 @@ body {
   flex: 0 0 auto;
   height: 46px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--wapp-border);
-  background: var(--wapp-surface);
+  border-bottom: 1px solid var(--winbook-border);
+  background: var(--winbook-surface);
 }
 
 .editor-topbar__left {
@@ -728,32 +742,20 @@ body {
 
 .editor-metabar {
   flex: 0 0 auto;
-  padding: 10px 20px 8px;
-  border-bottom: 1px solid var(--wapp-border);
-  background: var(--wapp-surface);
+  padding: 10px 20px 10px;
+  border-bottom: 1px solid var(--winbook-border);
+  background: var(--winbook-surface);
 }
 
+/*
+  标题现在是这一栏唯一的元素。原先它下面还有一行「未分卷 / 草稿 / 本章目标 /
+  保存信息」的控件，那一行连同它的 margin-bottom 一并删掉了 —— 只留一个
+  输入框的话，底边距会变成一条没有内容的空隙。
+*/
 .editor-metabar__title {
   font-size: 18px;
   font-weight: 600;
   padding: 0 !important;
-  margin-bottom: 6px;
-}
-
-.editor-metabar__controls {
-  gap: 8px;
-}
-
-.editor-metabar__select {
-  min-width: 110px;
-}
-
-.editor-metabar__number {
-  width: 96px;
-}
-
-.editor-metabar__label {
-  font-size: 12px;
 }
 
 /* ---------------- 左侧目录 ---------------- */
@@ -761,11 +763,12 @@ body {
 .catalog {
   display: flex;
   flex-direction: column;
-  flex: 0 0 208px;
-  width: 208px;
+  /* 目录只放书名与章节名，184px 足够；省下来的宽度全给正文 */
+  flex: 0 0 184px;
+  width: 184px;
   min-height: 0;
-  border-right: 1px solid var(--wapp-border);
-  background: var(--wapp-surface);
+  border-right: 1px solid var(--winbook-border);
+  background: var(--winbook-surface);
 }
 
 .catalog__head {
@@ -774,7 +777,7 @@ body {
   gap: 8px;
   flex: 0 0 auto;
   padding: 10px 10px 8px;
-  border-bottom: 1px solid var(--wapp-border);
+  border-bottom: 1px solid var(--winbook-border);
 }
 
 .catalog__book-select {
@@ -814,11 +817,11 @@ body {
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
 }
 
 .catalog__volume:hover {
-  background: var(--wapp-surface-soft);
+  background: var(--winbook-surface-soft);
 }
 
 .catalog__volume--static {
@@ -847,17 +850,19 @@ body {
   text-align: start;
   cursor: pointer;
   font: inherit;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
+  /* 状态点的定位基准 */
+  position: relative;
   line-height: 1.45;
 }
 
 .catalog__row:hover {
-  background: var(--wapp-surface-soft);
+  background: var(--winbook-surface-soft);
 }
 
 .catalog__row--active {
-  background: var(--wapp-accent-soft);
-  color: var(--wapp-accent);
+  background: var(--winbook-accent-soft);
+  color: var(--winbook-accent);
 }
 
 .catalog__row-title {
@@ -873,22 +878,55 @@ body {
   flex: 0 0 auto;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: var(--wapp-text-faint);
+  color: var(--winbook-text-faint);
 }
 
 .catalog__row--active .catalog__row-count {
-  color: var(--wapp-accent);
+  color: var(--winbook-accent);
 }
 
-.catalog__foot {
-  flex: 0 0 auto;
-  padding: 6px;
-  border-top: 1px solid var(--wapp-border);
+/*
+ * 章节状态点（只有非草稿的行才有）。
+ *
+ * 用绝对定位塞进行左侧那 8px 内边距里，而不是参与 flex 排列：参与排列的话
+ * 每行要多吃「5px 点 + 8px 间距」，而目录栏一共才 184px；更要命的是只有部分行
+ * 带点，标题宽度会在行与行之间跳来跳去。放进内边距则完全不动布局。
+ */
+.catalog__row-dot {
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -2.5px;
+  border-radius: 50%;
+  background: var(--winbook-text-faint);
+}
+
+.catalog__row-dot--revising {
+  background: var(--winbook-warning);
+}
+
+.catalog__row-dot--done {
+  background: var(--winbook-success);
+}
+
+/*
+ * 目录行右键菜单。
+ *
+ * 分卷多时（20 卷以上）菜单会高过窗口，所以只限制列表高度让它自己滚，
+ * 而不是让整个浮层溢出到屏幕外 —— 浮层一旦出屏，最后的几卷就点不到了。
+ * 用 ul 而不是 antd 的 .ant-menu-item 类名选：这里只想兜住「列表变长」，
+ * 不想因为组件库换一层 DOM 结构就失效。
+ */
+.catalog__menu ul {
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 /* ---------------- 编辑器主体 ---------------- */
 
-.wapp-editor {
+.winbook-editor {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -897,9 +935,49 @@ body {
 
 .editor-toolbar {
   flex: 0 0 auto;
-  padding: 4px 12px;
-  border-bottom: 1px solid var(--wapp-border);
-  background: var(--wapp-surface);
+  /* 一整条横排：控件多时靠横向滑动容纳，而不是折行 ——
+     工具栏浮在正文上方，折行会白白吃掉正文的可视高度 */
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--winbook-border);
+  background: var(--winbook-surface);
+}
+
+/*
+ * 工具栏的可滑区。滚动条藏起来：它自己占高度、颜色又淡，多数人根本
+ * 不会想到去拖它，滚动交给头尾那两个箭头按钮。
+ */
+.editor-toolbar__strip {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.editor-toolbar__strip::-webkit-scrollbar {
+  display: none;
+}
+
+/* 控件一律不许被压缩：宁愿溢出后滑动，也不要把「系统默认」挤成「系…」 */
+.editor-toolbar__items > * {
+  flex: 0 0 auto;
+}
+
+.editor-toolbar__scroll {
+  flex: 0 0 auto;
+}
+
+/* 字体 / 字号直接摆在工具栏上，宽度按最长选项估：
+   字体名「系统默认」四个字，字号到「30px」三位数 */
+.editor-toolbar__font {
+  width: 104px;
+}
+
+.editor-toolbar__font-size {
+  width: 84px;
 }
 
 .editor-stage {
@@ -909,9 +987,11 @@ body {
   /* 纵向 flex 是为了让纸面撑满可视高度，见下面 .editor-surface 的说明 */
   display: flex;
   flex-direction: column;
-  padding: 18px 22px 40px;
+  /* 纸面四周的留白只留能看出「纸浮起来」的量：
+     这几像素直接换算成正文字宽，多给正文一行字比多给阴影更好 */
+  padding: 14px 12px 32px;
   /* 编辑器周围的底色比纸面深一档，让「纸」浮起来 */
-  background: var(--wapp-bg);
+  background: var(--winbook-bg);
 }
 
 .editor-surface {
@@ -921,8 +1001,11 @@ body {
      纵向也不设 min-height:0：flex 项默认 min-height:auto，内容超高时
      纸面会跟着长高，由外层 .editor-stage 滚动 */
   flex: 1 1 auto;
-  max-width: 940px;
-  margin: 0 auto;
+  /* 不设 max-width，也**不能**写 margin: 0 auto：
+     .editor-stage 是纵向 flex 容器，纸面是它的 flex item。交叉轴上的
+     auto 外边距会让 stretch 失效，纸面随即退化成「按文字长度收缩」——
+     短章节的纸只有 380px 宽，长章节才铺满。去掉它，纸面才真正吃满中间栏；
+     超宽屏的行长由 .editor-column 的 max-width 兜住 */
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   overflow: hidden;
@@ -944,7 +1027,7 @@ html[data-theme='dark'] .editor-surface {
  *
  * 关键点：纸面是浅色还是深色**由纸面预设决定**，跟应用主题无关 ——
  * 浅色主题下同样可以选「夜灯」这种深色纸，那时正文必须是浅色字。
- * 所以这里用一组自己的变量，不跟主题走的 --wapp-text-* 混用。
+ * 所以这里用一组自己的变量，不跟主题走的 --winbook-text-* 混用。
  *
  * 早期版本把这件事搞反了：PAPER_PRESETS 里的 ink 说的是**墨**的颜色
  * （dark = 深色墨，配浅色纸），而 CSS 把 --dark 读成了「深色底」，
@@ -969,19 +1052,33 @@ html[data-theme='dark'] .editor-surface {
   --paper-warning: #ffd54f;
 }
 
+/*
+ * 「默认」纸面：底色就是应用面板色，墨色直接跟随主题。
+ * 纸面与周围面板同源同色，深色主题下两边一起翻，不会出现「浅色字压在浅灰纸上」。
+ */
+.editor-surface--theme {
+  --paper-ink: var(--winbook-text);
+  --paper-ink-soft: var(--winbook-text-soft);
+  --paper-ink-faint: var(--winbook-text-faint);
+  --paper-error: var(--winbook-danger);
+  --paper-warning: var(--winbook-warning);
+}
+
 .editor-column {
   position: relative;
   z-index: 1;
-  max-width: 700px;
+  /* 上限只用来兜住超宽屏：一行放两百个字反而难读。
+     1080 这类常见窗口宽度下永远碰不到它，正文能拿满中间栏 */
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 44px 30px 96px;
+  padding: 40px 22px 88px;
   color: var(--paper-ink);
 }
 
 /* ---------------- 正文排版 ---------------- */
 
-.wapp-editor__content {
-  font-family: var(--editor-font-family, var(--wapp-font));
+.winbook-editor__content {
+  font-family: var(--editor-font-family, var(--winbook-font));
   font-size: var(--editor-font-size, 17px);
   line-height: var(--editor-line-height, 1.9);
   color: var(--paper-ink);
@@ -989,44 +1086,44 @@ html[data-theme='dark'] .editor-surface {
   min-height: 360px;
 }
 
-.wapp-editor__content p {
+.winbook-editor__content p {
   margin: 0 0 var(--editor-paragraph-gap, 0);
   text-indent: var(--editor-indent, 2em);
 }
 
-.wapp-editor__content h3 {
+.winbook-editor__content h3 {
   margin: 1.2em 0 0.6em;
   font-size: 1.08em;
   text-indent: 0;
 }
 
-.wapp-editor__content blockquote {
+.winbook-editor__content blockquote {
   margin: 0 0 0.6em;
   padding-left: 12px;
-  border-left: 3px solid var(--wapp-border-strong);
+  border-left: 3px solid var(--winbook-border-strong);
   color: var(--paper-ink-soft);
   text-indent: 0;
 }
 
-.wapp-editor__content ul,
-.wapp-editor__content ol {
+.winbook-editor__content ul,
+.winbook-editor__content ol {
   margin: 0 0 0.6em;
   padding-left: 1.6em;
   text-indent: 0;
 }
 
-.editor-surface--rules .wapp-editor__content p {
+.editor-surface--rules .winbook-editor__content p {
   /* 段落之间的虚线辅助线：帮助判断单行长度，不打字时几乎看不见。
      颜色从墨色派生而不是写死黑色 —— 深色纸面上黑虚线反而成了最显眼的东西 */
   padding-bottom: var(--editor-paragraph-gap, 8px);
   border-bottom: 1px dashed color-mix(in srgb, var(--paper-ink) 14%, transparent);
 }
 
-.editor-surface--rules .wapp-editor__content p:last-child {
+.editor-surface--rules .winbook-editor__content p:last-child {
   border-bottom: none;
 }
 
-.wapp-editor__content p.is-editor-empty:first-child::before {
+.winbook-editor__content p.is-editor-empty:first-child::before {
   content: '在这里开始写正文…';
   color: var(--paper-ink-faint);
   float: left;
@@ -1089,7 +1186,7 @@ html[data-theme='dark'] .editor-surface {
   display: block;
   margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px solid var(--wapp-border);
+  border-top: 1px solid var(--winbook-border);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -1105,13 +1202,13 @@ html[data-theme='dark'] .editor-surface {
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 2px solid var(--wapp-border-strong);
+  border: 2px solid var(--winbook-border-strong);
   border-radius: 6px;
   cursor: pointer;
 }
 
 .paper-swatch--active {
-  border-color: var(--wapp-accent);
+  border-color: var(--winbook-accent);
 }
 
 /* ---------------- 查找替换 ---------------- */
@@ -1119,8 +1216,8 @@ html[data-theme='dark'] .editor-surface {
 .find-bar {
   flex: 0 0 auto;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--wapp-border);
-  background: var(--wapp-surface-soft);
+  border-bottom: 1px solid var(--winbook-border);
+  background: var(--winbook-surface-soft);
 }
 
 .find-bar__input {
@@ -1157,23 +1254,23 @@ html[data-theme='dark'] .editor-surface {
   justify-content: center;
   gap: 2px;
   padding: 10px 6px;
-  border: 1px solid var(--wapp-border);
+  border: 1px solid var(--winbook-border);
   border-radius: 8px;
-  background: var(--wapp-surface);
+  background: var(--winbook-surface);
   cursor: pointer;
   font: inherit;
-  color: var(--wapp-text);
+  color: var(--winbook-text);
   transition: border-color 0.12s ease;
 }
 
 .name-card:hover {
-  border-color: var(--wapp-accent);
+  border-color: var(--winbook-accent);
 }
 
 .name-card--active {
-  border-color: var(--wapp-accent);
-  background: var(--wapp-accent-soft);
-  color: var(--wapp-accent);
+  border-color: var(--winbook-accent);
+  background: var(--winbook-accent-soft);
+  color: var(--winbook-accent);
 }
 
 .name-card__full {
@@ -1204,8 +1301,8 @@ html[data-theme='dark'] .editor-surface {
   flex-direction: column;
   width: 306px;
   min-height: 0;
-  border-left: 1px solid var(--wapp-border);
-  background: var(--wapp-surface);
+  border-left: 1px solid var(--winbook-border);
+  background: var(--winbook-surface);
 }
 
 /* antd Tabs 默认把内容区撑高，这里改成「头部固定 + 内容独立滚动」 */
@@ -1260,9 +1357,9 @@ html[data-theme='dark'] .editor-surface {
   width: 100%;
   padding: 6px 8px;
   border: none;
-  border-left: 3px solid var(--wapp-border-strong);
+  border-left: 3px solid var(--winbook-border-strong);
   border-radius: 6px;
-  background: var(--wapp-surface-soft);
+  background: var(--winbook-surface-soft);
   text-align: start;
   cursor: pointer;
   font: inherit;
@@ -1270,15 +1367,15 @@ html[data-theme='dark'] .editor-surface {
 }
 
 .issue-row:hover {
-  background: var(--wapp-accent-soft);
+  background: var(--winbook-accent-soft);
 }
 
 .issue-row--error {
-  border-left-color: var(--wapp-danger);
+  border-left-color: var(--winbook-danger);
 }
 
 .issue-row--suggestion {
-  border-left-color: var(--wapp-warning);
+  border-left-color: var(--winbook-warning);
 }
 
 .issue-row__head {
@@ -1294,18 +1391,18 @@ html[data-theme='dark'] .editor-surface {
   margin-bottom: 0 !important;
   font-size: 11.5px;
   line-height: 1.5;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
 }
 
 .issue-row__hit {
-  color: var(--wapp-danger);
+  color: var(--winbook-danger);
   font-weight: 600;
 }
 
 .filler-row {
   padding: 6px 8px;
   border-radius: 6px;
-  background: var(--wapp-surface-soft);
+  background: var(--winbook-surface-soft);
 }
 
 .filler-row__word {
@@ -1438,8 +1535,8 @@ html[data-theme='dark'] .editor-surface {
   flex: 0 0 auto;
   width: 54px;
   padding: 8px 0;
-  border-left: 1px solid var(--wapp-border);
-  background: var(--wapp-surface-soft);
+  border-left: 1px solid var(--winbook-border);
+  background: var(--winbook-surface-soft);
 }
 
 .rail__item {
@@ -1453,24 +1550,24 @@ html[data-theme='dark'] .editor-surface {
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
   cursor: pointer;
   font: inherit;
 }
 
 .rail__item:hover:not(:disabled) {
-  background: var(--wapp-surface);
-  color: var(--wapp-accent);
+  background: var(--winbook-surface);
+  color: var(--winbook-accent);
 }
 
 .rail__item:disabled {
-  color: var(--wapp-text-faint);
+  color: var(--winbook-text-faint);
   cursor: not-allowed;
 }
 
 .rail__item--active {
-  background: var(--wapp-accent-soft);
-  color: var(--wapp-accent);
+  background: var(--winbook-accent-soft);
+  color: var(--winbook-accent);
 }
 
 .rail__icon {
@@ -1490,7 +1587,7 @@ html[data-theme='dark'] .editor-surface {
   min-width: 15px;
   padding: 0 3px;
   border-radius: 999px;
-  background: var(--wapp-danger);
+  background: var(--winbook-danger);
   color: #fff;
   font-size: 9.5px;
   line-height: 15px;
@@ -1511,8 +1608,8 @@ html[data-theme='dark'] .rail__badge {
   flex: 0 0 auto;
   height: 34px;
   padding: 0 12px;
-  border-top: 1px solid var(--wapp-border);
-  background: var(--wapp-surface);
+  border-top: 1px solid var(--winbook-border);
+  background: var(--winbook-surface);
   font-size: 12px;
 }
 
@@ -1561,7 +1658,7 @@ html[data-theme='dark'] .rail__badge {
   flex: 0 0 auto;
   width: 14px;
   font-size: 10px;
-  color: var(--wapp-text-faint);
+  color: var(--winbook-text-faint);
   white-space: nowrap;
   overflow: visible;
 }
@@ -1578,7 +1675,7 @@ html[data-theme='dark'] .rail__badge {
   height: 12px;
   font-size: 10px;
   line-height: 12px;
-  color: var(--wapp-text-faint);
+  color: var(--winbook-text-faint);
 }
 
 .heatmap__scroll {
@@ -1655,9 +1752,9 @@ html[data-theme='dark'] .rail__badge {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid var(--wapp-border);
+  border: 1px solid var(--winbook-border);
   border-radius: 10px;
-  background: var(--wapp-surface);
+  background: var(--winbook-surface);
 }
 
 .outline-tree-pane {
@@ -1678,11 +1775,11 @@ html[data-theme='dark'] .rail__badge {
   align-items: center;
   gap: 14px;
   font-size: 12px;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
 }
 
 .outline-summary strong {
-  color: var(--wapp-text);
+  color: var(--winbook-text);
   font-variant-numeric: tabular-nums;
   margin-left: 2px;
 }
@@ -1709,7 +1806,7 @@ html[data-theme='dark'] .rail__badge {
 
 .outline-node__title--dropped {
   text-decoration: line-through;
-  color: var(--wapp-text-faint);
+  color: var(--winbook-text-faint);
 }
 
 .outline-node .ant-tag.outline-node__type {
@@ -1723,7 +1820,7 @@ html[data-theme='dark'] .rail__badge {
 
 .outline-node__chapter {
   font-size: 11px;
-  color: var(--wapp-accent);
+  color: var(--winbook-accent);
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1733,9 +1830,9 @@ html[data-theme='dark'] .rail__badge {
 .outline-legend {
   flex: 0 0 auto;
   padding-top: 8px;
-  border-top: 1px solid var(--wapp-border);
+  border-top: 1px solid var(--winbook-border);
   font-size: 12px;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
 }
 
 .outline-legend__item {
@@ -1751,7 +1848,7 @@ html[data-theme='dark'] .rail__badge {
 
 .outline-legend strong {
   font-variant-numeric: tabular-nums;
-  color: var(--wapp-text);
+  color: var(--winbook-text);
 }
 
 /* ---------------- 右侧节点详情 ---------------- */
@@ -1780,7 +1877,7 @@ html[data-theme='dark'] .rail__badge {
 .outline-panel__divider {
   margin: 4px 0 !important;
   font-size: 12px;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
 }
 
 .outline-panel__volume {
@@ -1804,7 +1901,7 @@ html[data-theme='dark'] .rail__badge {
 
 .outline-field__label {
   font-size: 12px;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
 }
 
 /* 下拉里的「已关联到…」后缀是禁用说明，弱化显示 */
@@ -1853,12 +1950,12 @@ html[data-theme='dark'] .rail__badge {
   align-items: center;
   gap: 14px;
   font-size: 12px;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
   margin-left: auto;
 }
 
 .cards-summary strong {
-  color: var(--wapp-text);
+  color: var(--winbook-text);
   font-variant-numeric: tabular-nums;
   margin-left: 2px;
 }
@@ -1877,9 +1974,9 @@ html[data-theme='dark'] .rail__badge {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid var(--wapp-border);
+  border: 1px solid var(--winbook-border);
   border-radius: 10px;
-  background: var(--wapp-surface);
+  background: var(--winbook-surface);
 }
 
 .cards-list-pane {
@@ -1903,7 +2000,7 @@ html[data-theme='dark'] .rail__badge {
 .cards-pager {
   flex: 0 0 auto;
   padding-top: 8px;
-  border-top: 1px solid var(--wapp-border);
+  border-top: 1px solid var(--winbook-border);
 }
 
 /* ---------------- 列表里的一行 ---------------- */
@@ -1916,7 +2013,7 @@ html[data-theme='dark'] .rail__badge {
   width: 100%;
   padding: 10px 12px;
   text-align: left;
-  border: 1px solid var(--wapp-border);
+  border: 1px solid var(--winbook-border);
   border-radius: 8px;
   background: transparent;
   color: inherit;
@@ -1926,12 +2023,12 @@ html[data-theme='dark'] .rail__badge {
 }
 
 .card-row:hover {
-  border-color: var(--wapp-accent);
+  border-color: var(--winbook-accent);
 }
 
 .card-row--selected {
-  border-color: var(--wapp-accent);
-  background: var(--wapp-accent-soft);
+  border-color: var(--winbook-accent);
+  background: var(--winbook-accent-soft);
 }
 
 .card-row__title {
@@ -1950,7 +2047,7 @@ html[data-theme='dark'] .rail__badge {
 
 .card-row__subtitle {
   font-size: 12px;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1967,7 +2064,7 @@ html[data-theme='dark'] .rail__badge {
 }
 
 .card-row__book {
-  color: var(--wapp-text-faint);
+  color: var(--winbook-text-faint);
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2000,7 +2097,7 @@ html[data-theme='dark'] .rail__badge {
 .cards-panel__divider {
   margin: 4px 0 !important;
   font-size: 12px;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
 }
 
 .cards-field {
@@ -2016,7 +2113,7 @@ html[data-theme='dark'] .rail__badge {
 
 .cards-field__label {
   font-size: 12px;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
 }
 
 @media (max-width: 1180px) {
@@ -2112,7 +2209,7 @@ html[data-theme='dark'] .rail__badge {
 }
 
 .global-search__icon {
-  color: var(--wapp-text-faint);
+  color: var(--winbook-text-faint);
 }
 
 .search-panel {
@@ -2122,8 +2219,8 @@ html[data-theme='dark'] .rail__badge {
   right: 0;
   z-index: 40;
   overflow: hidden;
-  background: var(--wapp-surface);
-  border: 1px solid var(--wapp-border);
+  background: var(--winbook-surface);
+  border: 1px solid var(--winbook-border);
   border-radius: 12px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
 }
@@ -2131,11 +2228,11 @@ html[data-theme='dark'] .rail__badge {
 .search-panel__hint {
   padding: 14px 16px;
   font-size: 13px;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
 }
 
 .search-panel__hint--error {
-  color: var(--wapp-danger);
+  color: var(--winbook-danger);
 }
 
 .search-panel__head {
@@ -2144,7 +2241,7 @@ html[data-theme='dark'] .rail__badge {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px 8px;
-  border-bottom: 1px solid var(--wapp-border);
+  border-bottom: 1px solid var(--winbook-border);
 }
 
 .search-panel__summary {
@@ -2161,8 +2258,8 @@ html[data-theme='dark'] .rail__badge {
   margin: 0;
   font-size: 11px;
   line-height: 18px;
-  color: var(--wapp-accent);
-  background: var(--wapp-accent-soft);
+  color: var(--winbook-accent);
+  background: var(--winbook-accent-soft);
   border-color: transparent;
 }
 
@@ -2174,7 +2271,7 @@ html[data-theme='dark'] .rail__badge {
 
 .search-group + .search-group {
   margin-top: 4px;
-  border-top: 1px solid var(--wapp-border);
+  border-top: 1px solid var(--winbook-border);
 }
 
 .search-group__title {
@@ -2188,12 +2285,12 @@ html[data-theme='dark'] .rail__badge {
 .search-group__name {
   font-size: 12px;
   font-weight: 500;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
 }
 
 .search-group__count {
   font-size: 11px;
-  color: var(--wapp-text-faint);
+  color: var(--winbook-text-faint);
 }
 
 /* 结果行用 button 而不是 div：键盘 Tab 能到达、回车即打开。
@@ -2212,8 +2309,8 @@ html[data-theme='dark'] .rail__badge {
 }
 
 .search-hit--active {
-  background: var(--wapp-surface-soft);
-  border-left-color: var(--wapp-accent);
+  background: var(--winbook-surface-soft);
+  border-left-color: var(--winbook-accent);
 }
 
 .search-hit__top {
@@ -2236,12 +2333,12 @@ html[data-theme='dark'] .rail__badge {
   flex: 0 0 auto;
   gap: 6px;
   font-size: 11px;
-  color: var(--wapp-text-faint);
+  color: var(--winbook-text-faint);
 }
 
 .search-hit__field {
   padding: 0 5px;
-  border: 1px solid var(--wapp-border);
+  border: 1px solid var(--winbook-border);
   border-radius: 4px;
 }
 
@@ -2251,11 +2348,11 @@ html[data-theme='dark'] .rail__badge {
   overflow: hidden;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--wapp-text-soft);
+  color: var(--winbook-text-soft);
 }
 
 .search-hit__mark {
-  color: var(--wapp-text);
+  color: var(--winbook-text);
   background: #ffe58f;
   border-radius: 2px;
 }

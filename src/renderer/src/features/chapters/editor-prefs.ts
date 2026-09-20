@@ -27,8 +27,14 @@ export interface PaperPreset {
   label: string
   /** 纸面的 CSS 背景。用纯 CSS 生成，不依赖任何图片资源 */
   background: string
-  /** 纸面之上的文字色。深浅背景需要不同的文字色，否则会不可读 */
-  ink: 'dark' | 'light'
+  /**
+   * 纸面之上的文字色。
+   *   dark  深色墨，配浅色纸
+   *   light 浅色墨，配深色纸
+   *   theme 跟随应用主题 —— 给「默认」纸面用：纸面本身取的就是面板底色，
+   *         深色主题下面板是深灰，这时墨色必须跟着翻过来，否则正文不可见
+   */
+  ink: 'dark' | 'light' | 'theme'
 }
 
 /**
@@ -37,8 +43,19 @@ export interface PaperPreset {
  * 用 CSS 渐变而不是图片：图片要么打进安装包（体积），要么走网络（桌面应用
  * 不该有联网依赖）。线性渐变 + repeating-linear-gradient 已经足够表达
  * 「山雾」「稿纸格」这类氛围，而且换主题时不需要重新切图。
+ *
+ * 第一项是默认值：**取应用面板底色**，而不是某种带氛围的纸。
+ * 章节编辑器是干活的界面里面积最大的一块，底色一偏（曾经默认是偏绿的「山雾」），
+ * 整屏观感就跟着偏，还会和周围的目录、校对面板割裂成两张皮。
+ * 想换个心情的仍然可以从列表里挑带氛围的纸。
  */
 export const PAPER_PRESETS: readonly PaperPreset[] = [
+  {
+    key: 'panel',
+    label: '默认',
+    background: 'var(--winbook-surface)',
+    ink: 'theme'
+  },
   {
     key: 'plain',
     label: '素白',
@@ -113,7 +130,9 @@ export interface EditorPrefs {
 export const EDITOR_PREF_LIMITS = {
   fontSize: [14, 30],
   lineHeight: [1.4, 2.6],
-  paragraphGap: [0, 32],
+  // 上限 48 是为了容得下「段落之间空一行」：一行的高度 = 字号 × 行距，
+  // 17px × 1.9 ≈ 32px，字号调到 20px 就超过旧的 32px 上限了
+  paragraphGap: [0, 48],
   paperOpacity: [0.6, 1]
 } as const
 
@@ -123,12 +142,14 @@ export const DEFAULT_EDITOR_PREFS: EditorPrefs = {
   lineHeight: 1.9,
   paragraphGap: 0,
   firstLineIndent: true,
-  paperKey: 'mist',
-  paperOpacity: 0.9,
+  // 「默认」= 应用面板底色；浓度 1 表示不做半透明叠加，
+  // 这样纸面底色与面板底色是同一个值，冒烟断言才能直接比这对颜色
+  paperKey: 'panel',
+  paperOpacity: 1,
   showParagraphRules: false
 }
 
-const STORAGE_KEY = 'wapp.editor.prefs'
+const STORAGE_KEY = 'winbook.editor.prefs'
 
 export function readEditorPrefs(): EditorPrefs {
   try {
@@ -151,6 +172,30 @@ export function writeEditorPrefs(prefs: EditorPrefs): void {
 
 export function fontStackOf(key: EditorFontKey): string {
   return EDITOR_FONT_PRESETS.find((item) => item.key === key)?.stack ?? EDITOR_FONT_PRESETS[0].stack
+}
+
+/** 一行正文的高度（px）：字号 × 行距。「段落之间空一行」空的就是这个高度 */
+export function lineHeightPxOf(prefs: Pick<EditorPrefs, 'fontSize' | 'lineHeight'>): number {
+  return Math.round(prefs.fontSize * prefs.lineHeight)
+}
+
+/**
+ * 网文标准排版的偏好补丁：**每段开头空两个字、段落之间空一行**。
+ *
+ * 「一键格式整理」按排版处理，而不是往正文里塞全角空格与空段落，原因有三：
+ *   1. 项目里「缩进几个字 / 段间空多少」本来就是显示参数（见 platform-preview.ts
+ *      对各平台版式的建模），正文内容始终是干净的纯文本；
+ *   2. 真塞空格会让字数核对、检索片段、导出结果都多出一堆看不见的字符，
+ *      而作者没有任何办法看出来是哪里多出来的；
+ *   3. 字号或行距一改，「空一行」的高度要跟着变。写死进内容的空行做不到这件事。
+ *
+ * 想换成别的版式，照旧可以在「排版」面板里逐项调。
+ */
+export function tidyLayoutPatch(prefs: Pick<EditorPrefs, 'fontSize' | 'lineHeight'>): Partial<EditorPrefs> {
+  return {
+    firstLineIndent: true,
+    paragraphGap: lineHeightPxOf(prefs)
+  }
 }
 
 export function paperOf(key: string): PaperPreset {

@@ -137,17 +137,29 @@ export function BooksPage() {
 
   return (
     <Flex vertical gap={16} className="page">
-      <PageHeader
-        title="书籍管理"
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建书籍
-          </Button>
-        }
-      />
+      {/* 页面标题仍由 PageHeader 提供（视觉隐藏，供读屏与冒烟测试使用） */}
+      <PageHeader title="书籍管理" />
 
-      <Flex align="center" justify="space-between" gap={12} wrap>
+      <Flex className="books-toolbar" align="center" justify="space-between" gap={12} wrap>
         <Flex align="center" gap={8} wrap>
+          {/*
+           * 新建入口从「标题栏右侧的大主按钮」改成「搜索框左侧的图标按钮 + 悬浮提示」。
+           * 理由：它和搜索 / 筛选是同一层的操作，放在工具栏里手指不必横跨整个窗口；
+           * 文案转为 tooltip 后不再占位，工具栏一行能多放一个筛选器。
+           * aria-label 与 Tooltip 同文案：图标按钮没有可见文字，读屏必须能读出它是什么。
+           * shape="circle"：按钮做正圆而不是圆角矩形（只有一个图标时，方形留白会显得比
+           * 工具栏里的其他控件重）。圆角由 antd 画成 50%，我们不另外写 px 值去覆盖它。
+           */}
+          <Tooltip title={<span data-testid="books-add-tip">新建书籍</span>}>
+            <Button
+              type="primary"
+              shape="circle"
+              icon={<PlusOutlined />}
+              aria-label="新建书籍"
+              data-testid="books-add"
+              onClick={openCreate}
+            />
+          </Tooltip>
           <Input
             allowClear
             className="books-toolbar__search"

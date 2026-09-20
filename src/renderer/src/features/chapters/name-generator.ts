@@ -166,7 +166,7 @@ function pick<T>(pool: readonly T[]): T {
  * 又最难自己发现的重名错误。
  * ------------------------------------------------------------------ */
 
-const TAKEN_KEY = 'wapp.editor.takenNames'
+const TAKEN_KEY = 'winbook.editor.takenNames'
 
 export function readTakenNames(): string[] {
   try {

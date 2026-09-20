@@ -1,6 +1,14 @@
 import { useEffect } from 'react'
 import { Alert, Form, Input, InputNumber, Modal, Select, Typography } from 'antd'
-import { BOOK_ACCENT_PRESETS, BOOK_LIMITS, BOOK_STATUSES, BOOK_STATUS_LABELS, type Book, type BookCreateInput } from '@shared/modules/books'
+import {
+  BOOK_ACCENT_PRESETS,
+  BOOK_LIMITS,
+  BOOK_STATUSES,
+  BOOK_STATUS_LABELS,
+  DEFAULT_CHAPTER_WORDS,
+  type Book,
+  type BookCreateInput
+} from '@shared/modules/books'
 import { ApiError, isApiError } from '../../lib/api-client'
 
 const { Text } = Typography
@@ -12,6 +20,7 @@ interface BookFormValues {
   status: BookCreateInput['status']
   summary: string
   targetWords: number
+  chapterWords: number
   accentColor: string
 }
 
@@ -32,6 +41,7 @@ const EMPTY_VALUES: BookFormValues = {
   status: 'idea',
   summary: '',
   targetWords: 0,
+  chapterWords: DEFAULT_CHAPTER_WORDS,
   accentColor: BOOK_ACCENT_PRESETS[0]
 }
 
@@ -67,6 +77,7 @@ export function BookFormModal({
             status: book.status,
             summary: book.summary,
             targetWords: book.targetWords,
+            chapterWords: book.chapterWords,
             accentColor: book.accentColor
           }
     )
@@ -133,13 +144,28 @@ export function BookFormModal({
         <Form.Item
           name="targetWords"
           label="目标字数"
-          extra="用于书籍进度条与首页完成度，0 表示不设目标"
+          extra="整本书的量级，用于书籍进度条与首页完成度，0 表示不设目标"
         >
           <InputNumber
             min={0}
             max={BOOK_LIMITS.targetWords}
             step={10000}
             className="book-form__number"
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="chapterWords"
+          label="每章最少字数"
+          extra="全书统一生效，写单章时按它算「还差多少」。在这里定一次，之后每章都不必再填"
+          className="book-form__chapter-words"
+        >
+          <InputNumber
+            min={0}
+            max={BOOK_LIMITS.chapterWords}
+            step={500}
+            className="book-form__number"
+            data-testid="book-form-chapter-words"
           />
         </Form.Item>
 

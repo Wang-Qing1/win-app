@@ -242,22 +242,37 @@ export function CardsPage() {
   const total = list.data?.total ?? 0
   const pageCount = list.data?.pageCount ?? 0
 
-  const header = (
-    <PageHeader
-      title="卡片库"
-      extra={
+  /*
+   * 新建入口从「标题栏右侧的大主按钮」改成「搜索框左侧的图标按钮 + 悬浮提示」，
+   * 与书籍管理页保持一致：它和筛选、搜索属于同一层操作。
+   * 没有书时按钮禁用 —— 卡片必须归属到某本书或「通用」，此时提示改为说明原因，
+   * 而不是留一个点不动、也不说为什么的灰按钮。
+   * shape="circle"：与书籍管理页一致，做正圆而不是圆角矩形。
+   */
+  const addCardButton = (
+    <Tooltip
+      title={
+        <span data-testid="cards-add-tip">
+          {books.length === 0 ? '先创建一本书，才能往里添加卡片' : '新建卡片'}
+        </span>
+      }
+    >
+      {/* 禁用态的按钮不派发鼠标事件，必须由外层 span 承接 hover，否则提示永远不出现 */}
+      <span className="toolbar-icon-slot">
         <Button
           type="primary"
+          shape="circle"
           icon={<PlusOutlined />}
+          aria-label="新建卡片"
           data-testid="cards-add"
           disabled={books.length === 0}
           onClick={handleStartNew}
-        >
-          新建卡片
-        </Button>
-      }
-    />
+        />
+      </span>
+    </Tooltip>
   )
+
+  const header = <PageHeader title="卡片库" />
 
   if (bookList.isLoading) {
     return (
@@ -275,6 +290,13 @@ export function CardsPage() {
       {list.isError ? <ErrorAlert error={list.error} onRetry={() => void list.refetch()} /> : null}
 
       <Flex gap={10} wrap align="center" className="cards-toolbar">
+        {/*
+         * 新建按钮固定在工具栏最左端（用户指定的位置，勿动）。
+         * 卡片库有两个筛选器排在搜索框前面，所以它不会紧贴搜索框 ——
+         * 冒烟断言只要求「落在工具栏内且在搜索框左侧」，不强制间距。
+         */}
+        {addCardButton}
+
         <Select
           data-testid="cards-scope-select"
           className="cards-scope-select"
@@ -301,6 +323,13 @@ export function CardsPage() {
             ...CARD_TYPES.map((type) => ({ value: type, label: CARD_TYPE_LABELS[type] }))
           ]}
         />
+
+        {/*
+         * 新建按钮固定在工具栏最左端（用户指定的位置，勿动）。
+         * 卡片库有两个筛选器排在搜索框前面，所以它不会紧贴搜索框 ——
+         * 冒烟断言只要求「落在工具栏内且在搜索框左侧」，不强制间距。
+         */}
+        {addCardButton}
 
         <Input
           data-testid="cards-keyword"

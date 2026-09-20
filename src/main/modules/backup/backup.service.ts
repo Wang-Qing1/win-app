@@ -15,7 +15,7 @@ import { logger } from '../../core/logger'
  */
 export class BackupService {
   async backupDatabase(sender: WebContents): Promise<BackupDatabaseResult> {
-    const suggestedName = `wapp-备份-${localDateKey(new Date())}.db`
+    const suggestedName = `winbook-备份-${localDateKey(new Date())}.db`
 
     const parent = BrowserWindow.fromWebContents(sender)
     const options = {

@@ -21,6 +21,7 @@ interface BookRow {
   status: string
   summary: string
   target_words: number
+  chapter_words: number
   accent_color: string
   created_at: string
   updated_at: string
@@ -87,6 +88,7 @@ function toBook(row: BookRow): Book {
     genre: row.genre,
     summary: row.summary,
     targetWords: row.target_words,
+    chapterWords: row.chapter_words,
     accentColor: row.accent_color,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -143,7 +145,7 @@ export class BookRepository {
     const rows = this.db
       .prepare(
         `SELECT b.id, b.title, b.pen_name, b.genre, b.status, b.summary,
-                b.target_words, b.accent_color, b.created_at, b.updated_at,
+                b.target_words, b.chapter_words, b.accent_color, b.created_at, b.updated_at,
                 COALESCE(v.volume_count, 0)  AS volume_count,
                 COALESCE(c.chapter_count, 0) AS chapter_count,
                 COALESCE(c.hanzi_count, 0)   AS hanzi_count,
@@ -190,8 +192,8 @@ export class BookRepository {
   insert(input: BookCreateInput, now: string): Book {
     const result = this.db
       .prepare(
-        `INSERT INTO books (title, pen_name, genre, status, summary, target_words, accent_color, created_at, updated_at)
-         VALUES (@title, @penName, @genre, @status, @summary, @targetWords, @accentColor, @createdAt, @updatedAt)`
+        `INSERT INTO books (title, pen_name, genre, status, summary, target_words, chapter_words, accent_color, created_at, updated_at)
+         VALUES (@title, @penName, @genre, @status, @summary, @targetWords, @chapterWords, @accentColor, @createdAt, @updatedAt)`
       )
       .run({
         title: input.title,
@@ -200,6 +202,7 @@ export class BookRepository {
         status: input.status,
         summary: input.summary,
         targetWords: input.targetWords,
+        chapterWords: input.chapterWords,
         accentColor: input.accentColor,
         createdAt: now,
         updatedAt: now
@@ -222,6 +225,7 @@ export class BookRepository {
                 status = @status,
                 summary = @summary,
                 target_words = @targetWords,
+                chapter_words = @chapterWords,
                 accent_color = @accentColor,
                 updated_at = @updatedAt
           WHERE id = @id`
@@ -234,6 +238,7 @@ export class BookRepository {
         status: input.status,
         summary: input.summary,
         targetWords: input.targetWords,
+        chapterWords: input.chapterWords,
         accentColor: input.accentColor,
         updatedAt: now
       })

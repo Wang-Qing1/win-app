@@ -18,16 +18,16 @@ let shutdownCompleted = false
 /**
  * 冒烟测试模式：npm run smoke
  * 用临时用户数据目录启动，跑完自检后按结果决定退出码，不显示窗口、
- * 也绝不碰用户真实的 wapp.db。
+ * 也绝不碰用户真实的 winbook.db。
  */
 const isSmokeTest = process.argv.includes('--smoke-test')
 
 if (isSmokeTest) {
-  app.setPath('userData', mkdtempSync(join(tmpdir(), 'wapp-smoke-')))
+  app.setPath('userData', mkdtempSync(join(tmpdir(), 'winbook-smoke-')))
 }
 
 // 必须在 app ready 之前设置，否则 Windows 任务栏分组与通知会归属错误
-app.setAppUserModelId('com.wapp.desktop')
+app.setAppUserModelId('com.winbook.desktop')
 
 /* ------------------------------------------------------------------ *
  * 单实例锁：桌面应用双击图标很容易开出多个进程，
@@ -78,7 +78,7 @@ function bootstrap(): void {
       maxBytes: config.logMaxBytes,
       console: true
     })
-    logger.info('wapp 正在启动', {
+    logger.info('winbook 正在启动', {
       version: app.getVersion(),
       env: config.env,
       electronVersion: process.versions.electron,
@@ -87,7 +87,7 @@ function bootstrap(): void {
     })
   } catch (error) {
     const detail = error instanceof ConfigError ? error.message : String(error)
-    dialog.showErrorBox('wapp 启动失败', `配置校验未通过，应用无法启动。\n\n${detail}`)
+    dialog.showErrorBox('winbook 启动失败', `配置校验未通过，应用无法启动。\n\n${detail}`)
     app.exit(1)
     return
   }
@@ -104,7 +104,7 @@ function bootstrap(): void {
     app.commandLine.appendSwitch('disable-software-rasterizer')
 
     logger.warn('已关闭硬件加速，改用进程内软件渲染', {
-      reason: isSmokeTest ? '冒烟测试模式' : 'WAPP_DISABLE_GPU=true'
+      reason: isSmokeTest ? '冒烟测试模式' : 'WINBOOK_DISABLE_GPU=true'
     })
   }
 
@@ -137,16 +137,16 @@ async function startApplication(config: AppConfig): Promise<void> {
       mainWindow = null
     })
 
-    logger.info('wapp 已就绪', {
+    logger.info('winbook 已就绪', {
       userDataDir: config.userDataDir,
       database: config.dbFileName,
       appliedMigrations: migrationResult.applied,
       schemaVersion: migrationResult.current
     })
   } catch (error) {
-    logger.error('wapp 启动失败', { error })
+    logger.error('winbook 启动失败', { error })
     const message = error instanceof Error ? error.message : String(error)
-    dialog.showErrorBox('wapp 启动失败', `应用初始化失败，无法启动。\n\n${message}`)
+    dialog.showErrorBox('winbook 启动失败', `应用初始化失败，无法启动。\n\n${message}`)
     app.exit(1)
   }
 }
@@ -161,7 +161,7 @@ async function runSmokeTest(config: AppConfig): Promise<void> {
   const passed = reportSmokeResults(
     [...backend.results, ...rendererResults],
     // 用 cwd 而不是 app.getAppPath()：打包后 getAppPath() 指向只读的 app.asar 内部，
-    // 报告写不进去。cwd 在开发（npm run smoke）与打包后（在任意目录执行 wapp.exe）都可用。
+    // 报告写不进去。cwd 在开发（npm run smoke）与打包后（在任意目录执行 winbook.exe）都可用。
     join(process.cwd(), 'smoke-report.txt')
   )
 
@@ -174,12 +174,12 @@ async function shutdown(): Promise<void> {
   if (shutdownStarted) return
   shutdownStarted = true
 
-  logger.info('wapp 正在关闭')
+  logger.info('winbook 正在关闭')
   try {
     unregisterAllHandlers()
     closeDatabase()
     await flushLogger()
   } catch (error) {
-    console.error('[wapp] 关闭过程中出现异常：', error)
+    console.error('[winbook] 关闭过程中出现异常：', error)
   }
 }

@@ -24,7 +24,7 @@ export function HealthBadge() {
 
   if (isError || !data) {
     return (
-      <Tooltip title="未能连接到主进程，部分功能可能不可用。可尝试重启 wapp。">
+      <Tooltip title="未能连接到主进程，部分功能可能不可用。可尝试重启 winbook。">
         <span data-testid="health-badge" data-state="error">
           <Badge status="error" text="主进程异常" />
         </span>

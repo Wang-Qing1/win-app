@@ -12,8 +12,8 @@ import {
 import { BOOK_STATUS_LABELS } from '@shared/modules/books'
 import type { BookProgressQuery, StatsTrendQuery } from '@shared/modules/stats'
 import { ErrorAlert } from '../../components/ErrorAlert'
+import { MODULE_ITEMS } from '../../components/nav'
 import { PageHeader } from '../../components/PageHeader'
-import { DASHBOARD_MODULES } from '../../components/nav'
 import {
   formatCompact,
   formatCount,
@@ -38,17 +38,19 @@ const PROGRESS_QUERY: BookProgressQuery = { limit: 6, rangeDays: null }
 const TREND_QUERY: StatsTrendQuery = { days: 30, bookId: null }
 
 /**
- * 欢迎页 / 总览页。
+ * 首页 / 启动台。
  *
- * 布局意图（自上而下）：先回答「我现在有多少东西」——四个指标卡；
- * 再回答「我最近写得怎么样」——趋势图 + 今日卡片；
- * 最后回答「我接下来要做什么」——模块入口与在写书籍。
+ * 布局意图（自上而下）：先回答「去哪儿」——四张功能模块卡片（**这就是导航**，
+ * 顶部导航条已整条移除）；再回答「我现在有多少东西」——四个指标卡；
+ * 之后是「我最近写得怎么样」——趋势图 + 今日卡片；
+ * 最后是「我接着写哪一本」——在写书籍。
  *
- * 顺序不是随意的：桌面应用每次打开都会落在这里，用户的第一问题永远是
- * 「进度到哪了」，而不是「有哪些功能」。功能入口放在下方而非最上方，
- * 是因为它们在侧栏已经常驻，这里只是给「不知道去哪」的人一个快捷方式。
+ * 模块卡片排在**第一位**而不是像上一版那样垫在趋势图之后：它现在承担的是
+ * 导航职责，不是「顺带一提的入口」。垫在下面意味着每次切模块都要先滚过
+ * 一屏数据，而且会随数据条数变化位置，肌肉记忆建立不起来。
  *
  * 测试锚点说明（冒烟测试依赖，改动前请先看 smoke-test.ts）：
+ *   module-entry       功能模块卡片，data-module-key 标明是哪个模块
  *   dashboard-metrics  容器，data-loading 表示数据是否还在路上
  *   metric-*           指标卡，data-value 是未格式化的原始数值
  *   progress-row       在写书籍的每一行
@@ -69,11 +71,47 @@ export function DashboardPage() {
   return (
     <Flex vertical gap={16} className="page">
       {/*
-       * 顶部导航条已经常驻「去写作」的入口（书架就是写作的落点），
-       * 页面里再放一个主按钮是重复。这里只保留 title —— 它渲染成
-       * .sr-only，是冒烟测试判断「当前在哪个页面」的锚点，不能删。
+       * 首页的标题只是隐藏锚点（全应用的页标题都已不显示），
+       * `data-testid="page-title"` 仍渲染着 —— 它是冒烟测试判断
+       * 「当前在哪个页面」的锚点，不能删。
        */}
       <PageHeader title="首页" />
+
+      {/* ---------------- 功能模块（应用的导航） ---------------- */}
+      <div data-testid="module-grid">
+        <Row gutter={[16, 16]} className="module-grid equal-height-row">
+          {MODULE_ITEMS.map((module) => (
+            <Col xs={24} sm={12} xl={6} key={module.key}>
+              {/*
+               * data-testid 与 data-module-key 直接挂在 antd Card 上（和书架上
+               * 的 book-card 同一写法）：onClick 也在这张 Card 上，这样
+               * `el.click()` 一点就命中真正的处理器。若把锚点放在外面包一层
+               * div，点它的事件不会往下冒泡到 Card，断言会表现为「点了没反应」。
+               */}
+              <Card
+                hoverable
+                className="module-card"
+                data-testid="module-entry"
+                data-module-key={module.key}
+                onClick={() => void navigate(module.path)}
+              >
+                <Flex align="center" gap={12}>
+                  <span className="module-card__icon">{module.icon}</span>
+                  <div className="module-card__text">
+                    <Flex align="center" gap={6}>
+                      <Text strong>{module.label}</Text>
+                    </Flex>
+                    <Text type="secondary" className="module-card__hint">
+                      {module.hint}
+                    </Text>
+                  </div>
+                  <RightOutlined className="module-card__arrow" />
+                </Flex>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </div>
 
       {failedQuery ? (
         <ErrorAlert
@@ -219,39 +257,6 @@ export function DashboardPage() {
           </Card>
         </Col>
       </Row>
-
-      {/* ---------------- 功能模块入口 ---------------- */}
-      <div>
-        <Text strong className="section-title">
-          功能模块
-        </Text>
-        <Row gutter={[16, 16]} className="module-grid equal-height-row">
-          {DASHBOARD_MODULES.map((module) => (
-            <Col xs={24} sm={12} xl={6} key={module.key}>
-              <Card
-                hoverable
-                className="module-card"
-                data-testid="module-entry"
-                onClick={() => void navigate(module.path)}
-              >
-                <Flex align="center" gap={12}>
-                  <span className="module-card__icon">{module.icon}</span>
-                  <div className="module-card__text">
-                    <Flex align="center" gap={6}>
-                      <Text strong>{module.label}</Text>
-                      {module.ready ? null : <Tag className="tag--flush">即将推出</Tag>}
-                    </Flex>
-                    <Text type="secondary" className="module-card__hint">
-                      {module.hint}
-                    </Text>
-                  </div>
-                  <RightOutlined className="module-card__arrow" />
-                </Flex>
-              </Card>
-            </Col>
-          ))}
-        </Row>
-      </div>
 
       {/* ---------------- 在写书籍 ---------------- */}
       <Card

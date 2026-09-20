@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Flex, Input, InputNumber, Select, Skeleton, Tooltip, Typography } from 'antd'
+import { Button, Flex, Input, Skeleton, Tooltip, Typography } from 'antd'
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
@@ -12,11 +12,16 @@ import {
 } from '@ant-design/icons'
 import type { Editor } from '@tiptap/react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
-import { CHAPTER_STATUSES, CHAPTER_STATUS_LABELS, type ChapterStatus } from '@shared/modules/chapters'
+import {
+  CHAPTER_STATUS_LABELS,
+  type ChapterListItem,
+  type ChapterStatus
+} from '@shared/modules/chapters'
 import { toUserMessage } from '../../lib/api-client'
 import { formatCount, formatRelativeTime } from '../../lib/format'
 import { useToast } from '../../components/Toast'
-import { ChapterCatalog } from './ChapterCatalog'
+import { ChapterCatalog, type ChapterPatch } from './ChapterCatalog'
+import type { ChapterCreateValues } from './ChapterCreateModal'
 import { EditorInspector } from './EditorInspector'
 import { FindReplaceBar } from './FindReplaceBar'
 import { NameDialog } from './NameDialog'
@@ -299,33 +304,45 @@ export function ChapterEditorPage() {
     [bookId, navigate]
   )
 
+  /**
+   * 新建一章。返回值是「有没有真的建成」，给目录栏决定关不关弹窗用 ——
+   * 失败还把弹窗关掉的话，作者填好的标题与分卷会一起消失。
+   */
   const handleCreateChapter = useCallback(
-    async (title: string, volumeId: number | null): Promise<void> => {
+    async (values: ChapterCreateValues): Promise<boolean> => {
       setCreating(true)
       try {
-        const created = await createChapter.mutateAsync({ bookId, volumeId, title, targetWords: 0 })
-        void navigate(`/books/${bookId}/chapters/${created.id}`)
+        const created = await createChapter.mutateAsync({
+          bookId,
+          volumeId: values.volumeId,
+          title: values.title,
+          // 本章目标字数不再是用户输入项，而是建章那一刻书级规则的快照。
+          // 这样导出与统计读到的仍是一个真实数字，而底栏的「计划」读的是
+          // 书籍设置本身（改了书级设置，全书立刻按新标准显示）。
+          targetWords: book.data?.chapterWords ?? 0
+        })
+        const target = `/books/${bookId}/chapters/${created.id}`
+        // 状态是弹窗里选的，而 createChapter 只落默认值，所以这里补一次元数据写入
+        if (values.status !== 'draft') {
+          await updateChapter.mutateAsync({
+            id: created.id,
+            title: values.title,
+            status: values.status,
+            volumeId: values.volumeId,
+            targetWords: book.data?.chapterWords ?? 0
+          })
+        }
+        void navigate(target)
+        return true
       } catch (error) {
         notifyError(toErrorMessage(error))
+        return false
       } finally {
         setCreating(false)
       }
     },
-    [bookId, createChapter, navigate, notifyError]
+    [book.data?.chapterWords, bookId, createChapter, navigate, notifyError, updateChapter]
   )
-
-  /**
-   * 底栏的「新建章节」：直接以「第 N 章」为名建好并跳过去。
-   *
-   * 命名带序号而不是留空：作者在底栏点新建，意图几乎是「接着往下写」，
-   * 让他先停下来想标题是多余的打断。标题之后随时可以在上方改。
-   */
-  const quickCreateChapter = useCallback((): void => {
-    const count = chapterList.data?.length ?? 0
-    const currentVolumeId =
-      chapterList.data?.find((item) => item.id === chapterId)?.volumeId ?? null
-    void handleCreateChapter(`第 ${count + 1} 章`, currentVolumeId)
-  }, [chapterId, chapterList.data, handleCreateChapter])
 
   const handleCreateVolume = useCallback(
     async (title: string): Promise<void> => {
@@ -334,6 +351,71 @@ export function ChapterEditorPage() {
       void navigate(`/books/${bookId}`)
     },
     [bookId, navigate, notifySuccess]
+  )
+
+  /** 提示文案里的「移到 XX」。卷被删过就会查不到，退回一句通用说法而不是「undefined」 */
+  const volumeLabel = useCallback(
+    (volumeId: number | null): string => {
+      if (volumeId === null) return '未分卷'
+      return (volumeList.data ?? []).find((volume) => volume.id === volumeId)?.title ?? '其他分卷'
+    },
+    [volumeList.data]
+  )
+
+  /**
+   * 目录行右键菜单：改一章的状态或所属分卷。
+   *
+   * 这个接口是**整体替换**（title / status / volumeId / targetWords 都得给全），
+   * 而菜单只说「我改了状态」。剩下三项由这里补齐，补齐时有一处必须当心：
+   * 如果改的正好是**正在编辑的那一章**，标题可能改了但还没落盘（失焦才保存），
+   * 拿列表里的旧标题去补，就等于「我改了个状态，标题被打回上一次保存的值」。
+   * 所以当前章一律以编辑器里的 meta 为准。
+   */
+  const handlePatchChapter = useCallback(
+    async (target: ChapterListItem, patch: ChapterPatch): Promise<void> => {
+      // 只有「正在编辑的这一章」才有更权威的本地状态
+      const liveMeta = target.id === chapterId ? meta : null
+
+      // 标题为空的兜底：作者正在重打标题时点右键，不该因此写库失败，
+      // 也不该把标题清空 —— 保留原值，等他敲完自然会存
+      const trimmed = (liveMeta?.title ?? target.title).trim()
+      const title = trimmed.length > 0 ? trimmed : target.title
+
+      // 这里刻意不写 `??`：volumeId 的「空」是 null（未分卷）而不是 undefined，
+      // 用 `??` 会把「确实要设为未分卷」误判成「没给值」而退回旧值
+      const sourceVolumeId = liveMeta === null ? target.volumeId : liveMeta.volumeId
+      const nextVolumeId = patch.volumeId !== undefined ? patch.volumeId : sourceVolumeId
+      const nextStatus = patch.status ?? liveMeta?.status ?? target.status
+
+      try {
+        await updateChapter.mutateAsync({
+          id: target.id,
+          title,
+          status: nextStatus,
+          volumeId: nextVolumeId,
+          targetWords: liveMeta?.targetWords ?? target.targetWords
+        })
+
+        // 当前章还要把改动同步进 meta：否则编辑器手里仍攥着旧状态，
+        // 下次标题失焦触发 saveMeta 时会把它原样写回去，菜单里改的就白改了
+        if (liveMeta !== null) {
+          setMeta((previous) =>
+            previous === null
+              ? previous
+              : { ...previous, status: nextStatus, volumeId: nextVolumeId }
+          )
+        }
+
+        notifySuccess(
+          patch.status !== undefined
+            ? `「${title}」已标为${CHAPTER_STATUS_LABELS[patch.status]}`
+            : `「${title}」已移到${volumeLabel(nextVolumeId)}`
+        )
+      } catch (error) {
+        notifyError(toErrorMessage(error))
+      }
+    },
+    [chapterId, meta, notifyError, notifySuccess, updateChapter, volumeLabel]
   )
 
   /* ------------------------------------------------------------------ *
@@ -457,23 +539,23 @@ export function ChapterEditorPage() {
    * 派生数据
    * ------------------------------------------------------------------ */
 
-  const volumeOptions = useMemo(
-    () => [
-      { value: null as number | null, label: '未分卷' },
-      ...(volumeList.data ?? []).map((volume) => ({ value: volume.id, label: volume.title }))
-    ],
-    [volumeList.data]
-  )
-
   const liveHanzi = doc?.hanzi ?? serverCounts?.hanzi ?? 0
   const liveChars = doc?.chars ?? serverCounts?.chars ?? 0
 
+  /**
+   * 底栏的「计划：剩 N」。
+   *
+   * 口径取自**书籍**的「每章最少字数」，不是本章自己的某个字段：这是一条
+   * 全书统一的规则，在新建/编辑书籍时定一次。也正因为它读的是书级设置，
+   * 作者改了书籍设置之后，每一章立刻按新的标准显示 —— 若读的是建章那一刻
+   * 存下来的快照，同一本书里就会新旧标准混着用，还得逐章去改。
+   */
   const targetPlan = useMemo(() => {
-    const target = meta?.targetWords ?? 0
+    const target = book.data?.chapterWords ?? 0
     if (target <= 0) return null
     const remaining = target - liveHanzi
     return { target, remaining }
-  }, [liveHanzi, meta?.targetWords])
+  }, [book.data?.chapterWords, liveHanzi])
 
   if (chapter.isError) {
     return (
@@ -573,8 +655,10 @@ export function ChapterEditorPage() {
             chapters={chapterList.data}
             volumes={volumeList.data}
             loading={chapterList.isPending}
-            onCreateChapter={(title, volumeId) => void handleCreateChapter(title, volumeId)}
+            chapterWords={book.data?.chapterWords ?? 0}
+            onCreateChapter={(values) => handleCreateChapter(values)}
             onCreateVolume={(title) => void handleCreateVolume(title)}
+            onPatchChapter={(target, patch) => void handlePatchChapter(target, patch)}
             onSelectChapter={goToChapter}
             onSwitchBook={(id) => {
               void flushRef.current()
@@ -591,6 +675,14 @@ export function ChapterEditorPage() {
             </div>
           ) : (
             <>
+              {/*
+                标题留在正文上方，只此一项。
+
+                分卷、状态、目标字数原本也在这里，现在全部移到「新建章」弹窗：
+                它们是在决定「要写这一章」的那一刻就想清楚的事，等进了正文
+                再填，只是把选择推迟到注意力已经被正文消耗之后。而每章最少
+                字数更是书籍级规则（全书统一），本来就不该逐章再填一遍。
+              */}
               <div className="editor-metabar">
                 <Input
                   className="editor-metabar__title"
@@ -606,61 +698,6 @@ export function ChapterEditorPage() {
                   onPressEnter={() => void saveMeta()}
                   data-testid="chapter-title-input"
                 />
-
-                <Flex align="center" gap={8} wrap className="editor-metabar__controls">
-                  <Select
-                    size="small"
-                    className="editor-metabar__select"
-                    value={meta.volumeId}
-                    options={volumeOptions}
-                    onChange={(value) =>
-                      setMeta((previous) =>
-                        previous === null ? previous : { ...previous, volumeId: value }
-                      )
-                    }
-                    onBlur={() => void saveMeta()}
-                  />
-                  <Select
-                    size="small"
-                    className="editor-metabar__select"
-                    value={meta.status}
-                    options={CHAPTER_STATUSES.map((status) => ({
-                      value: status,
-                      label: CHAPTER_STATUS_LABELS[status]
-                    }))}
-                    onChange={(value) =>
-                      setMeta((previous) =>
-                        previous === null ? previous : { ...previous, status: value }
-                      )
-                    }
-                  />
-                  <Flex align="center" gap={4}>
-                    <Text type="secondary" className="editor-metabar__label">
-                      本章目标
-                    </Text>
-                    <InputNumber
-                      size="small"
-                      className="editor-metabar__number"
-                      min={0}
-                      step={500}
-                      value={meta.targetWords}
-                      onChange={(value) =>
-                        setMeta((previous) =>
-                          previous === null
-                            ? previous
-                            : { ...previous, targetWords: typeof value === 'number' ? value : 0 }
-                        )
-                      }
-                      onBlur={() => void saveMeta()}
-                    />
-                    <Text type="secondary" className="editor-metabar__label">
-                      字
-                    </Text>
-                  </Flex>
-                  <Button size="small" onClick={() => void saveMeta()} loading={updateChapter.isPending}>
-                    保存信息
-                  </Button>
-                </Flex>
               </div>
 
               {/*
@@ -702,19 +739,14 @@ export function ChapterEditorPage() {
 
       {/* ---------------- 底栏 ---------------- */}
       <footer className="editor-statusbar">
-        <Button
-          size="small"
-          type="link"
-          icon={<CloudUploadOutlined rotate={180} />}
-          loading={creating}
-          onClick={quickCreateChapter}
-        >
-          新建章节
-        </Button>
-
         <Flex align="center" gap={16} className="editor-statusbar__stats">
-          <Tooltip title="本章目标字数减去本章已写汉字数">
-            <Text type="secondary" className="editor-statusbar__item">
+          <Tooltip title="书籍设置的「每章最少字数」减去本章已写汉字数">
+            <Text
+              type="secondary"
+              className="editor-statusbar__item"
+              data-testid="editor-plan"
+              data-value={targetPlan === null ? -1 : targetPlan.remaining}
+            >
               计划：
               {targetPlan === null
                 ? '未设目标'

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { WAPP_BRIDGE_KEY, type WappApi } from '@shared/api'
+import { WINBOOK_BRIDGE_KEY, type WinbookApi } from '@shared/api'
 import { IpcChannel } from '@shared/ipc-channels'
 
 /**
@@ -25,7 +25,7 @@ const BRIDGE_VERSION = '7'
  * 所有方法返回 IpcResponse 信封（而不是抛异常）—— 跨 contextBridge 传递
  * Error 实例语义不可靠，拆信封与抛 ApiError 的职责放在渲染进程侧。
  */
-const api: WappApi = {
+const api: WinbookApi = {
   version: BRIDGE_VERSION,
 
   health: {
@@ -106,4 +106,4 @@ const api: WappApi = {
   }
 }
 
-contextBridge.exposeInMainWorld(WAPP_BRIDGE_KEY, api)
+contextBridge.exposeInMainWorld(WINBOOK_BRIDGE_KEY, api)

@@ -85,7 +85,7 @@ export function createMainWindow(config: AppConfig, options: MainWindowOptions =
     height: config.window.height,
     minWidth: 960,
     minHeight: 640,
-    title: 'wapp',
+    title: 'winbook',
     // 显式传 undefined 也是合法的，但这里干脆不塞这个键，
     // 免得以后有人误以为「图标已配置」却拿到默认图标
     ...(icon === undefined ? {} : { icon }),

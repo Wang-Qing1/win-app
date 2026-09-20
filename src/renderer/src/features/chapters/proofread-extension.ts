@@ -22,7 +22,7 @@ export interface ProofreadMark {
   severity: ProofreadSeverity
 }
 
-export const PROOFREAD_PLUGIN_KEY = new PluginKey<DecorationSet>('wappProofreadHighlight')
+export const PROOFREAD_PLUGIN_KEY = new PluginKey<DecorationSet>('winbookProofreadHighlight')
 
 export interface ProofreadHighlightOptions {
   /** 每次重绘时现取标记。用回调而不是数组，避免扩展在创建时把标记固化下来 */
@@ -30,7 +30,7 @@ export interface ProofreadHighlightOptions {
 }
 
 export const ProofreadHighlight = Extension.create<ProofreadHighlightOptions>({
-  name: 'wappProofreadHighlight',
+  name: 'winbookProofreadHighlight',
 
   addOptions() {
     return { getMarks: () => [] }

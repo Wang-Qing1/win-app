@@ -1,7 +1,7 @@
 import type { ThemeConfig } from 'antd'
 
 /**
- * wapp 的设计令牌。
+ * winbook 的设计令牌。
  *
  * 目标不是「长得像 Ant Design 默认样子」，而是在保留 antd 完整功能（表格排序、
  * 表单校验、无障碍焦点管理）的前提下，把视觉规格调成 Windows 11 的观感：
@@ -17,7 +17,7 @@ import type { ThemeConfig } from 'antd'
 
 export type ThemeMode = 'light' | 'dark'
 
-export const THEME_STORAGE_KEY = 'wapp.theme'
+export const THEME_STORAGE_KEY = 'winbook.theme'
 
 /** Fluent 强调蓝。浅色主题的主色，也是 Windows 11 默认强调色系 */
 const ACCENT_LIGHT = '#0f6cbd'
@@ -222,7 +222,7 @@ const darkComponents: ThemeConfig['components'] = {
   }
 }
 
-export const WAPP_THEMES: Record<ThemeMode, ThemeConfig> = {
+export const WINBOOK_THEMES: Record<ThemeMode, ThemeConfig> = {
   light: { token: lightTokens, components: lightComponents },
   dark: { token: darkTokens, components: darkComponents }
 }

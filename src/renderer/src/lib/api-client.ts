@@ -1,4 +1,4 @@
-import type { WappApi } from '@shared/api'
+import type { WinbookApi } from '@shared/api'
 import type { AppErrorCode, AppErrorPayload, FieldIssue, IpcResponse } from '@shared/result'
 
 /**
@@ -49,20 +49,20 @@ export function toUserMessage(error: unknown): string {
   return '发生未知错误，请重试'
 }
 
-let bridge: WappApi | null = null
+let bridge: WinbookApi | null = null
 
-export function getBridge(): WappApi {
+export function getBridge(): WinbookApi {
   if (bridge) return bridge
 
-  if (typeof window === 'undefined' || window.wapp === undefined) {
+  if (typeof window === 'undefined' || window.winbook === undefined) {
     throw new ApiError({
       code: 'INTERNAL_ERROR',
-      message: '桥接未就绪：请通过 wapp 桌面应用启动，而不是用浏览器直接打开页面',
+      message: '桥接未就绪：请通过 winbook 桌面应用启动，而不是用浏览器直接打开页面',
       requestId: '-'
     })
   }
 
-  bridge = window.wapp
+  bridge = window.winbook
   return bridge
 }
 
@@ -79,7 +79,7 @@ export async function invoke<T>(call: () => Promise<IpcResponse<T>>): Promise<T>
     // 主进程重启、通道被移除等情况下 ipcRenderer.invoke 会直接 reject
     throw new ApiError({
       code: 'INTERNAL_ERROR',
-      message: '与主进程通信失败，请重启 wapp 后重试',
+      message: '与主进程通信失败，请重启 winbook 后重试',
       requestId: '-'
     })
   }

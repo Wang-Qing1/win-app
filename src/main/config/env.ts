@@ -13,30 +13,30 @@ import type { LogLevel } from '../core/logger'
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('production'),
-  WAPP_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
-  WAPP_LOG_MAX_BYTES: z.coerce
+  WINBOOK_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  WINBOOK_LOG_MAX_BYTES: z.coerce
     .number()
     .int()
     .min(64 * 1024, '日志上限不得小于 64KB')
     .max(512 * 1024 * 1024, '日志上限不得大于 512MB')
     .default(5 * 1024 * 1024),
-  WAPP_DB_FILENAME: z
+  WINBOOK_DB_FILENAME: z
     .string()
     .trim()
     .min(1, '数据库文件名不能为空')
     .max(128, '数据库文件名过长')
     .refine((value) => !/[\\/:*?"<>|]/.test(value), '数据库文件名不得包含路径分隔符或非法字符')
-    .default('wapp.db'),
-  WAPP_WINDOW_WIDTH: z.coerce.number().int().min(640, '窗口宽度不得小于 640').max(10000).default(1280),
-  WAPP_WINDOW_HEIGHT: z.coerce.number().int().min(480, '窗口高度不得小于 480').max(10000).default(820),
-  WAPP_DEVTOOLS: z.enum(['true', 'false']).default('false'),
+    .default('winbook.db'),
+  WINBOOK_WINDOW_WIDTH: z.coerce.number().int().min(640, '窗口宽度不得小于 640').max(10000).default(1280),
+  WINBOOK_WINDOW_HEIGHT: z.coerce.number().int().min(480, '窗口高度不得小于 480').max(10000).default(820),
+  WINBOOK_DEVTOOLS: z.enum(['true', 'false']).default('false'),
   /*
    * 虚拟机、远程桌面、部分服务器与 CI 环境里没有可用的 GPU。
    * 这种情况下 Chromium 的 GPU 进程会反复崩溃，最终直接把整个应用带崩
    * （日志里表现为 "GPU process isn't usable. Goodbye."，退出码 3）。
    * 打开这个开关改为软件渲染即可正常启动，代价是界面渲染性能下降。
    */
-  WAPP_DISABLE_GPU: z.enum(['true', 'false']).default('false')
+  WINBOOK_DISABLE_GPU: z.enum(['true', 'false']).default('false')
 })
 
 export interface AppConfig {
@@ -123,13 +123,13 @@ export function loadConfig(): AppConfig {
     env: value.NODE_ENV,
     isDevelopment: value.NODE_ENV === 'development',
     isProduction: value.NODE_ENV === 'production',
-    logLevel: value.WAPP_LOG_LEVEL,
-    logMaxBytes: value.WAPP_LOG_MAX_BYTES,
+    logLevel: value.WINBOOK_LOG_LEVEL,
+    logMaxBytes: value.WINBOOK_LOG_MAX_BYTES,
     logDir: join(userDataDir, 'logs'),
-    dbFileName: value.WAPP_DB_FILENAME,
+    dbFileName: value.WINBOOK_DB_FILENAME,
     userDataDir,
-    window: Object.freeze({ width: value.WAPP_WINDOW_WIDTH, height: value.WAPP_WINDOW_HEIGHT }),
-    openDevTools: value.WAPP_DEVTOOLS === 'true',
-    disableGpu: value.WAPP_DISABLE_GPU === 'true'
+    window: Object.freeze({ width: value.WINBOOK_WINDOW_WIDTH, height: value.WINBOOK_WINDOW_HEIGHT }),
+    openDevTools: value.WINBOOK_DEVTOOLS === 'true',
+    disableGpu: value.WINBOOK_DISABLE_GPU === 'true'
   })
 }

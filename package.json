@@ -1,11 +1,11 @@
 {
-  "name": "wapp",
-  "productName": "wapp",
+  "name": "winbook",
+  "productName": "winbook",
   "version": "0.1.0",
-  "description": "wapp —— Windows 11 桌面应用（Electron + React + SQLite）",
+  "description": "winbook —— Windows 11 桌面应用（Electron + React + SQLite）",
   "main": "./out/main/index.js",
   "private": true,
-  "author": "wapp",
+  "author": "winbook",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=20.19.0"

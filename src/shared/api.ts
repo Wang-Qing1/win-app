@@ -118,7 +118,7 @@ export interface ReadinessStatus {
   checks: ReadinessCheck[]
 }
 
-export interface WappApi {
+export interface WinbookApi {
   readonly version: string
 
   health: {
@@ -223,4 +223,4 @@ export interface WappApi {
 }
 
 /** 渲染进程侧挂载点，preload 在 window 上注入 */
-export const WAPP_BRIDGE_KEY = 'wapp' as const
+export const WINBOOK_BRIDGE_KEY = 'winbook' as const

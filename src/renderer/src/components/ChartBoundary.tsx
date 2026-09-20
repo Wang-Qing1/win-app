@@ -31,7 +31,7 @@ export class ChartBoundary extends Component<ChartBoundaryProps, ChartBoundarySt
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     // 控制台留一份完整信息，便于开发时定位；
     // 界面上只给一句人话，不把堆栈摆给用户看
-    console.error('[wapp] 图表渲染失败：', error, info.componentStack)
+    console.error('[winbook] 图表渲染失败：', error, info.componentStack)
   }
 
   override render(): ReactNode {

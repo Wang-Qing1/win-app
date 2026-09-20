@@ -1,14 +1,13 @@
 import { Layout } from 'antd'
 import { Outlet, useLocation } from 'react-router'
 import { AppHeader } from './AppHeader'
-import { AppNav } from './AppNav'
 import { OfflineBanner } from './OfflineBanner'
 
 /**
- * 应用外壳：上下结构 —— 顶栏（品牌 + 检索 + 状态）→ 横向导航条 → 内容区。
+ * 应用外壳：顶栏（返回首页 + 品牌 + 检索 + 状态）→ 内容区。
  *
- * 三个区块各占一行，横向空间全部留给内容区。原来侧栏的折叠状态机
- * 随侧栏一起移除了：顶栏导航不存在折叠问题。
+ * 顶部导航条已整条移除（用户 2026-09-20 指定）：模块导航改由首页的
+ * 四张功能卡片承担，模块页靠顶栏的「返回首页」图标回来。
  *
  * 路由出口放在 .app-main 内部，它同时也是唯一的滚动容器。
  * 页面自己不再各自建滚动区，避免出现嵌套滚动条（鼠标滚轮会时而滚页面、
@@ -33,7 +32,6 @@ export function AppShell() {
   return (
     <Layout className="app-shell">
       <AppHeader />
-      <AppNav />
       <OfflineBanner />
       <Layout.Content className={isFlush ? 'app-main app-main--flush' : 'app-main'}>
         <Outlet />

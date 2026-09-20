@@ -1,6 +1,6 @@
-appId: com.wapp.desktop
-productName: wapp
-copyright: Copyright © 2026 wapp
+appId: com.winbook.desktop
+productName: winbook
+copyright: Copyright © 2026 winbook
 
 directories:
   output: release
@@ -44,7 +44,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: wapp
+  shortcutName: winbook
   # 卸载时保留 userData 下的数据库，避免用户数据丢失
   deleteAppDataOnUninstall: false
 

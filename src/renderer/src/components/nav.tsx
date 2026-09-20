@@ -2,87 +2,74 @@ import type { ReactNode } from 'react'
 import {
   BarChartOutlined,
   BookOutlined,
-  HomeOutlined,
-  PartitionOutlined,
-  IdcardOutlined
+  IdcardOutlined,
+  PartitionOutlined
 } from '@ant-design/icons'
 
 /**
- * 顶部导航配置。
+ * 功能模块清单 —— 应用导航的唯一来源。
  *
- * 这里是导航的唯一来源：导航条渲染、面包屑、页面标题都读它。
- * 分散写会导致「导航改了名字、页面标题还是旧的」这类不一致。
+ * 信息架构（用户 2026-09-20 指定）：**首页即启动台**。
+ *   - 应用启动落在首页，首页顶部四张模块卡片就是导航；
+ *   - 点卡片进入模块页，模块页顶栏左侧有「返回首页」图标回来；
+ *   - 顶部不再常驻导航条 —— 它在 1280 宽的窗口里占掉整整一行，
+ *     而模块一共只有四个、一天里并不会频繁来回切。
  *
- * ready=false 的条目会以禁用样式显示并标注「开发中」，而不是直接隐藏。
- * 隐藏会让用户以为功能不存在；显示出来则能让人知道路线图，也便于验证
- * 信息架构是否符合预期。
+ * 为什么仍然集中在这里、而不是散写在首页里：
+ *   顶栏要用它反查「现在在哪个模块」，好让悬浮的返回按钮写清楚退到哪
+ *   （`findActiveModule`）；改名字时只有一处要改。
  */
-export interface NavItem {
+export interface ModuleItem {
   key: string
-  /** 路由路径。'/' 为首页 */
+  /** 路由路径 */
   path: string
   label: string
   icon: ReactNode
-  /** 悬停提示，说明这个模块是干什么的 */
+  /** 卡片上的一句话说明：四个模块的名字都只有四个字，光看名字分不清边界 */
   hint: string
-  ready: boolean
 }
 
-export const NAV_ITEMS: readonly NavItem[] = [
-  {
-    key: 'dashboard',
-    path: '/',
-    label: '首页',
-    icon: <HomeOutlined />,
-    hint: '写作总览与快捷入口',
-    ready: true
-  },
+export const MODULE_ITEMS: readonly ModuleItem[] = [
   {
     key: 'books',
     path: '/books',
     label: '书籍管理',
     icon: <BookOutlined />,
-    hint: '书籍、分卷与章节正文',
-    ready: true
+    hint: '书籍、分卷与章节正文'
   },
   {
     key: 'outline',
     path: '/outline',
     label: '大纲管理',
     icon: <PartitionOutlined />,
-    hint: '自由多层情节树，节点可落地成章节',
-    ready: true
+    hint: '自由多层情节树，节点可落地成章节'
   },
   {
     key: 'cards',
     path: '/cards',
     label: '卡片库',
     icon: <IdcardOutlined />,
-    hint: '人物、物品、灵感三类卡片，可归属到某本书',
-    ready: true
+    hint: '人物、物品、灵感三类卡片，可归属到某本书'
   },
   {
     key: 'stats',
     path: '/stats',
     label: '时间与字数',
     icon: <BarChartOutlined />,
-    hint: '字数趋势、写作时长与热力日历',
-    ready: true
+    hint: '字数趋势、写作时长与热力日历'
   }
 ] as const
 
-/** 首页四张功能入口卡片读的就是这份清单，保证与导航条永远一致 */
-export const DASHBOARD_MODULES = NAV_ITEMS.filter((item) => item.key !== 'dashboard')
+/** 首页路径。顶栏靠它决定要不要显示「返回首页」图标 */
+export const HOME_PATH = '/'
 
 /**
- * 由当前路径反查导航项。
+ * 由当前路径反查所属模块。
  *
- * 详情页与编辑器这类深层路由要归属到它们的父模块上，
- * 否则用户进到章节编辑器后导航条会没有任何高亮项，看起来像迷路了。
+ * 详情页（`/books/3/chapters/12`）也要归属到它的父模块上：否则顶栏在
+ * 编辑章节时会认为自己「不在任何模块里」，返回按钮的语义就说不清了。
  */
-export function findActiveNavKey(pathname: string): string {
-  if (pathname === '/' || pathname === '') return 'dashboard'
-
-  const matched = NAV_ITEMS.find((item) => item.path !== '/' && pathname.startsWith(item.path))
-  return matched?.key ?? 'dashboard'
+export function findActiveModule(pathname: string): ModuleItem | null {
+  if (pathname === HOME_PATH || pathname === '') return null
+  return MODULE_ITEMS.find((item) => pathname.startsWith(item.path)) ?? null
 }

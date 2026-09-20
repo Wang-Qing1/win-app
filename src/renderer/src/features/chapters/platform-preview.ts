@@ -121,7 +121,7 @@ export function platformOf(key: string): PlatformSpec {
 }
 
 /** 平台预览的选择也要记住：作者基本只用一两个平台，每次重选很啰嗦 */
-const STORAGE_KEY = 'wapp.editor.platform'
+const STORAGE_KEY = 'winbook.editor.platform'
 
 export function readPlatformKey(): string {
   try {

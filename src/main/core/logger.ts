@@ -42,14 +42,14 @@ export function configureLogger(options: LoggerOptions): void {
 
   try {
     mkdirSync(options.directory, { recursive: true })
-    const target = join(options.directory, 'wapp.log')
+    const target = join(options.directory, 'winbook.log')
     bytesWritten = existsSync(target) ? statSync(target).size : 0
     stream = createWriteStream(target, { flags: 'a', encoding: 'utf8' })
     logFilePath = target
   } catch (error) {
     stream = null
     logFilePath = null
-    console.error('[wapp] 日志文件初始化失败，将仅输出到控制台：', error)
+    console.error('[winbook] 日志文件初始化失败，将仅输出到控制台：', error)
   }
 }
 
@@ -125,7 +125,7 @@ function emit(level: LogLevel, message: string, fields?: LogFields): void {
 
   if (consoleEnabled) {
     const printer = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
-    printer(`[wapp:${level}] ${message}`, fields ?? '')
+    printer(`[winbook:${level}] ${message}`, fields ?? '')
   }
 
   if (!stream) return

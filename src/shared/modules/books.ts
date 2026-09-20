@@ -42,8 +42,17 @@ export interface Book {
   genre: string
   status: BookStatus
   summary: string
-  /** 目标字数，0 表示不设目标 */
+  /** 目标字数，0 表示不设目标。这是整本书的量级 */
   targetWords: number
+  /**
+   * 每章最少字数，对全书每个章节都生效。
+   *
+   * 与 `targetWords` 是两把不同的尺子：整本目标动辄几十上百万，作者在写单章
+   * 时用不上；而「每章至少 2000 字」是一条**全书统一的规则**，不该让作者
+   * 逐章再填一遍（那正是编辑器里那一行冗余输入被砍掉的原因）。
+   * 编辑器底栏的「计划：剩 N」按它计算。
+   */
+  chapterWords: number
   /** 卡片强调色，让书架有辨识度而不必真的存封面图 */
   accentColor: string
   createdAt: string
@@ -131,7 +140,8 @@ export const BOOK_LIMITS = {
   penName: 40,
   genre: 24,
   summary: 2000,
-  targetWords: 100_000_000
+  targetWords: 100_000_000,
+  chapterWords: 1_000_000
 } as const
 
 /** #RGB 或 #RRGGBB，只接受十六进制，避免把任意字符串写进样式 */
@@ -158,8 +168,23 @@ const bookFields = {
     .min(0, '目标字数不能为负')
     .max(BOOK_LIMITS.targetWords, '目标字数超出合理范围'),
 
+  chapterWords: z
+    .number()
+    .int('每章最少字数必须是整数')
+    .min(0, '每章最少字数不能为负')
+    .max(BOOK_LIMITS.chapterWords, '每章最少字数超出合理范围'),
+
   accentColor: z.string().trim().regex(HEX_COLOR_PATTERN, '强调色必须是 #RGB 或 #RRGGBB 格式')
 }
+
+/**
+ * 每章最少字数的默认值。
+ *
+ * 取 2000 而不是 0：网文单章的常见区间是 2000–4000 字，这是作者提起笔
+ * 就已经在心里定好的量。默认 0 意味着新建完每本书都要先去改一次设置，
+ * 那和「规则只在建书时定一次」的初衷相反。
+ */
+export const DEFAULT_CHAPTER_WORDS = 2000
 
 export const bookCreateSchema = z.object({
   title: bookFields.title,
@@ -168,6 +193,7 @@ export const bookCreateSchema = z.object({
   status: bookFields.status.default('idea'),
   summary: bookFields.summary.default(''),
   targetWords: bookFields.targetWords.default(0),
+  chapterWords: bookFields.chapterWords.default(DEFAULT_CHAPTER_WORDS),
   accentColor: bookFields.accentColor.default('#0f6cbd')
 })
 
@@ -182,6 +208,7 @@ export const bookUpdateSchema = z.object({
   status: bookFields.status,
   summary: bookFields.summary,
   targetWords: bookFields.targetWords,
+  chapterWords: bookFields.chapterWords,
   accentColor: bookFields.accentColor
 })
 
