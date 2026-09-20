@@ -1,5 +1,10 @@
 import type { ReactNode } from 'react'
-import { BulbOutlined, TeamOutlined, GiftOutlined } from '@ant-design/icons'
+import {
+  BulbOutlined,
+  CompassOutlined,
+  GiftOutlined,
+  TeamOutlined
+} from '@ant-design/icons'
 import type { CardType } from '@shared/modules/cards'
 
 /**
@@ -15,11 +20,13 @@ import type { CardType } from '@shared/modules/cards'
 export const CARD_TYPE_COLORS: Record<CardType, string> = {
   character: 'geekblue',
   item: 'gold',
-  inspiration: 'magenta'
+  inspiration: 'magenta',
+  setting: 'cyan'
 }
 
 export const CARD_TYPE_ICONS: Record<CardType, ReactNode> = {
   character: <TeamOutlined />,
   item: <GiftOutlined />,
-  inspiration: <BulbOutlined />
+  inspiration: <BulbOutlined />,
+  setting: <CompassOutlined />
 }

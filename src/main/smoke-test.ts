@@ -282,6 +282,26 @@ export interface ShowcaseTargets {
     targetWords: number
     hanziCount: number
   } | null
+  /**
+   * 按标题回读卡片。
+   *
+   * 设定卡（第二期）的验证要落在这里：类型与「类别」在界面上都只是几个字
+   * （一个标签 + 一行补充信息），而 `extra` 是一列自由 JSON ——
+   * 存进去的到底是不是「设定 / 时间线」，只有回库现读才知道。
+   * `extraKeys` 与 `category` 分开给，是为了能同时断「字段集恰好是这一类该有的」
+   * 与「枚举值没有被拼错、也没有被收敛掉」。
+   */
+  lookupCard: (title: string) => {
+    id: number
+    title: string
+    cardType: string
+    /** extra 的键集合，按字典序用逗号连接 */
+    extraKeys: string
+    /** 设定卡的类别；非设定卡为空串 */
+    category: string
+  } | null
+  /** 删掉一张卡片。验证用的卡片建完就删，展示数据要恢复原样 */
+  removeCard: (id: number) => void
 }
 
 export interface BackendSmokeRun {
@@ -1162,6 +1182,44 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
       extra: { source: '一个梦', usage: '哪本书都能用' }
     })
 
+    /*
+     * 设定卡（2026-09-20 落地的「第二期」）：世界观条目。
+     *
+     * 它是第四种 card_type，但**不代表第四套代码** —— 与人物 / 物品 / 灵感
+     * 共用同一张表、同一个编辑面板，差异只有一个 `category` 字段
+     * （地点 / 势力 / 规则体系 / 时间线）。这里同时断两件事：
+     * 字段集恰好是这一类该有的，以及合法类别原样落库。
+     */
+    const cardSetting = cardService.create({
+      bookId: showcase.id,
+      cardType: 'setting',
+      title: '星海联邦',
+      subtitle: '横跨七个星区的松散同盟',
+      content: '跃迁技术由联邦垄断，代价是每条航线都要交一次「记忆税」。',
+      tags: ['世界观'],
+      extra: { category: '势力' }
+    })
+    const settingExtraKeys = Object.keys(cardSetting.extra).sort().join(',')
+
+    /*
+     * 类别是枚举：不在选项里的值必须被收敛成空串（服务层跑的是共享层的
+     * normalizeExtra）。理由不是「输入要严格」，而是**类别要能聚合** ——
+     * 「地理」和「地点」永远聚不到一起，而它看起来完全正常（有值、能显示、
+     * 能保存）。宁可空着：空着是「还没分类」，一眼看得出来。
+     */
+    const cardSettingBadCategory = cardService.create({
+      bookId: showcase.id,
+      cardType: 'setting',
+      title: `冒烟-错类别-${STAMP}`,
+      subtitle: '',
+      content: '',
+      tags: [],
+      extra: { category: '地理位置' }
+    })
+    const badSettingCategory = cardSettingBadCategory.extra.category
+    // 建完立刻删：它只是探针，不该混进展示数据与卡片库的计数里
+    cardService.remove(cardSettingBadCategory.id)
+
     /* ---- 同一本书、同一类型下重名必须被拒 ---- */
     let cardSameBookDuplicateBlocked = false
     try {
@@ -1353,6 +1411,30 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
     }
 
     /*
+     * 设定卡的「类别」必须在 IPC 边界就被挡住非法值。
+     *
+     * 服务层那条（badSettingCategory === ''）只证明「写进去之后会被收敛」，
+     * 而收敛成空串对用户来说是「我填的类别不见了」。真正的防线是边界校验：
+     * 直接拒绝，让前端表单根本不可能提交出一个会被悄悄丢掉的类别。
+     */
+    let cardSettingCategoryBlocked = false
+    if (cardCreateParser) {
+      try {
+        cardCreateParser({
+          bookId: showcase.id,
+          cardType: 'setting',
+          title: '类别越界',
+          subtitle: '',
+          content: '',
+          tags: [],
+          extra: { category: '地理位置' }
+        })
+      } catch {
+        cardSettingCategoryBlocked = true
+      }
+    }
+
+    /*
      * 列表查询的边界。
      *
      * 一次覆盖三件容易漏的事：`cardType: null`（不筛选）必须是合法值 ——
@@ -1437,18 +1519,34 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
       ],
       [
         '卡片按书筛选',
-        cardsAll.total === 4 && cardsOfBook.total === 3 && cardsGlobal.total === 1,
-        `全部 ${cardsAll.total} 张 / 本书 ${cardsOfBook.total} 张 / 通用 ${cardsGlobal.total} 张（预期 4 / 3 / 1）`
+        cardsAll.total === 5 && cardsOfBook.total === 4 && cardsGlobal.total === 1,
+        `全部 ${cardsAll.total} 张 / 本书 ${cardsOfBook.total} 张 / 通用 ${cardsGlobal.total} 张（预期 5 / 4 / 1）`
       ],
       [
+        /*
+         * 类型计数要**四类都断**：它是 `for (const cardType of CARD_TYPES)`
+         * 循环出来的，新增类型时自动跟上，而这也意味着「忘了把新类型接进
+         * 界面」不会让这一条变红 —— 它只能锁「计数口径是全量而不是当前筛选」。
+         */
         '卡片类型筛选与计数',
         cardsCharacter.total === 1 &&
           characterQueryCounts.character === 1 &&
           characterQueryCounts.item === 1 &&
-          characterQueryCounts.inspiration === 2,
-        cardsCharacter.total === 1 && characterQueryCounts.item === 1
-          ? `筛出人物卡 ${cardsCharacter.total} 张，而类型计数仍给全量口径（人物 ${characterQueryCounts.character} / 物品 ${characterQueryCounts.item} / 灵感 ${characterQueryCounts.inspiration}）`
-          : `筛出 ${cardsCharacter.total} 张，计数 人物 ${characterQueryCounts.character} / 物品 ${characterQueryCounts.item} / 灵感 ${characterQueryCounts.inspiration}`
+          characterQueryCounts.inspiration === 2 &&
+          characterQueryCounts.setting === 1,
+        cardsCharacter.total === 1 && characterQueryCounts.setting === 1
+          ? `筛出人物卡 ${cardsCharacter.total} 张，而类型计数仍给全量口径（人物 ${characterQueryCounts.character} / 物品 ${characterQueryCounts.item} / 灵感 ${characterQueryCounts.inspiration} / 设定 ${characterQueryCounts.setting}）`
+          : `筛出 ${cardsCharacter.total} 张，计数 人物 ${characterQueryCounts.character} / 物品 ${characterQueryCounts.item} / 灵感 ${characterQueryCounts.inspiration} / 设定 ${characterQueryCounts.setting}`
+      ],
+      [
+        '设定卡类别枚举',
+        cardSetting.cardType === 'setting' &&
+          settingExtraKeys === 'category' &&
+          cardSetting.extra.category === '势力' &&
+          badSettingCategory === '',
+        cardSetting.extra.category === '势力' && badSettingCategory === ''
+          ? `设定卡「${cardSetting.title}」落库为 category=势力（extra 恰好 ${settingExtraKeys} 一个键）；类别写成「地理位置」被收敛为空串 —— 拼错的类别不会悄悄混进同一组`
+          : `cardType=${cardSetting.cardType}，extra 键「${settingExtraKeys}」，category=「${cardSetting.extra.category}」，非法类别读回「${badSettingCategory}」（应为空）`
       ],
       [
         '卡片全文搜索',
@@ -1473,8 +1571,8 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
       ],
       [
         '卡片删除',
-        cardCopyRemoval.id === cardCopy.id && cardsAfterCopyRemoval.total === 3,
-        `删除副本后本书卡片回到 ${cardsAfterCopyRemoval.total} 张（预期 3）`
+        cardCopyRemoval.id === cardCopy.id && cardsAfterCopyRemoval.total === 4,
+        `删除副本后本书卡片回到 ${cardsAfterCopyRemoval.total} 张（预期 4）`
       ],
       [
         '删书带走卡片',
@@ -1494,6 +1592,13 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
         cardTagCapBlocked
           ? `一次提交 ${CARD_LIMITS.tagCount + 1} 个标签被边界拒绝（上限 ${CARD_LIMITS.tagCount}）`
           : '超出上限的标签数量未被拦截'
+      ],
+      [
+        '设定卡类别边界拦截',
+        cardSettingCategoryBlocked,
+        cardSettingCategoryBlocked
+          ? '类别填成「地理位置」在 IPC 边界就被拒绝（而不是存进去再被悄悄收敛成空）'
+          : '非法的设定类别没有被边界校验拦下 —— 它会一路存进去，然后在读取时被清成空串'
       ],
       [
         '卡片筛选范围降级',
@@ -1873,6 +1978,22 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
                 targetWords: found.targetWords,
                 hanziCount: found.hanziCount
               }
+            },
+            lookupCard: (title) => {
+              const found = cardService
+                .list({ ...DEFAULT_CARD_QUERY, bookScope: 'all' })
+                .items.find((item) => item.title === title)
+              if (!found) return null
+              return {
+                id: found.id,
+                title: found.title,
+                cardType: found.cardType,
+                extraKeys: Object.keys(found.extra).sort().join(','),
+                category: found.extra.category ?? ''
+              }
+            },
+            removeCard: (id) => {
+              cardService.remove(id)
             }
           }
         : null
@@ -1989,6 +2110,12 @@ export async function runRendererSmokeChecks(
      * 放在前面会把那几帧混进前面几步要看的页面与截图里。
      */
     results.push(await checkOriginReturn(window, showcase))
+    /*
+     * 「设定卡」紧跟在回程票之后：它同样要从正文里跳去卡片库（所以排在
+     * 前面几步要看的页面之后），而且会真的建一张卡再删掉 —— 排在卡片库
+     * 那一步之后，才不会把总数搅乱在「渲染 5 行」的断言里。
+     */
+    results.push(await checkSettingCard(window, showcase))
     /*
      * 「正文自动保存往返」同样排最后：它往正文里真的打进一段字，
      * 会改动这一章的字数与内容 —— 放在前面会把「正文字数与预期一致」
@@ -5112,6 +5239,49 @@ async function typeIntoTestId(
 }
 
 /** 轮询主进程，直到按标题查得到（或查不到）某个分卷 */
+/**
+ * 等一张卡片在库里出现 / 消失。
+ *
+ * 与「界面上有没有这一行」分开：新建面板点完保存之后，React Query 会先
+ * 乐观地把行画出来，而库里那一行要等 IPC 往返。只读界面的话，「保存失败」
+ * 与「保存成功」在最初几百毫秒里长得一模一样。
+ */
+async function waitForCard(
+  lookup: (title: string) => {
+    id: number
+    title: string
+    cardType: string
+    extraKeys: string
+    category: string
+  } | null,
+  title: string,
+  wantFound: boolean,
+  timeoutMs = 6000
+): Promise<{
+  id: number
+  title: string
+  cardType: string
+  extraKeys: string
+  category: string
+} | null> {
+  const deadline = Date.now() + timeoutMs
+  let last: {
+    id: number
+    title: string
+    cardType: string
+    extraKeys: string
+    category: string
+  } | null = null
+
+  while (Date.now() < deadline) {
+    last = lookup(title)
+    if ((last !== null) === wantFound) return last
+    await delay(120)
+  }
+
+  return last
+}
+
 async function waitForVolume(
   lookup: (title: string) => { id: number; title: string } | null,
   title: string,
@@ -5638,11 +5808,27 @@ async function checkOriginReturn(window: BrowserWindow, ctx: ShowcaseTargets): P
     }
     const chapterRoute = `#/books/${ctx.bookId}/chapters/${resumeId}`
 
-    /* ---------- ① 两趟外出，每趟都回到同一章 ---------- */
-    for (const trip of [
+    /* ---------- ① 三趟外出，每趟都回到同一章 ---------- */
+    /*
+     * 「角色」与「设定」两趟指向同一个卡片库，只是带的查询参数不同
+     * （`type` 指定卡片类型、`book` 限定在这一本书里）—— 所以判据不能只比
+     * 路径前缀，还得把各自该带的参数一起对上：只比 `#/cards` 的话，
+     * 「设定」那一趟就算退化成跳到「全部卡片」也照样通过，而那正是
+     * 从正文里跳过去最没用的一种结果（作者得自己再筛一遍）。
+     */
+    const trips: Array<{
+      rail: string
+      target: string
+      label: string
+      /** 这一趟必须出现在 hash 里的查询片段 */
+      query?: string
+    }> = [
       { rail: 'rail-outline', target: '#/outline', label: '大纲' },
-      { rail: 'rail-characters', target: '#/cards', label: '角色' }
-    ]) {
+      { rail: 'rail-characters', target: '#/cards', label: '角色', query: 'type=character' },
+      { rail: 'rail-setups', target: '#/cards', label: '设定', query: 'type=setting' }
+    ]
+
+    for (const trip of trips) {
       await gotoHash(window, chapterRoute)
       const editor = await waitForEditor(window)
       if (!editor.mounted) {
@@ -5655,11 +5841,17 @@ async function checkOriginReturn(window: BrowserWindow, ctx: ShowcaseTargets): P
         continue
       }
 
-      const arrived = await waitForHash(window, (hash) => hash.startsWith(`${trip.target}?from=`), 6000)
-      if (!arrived.startsWith(`${trip.target}?from=`)) {
+      const arrivedOk = (hash: string): boolean =>
+        hash.startsWith(trip.target) &&
+        hash.includes('from=') &&
+        (trip.query === undefined || hash.includes(trip.query))
+
+      const arrived = await waitForHash(window, arrivedOk, 6000)
+      if (!arrivedOk(arrived)) {
         problems.push(
-          `点「${trip.label}」之后停在 ${arrived || '(空)'}，应当是 ${trip.target}?from=… —— ` +
-            '不带来源参数就没有回程票'
+          `点「${trip.label}」之后停在 ${arrived || '(空)'}，应当落在 ${trip.target}` +
+            `${trip.query === undefined ? '' : `（含 ${trip.query}）`}?from=… —— ` +
+            '不带来源参数就没有回程票，不带类型就只能从全部卡片里再筛一遍'
         )
         continue
       }
@@ -5918,12 +6110,16 @@ async function checkCards(window: BrowserWindow): Promise<StepResult> {
     if (!snap.mounted) problems.push(`未进入卡片库（hash 停在 ${snap.hash || '空'}）`)
     if (snap.title !== '卡片库') problems.push(`页面标题异常：${snap.title}`)
     if (!snap.hasList) problems.push('卡片列表未渲染')
-    // 后端为这本书留了 3 张卡，另加 1 张通用卡；默认「全部书籍」范围应看到 4 行
-    if (snap.rows !== 4) problems.push(`列表渲染出 ${snap.rows} 行，预期 4 行`)
-    if (snap.total !== 4) problems.push(`卡片总数应为 4，实得 ${snap.total}`)
+    // 后端为这本书留了 4 张卡（人物 / 物品 / 灵感 / 设定），另加 1 张通用卡；
+    // 默认「全部书籍」范围应看到 5 行
+    if (snap.rows !== 5) problems.push(`列表渲染出 ${snap.rows} 行，预期 5 行`)
+    if (snap.total !== 5) problems.push(`卡片总数应为 5，实得 ${snap.total}`)
     if (snap.character !== 1) problems.push(`人物卡计数应为 1，实得 ${snap.character}`)
     if (snap.item !== 1) problems.push(`物品卡计数应为 1，实得 ${snap.item}`)
     if (snap.inspiration !== 2) problems.push(`灵感卡计数应为 2，实得 ${snap.inspiration}`)
+    // 设定卡是 2026-09-20 落地的第四类。计数是从 CARD_TYPES 循环出来的，
+    // 所以这一条真正锁的是「界面上也有这一类」（下拉与统计都挂在同一个数组上）
+    if (snap.setting !== 1) problems.push(`设定卡计数应为 1，实得 ${snap.setting}`)
     if (snap.global !== 1) problems.push(`通用卡片计数应为 1，实得 ${snap.global}`)
     if (!snap.hasEditor) problems.push('右侧编辑面板未渲染')
     if (snap.editorCardId <= 0) {
@@ -5949,10 +6145,10 @@ async function checkCards(window: BrowserWindow): Promise<StepResult> {
       ok: problems.length === 0,
       detail:
         problems.length === 0
-          ? `进入 ${route}，标题「${snap.title}」，渲染 ${snap.rows} 行 / 共 ${snap.total} 张（人物 ${snap.character} / 物品 ${snap.item} / 灵感 ${snap.inspiration}，其中通用 ${snap.global}），编辑面板已打开卡片 #${snap.editorCardId}，列表面板高 ${snap.listHeight}px，新建按钮为 ${snap.addButton.width}px 正圆图标（圆角 ${snap.addButton.radiusPx}px），位于工具栏最左端、在搜索框左侧 ${snap.addButton.gapToSearch}px，悬浮提示「${tip}」`
+          ? `进入 ${route}，标题「${snap.title}」，渲染 ${snap.rows} 行 / 共 ${snap.total} 张（人物 ${snap.character} / 物品 ${snap.item} / 灵感 ${snap.inspiration} / 设定 ${snap.setting}，其中通用 ${snap.global}），编辑面板已打开卡片 #${snap.editorCardId}，列表面板高 ${snap.listHeight}px，新建按钮为 ${snap.addButton.width}px 正圆图标（圆角 ${snap.addButton.radiusPx}px），位于工具栏最左端、在搜索框左侧 ${snap.addButton.gapToSearch}px，悬浮提示「${tip}」`
           : `${problems.join('；')}｜实测：hash=${snap.hash}，标题「${snap.title}」，列表=${
               snap.hasList ? '有' : '无'
-            }，行数=${snap.rows}，总数=${snap.total}，人物=${snap.character}，物品=${snap.item}，灵感=${snap.inspiration}，通用=${snap.global}，面板=${
+            }，行数=${snap.rows}，总数=${snap.total}，人物=${snap.character}，物品=${snap.item}，灵感=${snap.inspiration}，设定=${snap.setting}，通用=${snap.global}，面板=${
               snap.hasEditor ? '有' : '无'
             }，面板卡片=${snap.editorCardId}，列表高=${snap.listHeight}，新建按钮文字「${snap.addButton.text}」间距=${
               snap.addButton.gapToSearch
@@ -5960,6 +6156,155 @@ async function checkCards(window: BrowserWindow): Promise<StepResult> {
     }
   } catch (error) {
     return { name: '卡片库', ok: false, detail: messageOf(error) }
+  }
+}
+
+/**
+ * 编辑器竖栏的「设定」入口，以及设定卡本身。
+ *
+ * 这一格在竖栏里置灰挂了很久（提示写着「第二期」），2026-09-20 才真的做出来。
+ * 它是第四种卡片类型，但**不是第四套代码**：与人物 / 物品 / 灵感共用同一张
+ * 表、同一个编辑面板，差异只有一个「类别」字段（地点 / 势力 / 规则体系 / 时间线）。
+ *
+ * 断言押在三件「看起来都像通过」的事上：
+ *
+ *   1. **入口要落到「这本书的设定」，不是「全部卡片」**。只比路径前缀的话，
+ *      退化成跳到卡片库首页也照样通过 —— 而那正是从正文里跳过去最没用的结果。
+ *   2. **类别必须真的存进库**。它在界面上只是一个下拉里选中的词，存不进去、
+ *      或者存成了另一个键名，界面都不会报错 —— 只有回库读 extra 才知道。
+ *   3. **回程票还得在**。设定页是「临时外出」的第三站，前两站（大纲 / 角色）
+ *      各有各的断言，这一站若漏了就是新的死胡同。
+ */
+async function checkSettingCard(
+  window: BrowserWindow,
+  ctx: ShowcaseTargets
+): Promise<StepResult> {
+  const name = '设定卡'
+  const problems: string[] = []
+  const title = `冒烟-设定-${STAMP}`
+
+  try {
+    const resumeId = ctx.resumeChapterId(ctx.bookId)
+    if (resumeId === null) {
+      return { name, ok: false, detail: '展示用书里一章都没有，无法从正文进入设定' }
+    }
+    const chapterRoute = `#/books/${ctx.bookId}/chapters/${resumeId}`
+
+    await gotoHash(window, chapterRoute)
+    const editor = await waitForEditor(window)
+    if (!editor.mounted) {
+      return { name, ok: false, detail: `进入编辑器失败（hash=${editor.hash}）` }
+    }
+
+    if (!(await clickTestId(window, 'rail-setups'))) {
+      return { name, ok: false, detail: '点不到右侧竖栏的「设定」' }
+    }
+
+    const wanted = (hash: string): boolean =>
+      hash.startsWith('#/cards') &&
+      hash.includes('type=setting') &&
+      hash.includes(`book=${ctx.bookId}`) &&
+      hash.includes('from=')
+
+    const arrived = await waitForHash(window, wanted, 6000)
+    if (!wanted(arrived)) {
+      return {
+        name,
+        ok: false,
+        detail:
+          `点「设定」之后停在 ${arrived || '(空)'}，应当落到 #/cards 且带上 ` +
+          `type=setting 与 book=${ctx.bookId}（外加 from= 供回程票）`
+      }
+    }
+
+    const snap = await waitForCards(window)
+    if (!snap.mounted || !snap.hasList) {
+      return { name, ok: false, detail: '卡片库没有渲染出来' }
+    }
+
+    /*
+     * 列表里必须**只剩设定卡**：类型筛选没跟着 URL 设好的话，这一页还是
+     * 「全部卡片」，而那样「设定」这个入口等于没做 —— 作者还得自己再筛一遍。
+     */
+    const rowTypes = (await window.webContents.executeJavaScript(
+      `Array.prototype.map.call(
+        document.querySelectorAll('[data-testid="card-row"]'),
+        (el) => el.getAttribute('data-card-type')
+      ).join(',')`
+    )) as string
+
+    if (snap.rows < 1) {
+      problems.push('这本书一张设定卡都没有，无法证明入口真的落到了「设定」而不是空结果')
+    } else if (!rowTypes.split(',').every((value) => value === 'setting')) {
+      problems.push(`设定入口进来的列表里还有别的类型（实测 ${rowTypes}）—— 类型筛选没有跟着 URL 设好`)
+    }
+
+    /* ---- 新建一张「时间线」设定卡，回库核对 ---- */
+    if (!(await clickTestId(window, 'cards-add'))) {
+      problems.push('点不到卡片库的「新建卡片」')
+    } else if (!(await waitForTestId(window, 'card-title-input', 3000))) {
+      problems.push('新建面板没有打开（找不到标题输入框）')
+    } else {
+      if (!(await typeIntoTestId(window, 'card-title-input', title))) {
+        problems.push('填不进设定卡的标题')
+      }
+      if (!(await pickSelectOption(window, 'card-type-select', '设定'))) {
+        problems.push('卡片类型的下拉里选不到「设定」')
+      }
+      if (!(await pickSelectOption(window, 'card-extra-category', '时间线'))) {
+        problems.push('设定卡没有「类别」下拉，或里面选不到「时间线」')
+      }
+      if (!(await clickTestId(window, 'card-save'))) {
+        problems.push('点不到新建面板的保存按钮')
+      }
+    }
+
+    const created = await waitForCard(ctx.lookupCard, title, true)
+    if (created === null) {
+      problems.push(`库里查不到刚建的设定卡「${title}」`)
+    } else {
+      if (created.cardType !== 'setting') {
+        problems.push(`落库类型是 ${created.cardType}，应为 setting`)
+      }
+      if (created.extraKeys !== 'category') {
+        problems.push(`extra 的键是「${created.extraKeys}」，应当恰好是 category`)
+      }
+      if (created.category !== '时间线') {
+        problems.push(`类别存成了「${created.category}」，应为「时间线」`)
+      }
+
+      // 验证用的卡片建完就删：后面的步骤还要看卡片总数
+      ctx.removeCard(created.id)
+      const after = await waitForCard(ctx.lookupCard, title, false)
+      if (after !== null) problems.push(`删除之后库里还能查到「${title}」`)
+    }
+
+    /* ---- 这一站也要有回程票，且点了回到刚才那一章 ---- */
+    if (!(await clickTestId(window, 'return-to-origin'))) {
+      problems.push('在设定页看不到「返回正文编辑」圆钮 —— 跳过去之后就回不来了')
+    } else {
+      const back = await readWorkspace(
+        window,
+        (state) => state.hash === chapterRoute && state.hasEditorPage,
+        8000
+      )
+      if (back.hash !== chapterRoute) {
+        problems.push(`从设定返回后停在 ${back.hash || '(空)'}，应当回到 ${chapterRoute}`)
+      } else if (!back.hasEditorPage) {
+        problems.push(`从设定返回 ${chapterRoute} 之后没有渲染出正文编辑页`)
+      }
+    }
+
+    return {
+      name,
+      ok: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? `竖栏「设定」直达这本书的设定卡（列表 ${snap.rows} 行全是设定卡）→ 新建一张并把类别选成「时间线」，回库核对 cardType=setting、extra 恰好 category=时间线 → 删掉这张验证卡 → 点回程票回到同一章`
+          : problems.join('；')
+    }
+  } catch (error) {
+    return { name, ok: false, detail: messageOf(error) }
   }
 }
 
@@ -6929,6 +7274,8 @@ interface CardsSnapshot {
   character: number
   item: number
   inspiration: number
+  /** 设定卡计数（第二期新增的第四类） */
+  setting: number
   /** 不归属任何书的卡片数 */
   global: number
   hasEditor: boolean
@@ -6949,6 +7296,7 @@ const EMPTY_CARDS_SNAPSHOT: CardsSnapshot = {
   character: -1,
   item: -1,
   inspiration: -1,
+  setting: -1,
   global: -1,
   hasEditor: false,
   editorCardId: -1,
@@ -6980,6 +7328,7 @@ const CARDS_SNAPSHOT_SCRIPT = `(() => {
     character: intOf('cards-type-count-character'),
     item: intOf('cards-type-count-item'),
     inspiration: intOf('cards-type-count-inspiration'),
+    setting: intOf('cards-type-count-setting'),
     global: intOf('cards-global'),
     hasEditor: !!editor,
     editorCardId: /^[0-9]+$/.test(rawCardId) ? Number(rawCardId) : -1,

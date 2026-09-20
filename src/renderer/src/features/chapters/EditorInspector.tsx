@@ -5,12 +5,13 @@ import {
   AppstoreOutlined,
   AuditOutlined,
   ClearOutlined,
+  CompassOutlined,
   PartitionOutlined,
   SelectOutlined,
-  ThunderboltOutlined,
   TeamOutlined
 } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router'
+import type { CardType } from '@shared/modules/cards'
 import { PLATFORM_SPECS, platformOf } from './platform-preview'
 import { PlatformPreview } from './PlatformPreview'
 import { FillerPanel, ProofreadPanel } from './ProofreadPanel'
@@ -35,6 +36,8 @@ interface RailItem {
 }
 
 interface EditorInspectorProps {
+  /** 当前这本书。竖栏「角色 / 设定」跳卡片库时带上它，只让作者看这一本 */
+  bookId: number
   bookTitle: string
   text: string
   charCount: number
@@ -58,6 +61,7 @@ interface EditorInspectorProps {
  * 竖栏承担两个职责：「快速切换视图」和「通往其它写作模块」。
  */
 export function EditorInspector({
+  bookId,
   bookTitle,
   text,
   charCount,
@@ -111,6 +115,20 @@ export function EditorInspector({
     onRevealParagraph(previewFocus)
   }, [onRevealParagraph, previewFocus])
 
+  /**
+   * 通往卡片库的那一类竖栏项（角色 / 设定）。
+   *
+   * 带上 `type` 与 `book` 两个参数，而不是跳到卡片库首页：从正文里跳过去的
+   * 目的是「查我正在写的这一本书的某类资料」，落到「全部书籍的全部卡片」
+   * 等于让人再筛一次。带着来源（`?from=`）则是为了右下角那枚回程票。
+   */
+  const openCards = useCallback(
+    (cardType: CardType): void => {
+      void navigate(withOrigin(`/cards?type=${cardType}&book=${bookId}`, location.pathname))
+    },
+    [bookId, location.pathname, navigate]
+  )
+
   const rail: RailItem[] = [
     {
       key: 'proofread',
@@ -149,16 +167,20 @@ export function EditorInspector({
       key: 'characters',
       label: '角色',
       icon: <TeamOutlined />,
-      hint: '人物卡与关系设定（右下角有回到正文的圆钮）',
-      onClick: () => void navigate(withOrigin('/cards', location.pathname))
+      hint: '这本书的人物卡（右下角有回到正文的圆钮）',
+      onClick: () => openCards('character')
     },
     {
+      /*
+       * 「设定」这一格从置灰的「第二期」转为可用（2026-09-20 实现的第二期）。
+       * 它记的是世界观条目 —— 地点 / 势力 / 规则体系 / 时间线，与「角色」
+       * 共用同一套卡片，只是类别不同（见共享层 SETTING_CATEGORIES 的注释）。
+       */
       key: 'setups',
       label: '设定',
-      icon: <ThunderboltOutlined />,
-      disabled: true,
-      hint: '物品与世界观设定卡（第二期）',
-      onClick: () => undefined
+      icon: <CompassOutlined />,
+      hint: '这本书的地点 / 势力 / 规则体系 / 时间线设定卡（右下角有回到正文的圆钮）',
+      onClick: () => openCards('setting')
     }
   ]
 

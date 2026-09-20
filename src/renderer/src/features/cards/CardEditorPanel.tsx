@@ -21,6 +21,7 @@ import {
   normalizeTags,
   type Card,
   type CardExtra,
+  type CardExtraField,
   type CardType
 } from '@shared/modules/cards'
 import { useToast } from '../../components/Toast'
@@ -121,7 +122,8 @@ export function CardEditorPanel({
             <Flex vertical gap={6} align="center">
               <Text type="secondary">在左侧选一张卡片来编辑</Text>
               <Text type="secondary" className="cards-panel__hint">
-                人物卡记身份与关系，物品卡记品阶与来源，灵感卡随手记想法。
+                人物卡记身份与关系，物品卡记品阶与来源，灵感卡随手记想法，
+                设定卡收地点 / 势力 / 规则体系 / 时间线。
               </Text>
             </Flex>
           }
@@ -171,7 +173,9 @@ export function CardEditorPanel({
     setDraft({ ...draft, cardType, extra: normalizeExtra(cardType, draft.extra) })
   }
 
-  const fields = CARD_EXTRA_FIELDS[draft.cardType]
+  // 显式标成宽类型：`CARD_EXTRA_FIELDS` 是 as const，没有 options 的那几项
+  // 在字面量类型里也没有这个属性，直接 `field.options` 会报属性不存在
+  const fields: readonly CardExtraField[] = CARD_EXTRA_FIELDS[draft.cardType]
 
   return (
     <div
@@ -281,20 +285,41 @@ export function CardEditorPanel({
           {CARD_TYPE_LABELS[draft.cardType]}卡的专属字段
         </Divider>
 
+        {/*
+          专属字段由共享层的 CARD_EXTRA_FIELDS 驱动，新增类型或新增字段都不用
+          改这里。带 `options` 的字段渲染成下拉（设定卡的「类别」就是）——
+          类别是拿来聚合的，自由输入会写成「地点」「地名」两种说法。
+        */}
         {fields.map((field) => (
           <label className="cards-field" key={field.key}>
             <span className="cards-field__label">{field.label}</span>
-            <Input
-              value={draft.extra[field.key] ?? ''}
-              maxLength={CARD_LIMITS.extra}
-              placeholder={field.placeholder}
-              onChange={(event) =>
-                setDraft({
-                  ...draft,
-                  extra: { ...draft.extra, [field.key]: event.target.value }
-                })
-              }
-            />
+            {field.options === undefined ? (
+              <Input
+                value={draft.extra[field.key] ?? ''}
+                maxLength={CARD_LIMITS.extra}
+                placeholder={field.placeholder}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    extra: { ...draft.extra, [field.key]: event.target.value }
+                  })
+                }
+              />
+            ) : (
+              <Select
+                data-testid={`card-extra-${field.key}`}
+                value={draft.extra[field.key] ?? ''}
+                placeholder={field.placeholder}
+                allowClear
+                options={field.options.map((option) => ({ value: option, label: option }))}
+                onChange={(value: string | undefined) =>
+                  setDraft({
+                    ...draft,
+                    extra: { ...draft.extra, [field.key]: value ?? '' }
+                  })
+                }
+              />
+            )}
           </label>
         ))}
 

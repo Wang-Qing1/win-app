@@ -9,6 +9,7 @@ import {
   CARD_TYPE_LABELS,
   DEFAULT_CARD_QUERY,
   isCardBookScope,
+  isCardType,
   type Card,
   type CardBookScope,
   type CardListQuery,
@@ -78,6 +79,42 @@ export function CardsPage() {
 
   /** 已消费过的深链目标，避免用户之后改筛选时又被它拽回去 */
   const consumedCardRef = useRef<number | null>(null)
+
+  /**
+   * 类型深链（`?type=setting`）—— 编辑器右侧竖栏「设定」用的就是它。
+   *
+   * 为什么「设定」不另开一个页面：它和「角色」是同一种东西的两个视角
+   * （一个是人物卡、一个是世界观条目卡），分开就要多一套增删改查、多一套
+   * 导出与检索分组，而作者要的只是「从正文里一键看到这本书的设定」。
+   * 于是入口指向同一个卡片库，只把类型筛选预先设好。
+   */
+  const deepLinkType = useMemo<CardType | null>(() => {
+    const raw = searchParams.get('type')
+    return isCardType(raw) ? raw : null
+  }, [searchParams])
+
+  /**
+   * 书籍深链（`?book=NN`）—— 与类型一起由竖栏「角色 / 设定」带来。
+   * 不带它的话，从某一章的正文里跳过来会看到「全部书籍」的卡片，
+   * 作者得自己再挑一遍书才算开始查资料。
+   */
+  const deepLinkBookId = useMemo(() => {
+    const parsed = Number(searchParams.get('book'))
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+  }, [searchParams])
+
+  const consumedTypeRef = useRef<CardType | null>(null)
+
+  useEffect(() => {
+    if (deepLinkType === null || consumedTypeRef.current === deepLinkType) return
+    consumedTypeRef.current = deepLinkType
+    setCardType(deepLinkType)
+    if (deepLinkBookId !== null) {
+      setScope('book')
+      setBookId(deepLinkBookId)
+    }
+    setPage(1)
+  }, [deepLinkBookId, deepLinkType])
 
   useEffect(() => {
     if (deepLinkCardId === null || consumedCardRef.current === deepLinkCardId) return
@@ -374,7 +411,7 @@ export function CardsPage() {
                   <Text type="secondary">
                     {keyword.length > 0
                       ? '换个关键词，或把筛选范围放宽一些。'
-                      : '人物、物品、灵感都可以先记成卡片，写的时候好查。'}
+                      : '人物、物品、灵感、设定都可以先记成卡片，写的时候好查。'}
                   </Text>
                 </Flex>
               }

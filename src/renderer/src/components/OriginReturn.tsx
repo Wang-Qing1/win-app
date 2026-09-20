@@ -35,7 +35,14 @@ export const FROM_PARAM = 'from'
 
 /** 拼出带来源的目标路径。跳转方一律用它，别手拼 `?from=` */
 export function withOrigin(path: string, from: string): string {
-  return `${path}?${FROM_PARAM}=${encodeURIComponent(from)}`
+  /*
+   * 目标路径可能自己带着查询串（竖栏「设定」是 `/cards?type=setting&book=3`），
+   * 这时第二个参数必须用 `&` 接 —— 再写一个 `?` 会拼出
+   * `?type=setting?from=…`，浏览器会把 from 当成 type 的一部分，
+   * 于是「回程票」静默消失。
+   */
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}${FROM_PARAM}=${encodeURIComponent(from)}`
 }
 
 /** 章节编辑器路由（含「打开一本书但还没定位到章节」那一种） */

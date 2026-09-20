@@ -3,11 +3,18 @@ import { z } from 'zod'
 /**
  * 卡片库的领域契约。
  *
- * 三类卡片（人物 / 物品 / 灵感）**共用一张 cards 表**，靠 card_type 列区分：
+ * 四类卡片（人物 / 物品 / 灵感 / 设定）**共用一张 cards 表**，靠 card_type 列区分：
  * 它们的共性（标题、一句话简介、正文、标签、归属书籍）占了绝大部分，
  * 差异只有几个专属字段（人物有身份与关系、物品有品阶与来源）。
- * 专属字段放进 extra 这一列 JSON，于是三套增删改查只写一遍，
+ * 专属字段放进 extra 这一列 JSON，于是四套增删改查只写一遍，
  * 将来加「地点」「势力」卡也不用动表结构、不用写迁移。
+ *
+ * 第四类「设定」是 2026-09-20 补上的（编辑器右侧竖栏里那一格当时挂着一个
+ * 「第二期」的置灰项）：它记的是**世界观条目**，用 extra.category 区分
+ * 地点 / 势力 / 规则体系 / 时间线 —— 而不是把四类拆成四种 card_type。
+ * 拆成四种的话，每加一类就要动枚举、颜色、图标、筛选下拉、类型计数五处，
+ * 而它们的字段与行为其实完全相同；做成「一类卡 + 一个类别字段」，
+ * 新增类别只是往 SETTING_CATEGORIES 里加一个词。
  *
  * 这个选择的代价必须自己补上：**extra 里的字段没有数据库层面的约束**，
  * 一个字段名写错、或把人物卡的 extra 直接搬到物品卡上，SQLite 不会吭声。
@@ -22,14 +29,26 @@ import { z } from 'zod'
  * 枚举
  * ------------------------------------------------------------------ */
 
-export const CARD_TYPES = ['character', 'item', 'inspiration'] as const
+export const CARD_TYPES = ['character', 'item', 'inspiration', 'setting'] as const
 export type CardType = (typeof CARD_TYPES)[number]
 
 export const CARD_TYPE_LABELS: Record<CardType, string> = {
   character: '人物',
   item: '物品',
-  inspiration: '灵感'
+  inspiration: '灵感',
+  setting: '设定'
 }
+
+/**
+ * 设定卡的类别。
+ *
+ * 四类世界观条目共用「设定」这一种卡片：地点的写法是「在哪儿、什么规矩」，
+ * 势力是「谁、图什么」，规则体系是「能做什么、代价是什么」，时间线是
+ * 「什么时候发生了什么」—— 它们的结构一致（标题 + 一句话 + 正文 + 类别），
+ * 只是**读的人关心的问题**不同。所以类别是一个字段，不是一种卡片类型。
+ */
+export const SETTING_CATEGORIES = ['地点', '势力', '规则体系', '时间线'] as const
+export type SettingCategory = (typeof SETTING_CATEGORIES)[number]
 
 export function isCardType(value: unknown): value is CardType {
   return typeof value === 'string' && (CARD_TYPES as readonly string[]).includes(value)
@@ -43,6 +62,14 @@ export interface CardExtraField {
   readonly key: string
   readonly label: string
   readonly placeholder: string
+  /**
+   * 取值被限定在这几个选项里时，界面渲染成下拉而不是输入框。
+   *
+   * 用途是「这一栏填的是分类」而不是「这一栏填的是自由发挥的一句话」：
+   * 类别要能按它聚合（四张地点卡凑成地理篇），自由输入会写成「地点」
+   * 「地理位置」「地名」三种说法，聚合就废了。
+   */
+  readonly options?: readonly string[]
 }
 
 /**
@@ -67,6 +94,9 @@ export const CARD_EXTRA_FIELDS = {
   inspiration: [
     { key: 'source', label: '灵感来源', placeholder: '如：一条新闻 / 一个梦' },
     { key: 'usage', label: '打算用在哪儿', placeholder: '如：第三卷的转折点' }
+  ],
+  setting: [
+    { key: 'category', label: '设定类别', placeholder: '这条设定属于哪一类', options: SETTING_CATEGORIES }
   ]
 } as const satisfies Record<CardType, readonly CardExtraField[]>
 
@@ -94,6 +124,11 @@ export type CardExtra = Record<string, string>
  *
  * 写入与读取两侧都走它，因此「数据库里的 extra 一定是当前类型的完整字段集」
  * 这条不变式只有一处实现。
+ *
+ * 带 `options` 的字段额外做一步：**不在选项里的值一律回落成空串**。
+ * 类别是要被聚合的，一个拼错的「地理」会永远聚合不到「地点」那一组里，
+ * 而它看起来又完全正常（有值、能显示）。宁可让它空着 —— 空着是
+ * 「这条还没分类」，一眼看得出来，错了却没人知道。
  */
 export function normalizeExtra(type: CardType, raw: unknown): CardExtra {
   const source =
@@ -101,10 +136,22 @@ export function normalizeExtra(type: CardType, raw: unknown): CardExtra {
       ? (raw as Record<string, unknown>)
       : {}
 
+  /*
+   * 显式标成宽类型再遍历：`CARD_EXTRA_FIELDS` 是 as const，每一项的字面量
+   * 类型里只有自己写过的那几个属性，直接 `field.options` 会在「这一项没写
+   * options」的分支上报「属性不存在」。而运行时它们本来就是同一类东西。
+   */
+  const fields: readonly CardExtraField[] = CARD_EXTRA_FIELDS[type]
+
   const extra: CardExtra = {}
-  for (const field of CARD_EXTRA_FIELDS[type]) {
+  for (const field of fields) {
     const value = source[field.key]
-    extra[field.key] = typeof value === 'string' ? value : ''
+    const text = typeof value === 'string' ? value.trim() : ''
+    if (field.options !== undefined && text.length > 0 && !field.options.includes(text)) {
+      extra[field.key] = ''
+      continue
+    }
+    extra[field.key] = text
   }
   return extra
 }
@@ -238,12 +285,20 @@ export const CARD_LIMITS = {
 
 const cardBookScopeSchema = z.string().refine(isCardBookScope, '书籍筛选范围不合法')
 
-function extraFieldSchema(label: string) {
-  return z
+function extraFieldSchema(label: string, options?: readonly string[]) {
+  const base = z
     .string()
     .trim()
     .max(CARD_LIMITS.extra, `${label}最多 ${CARD_LIMITS.extra} 个字符`)
     .default('')
+
+  // 枚举字段：空串是「还没分类」，合法；有值就必须是选项之一
+  return options === undefined
+    ? base
+    : base.refine(
+        (value) => value.length === 0 || options.includes(value),
+        `${label}只能是：${options.join(' / ')}`
+      )
 }
 
 /**
@@ -254,8 +309,10 @@ function extraFieldSchema(label: string) {
  * 用户填了却存不进去。
  */
 function cardExtraSchemaFor(type: CardType) {
+  // 同 normalizeExtra：先拓宽成 CardExtraField 再读 options
+  const fields: readonly CardExtraField[] = CARD_EXTRA_FIELDS[type]
   const shape = Object.fromEntries(
-    CARD_EXTRA_FIELDS[type].map((field) => [field.key, extraFieldSchema(field.label)] as const)
+    fields.map((field) => [field.key, extraFieldSchema(field.label, field.options)] as const)
   )
   return z.object(shape)
 }
@@ -316,6 +373,11 @@ export const cardCreateSchema = z.discriminatedUnion('cardType', [
     ...cardBaseShape,
     cardType: z.literal('inspiration'),
     extra: cardExtraSchemaFor('inspiration')
+  }),
+  z.object({
+    ...cardBaseShape,
+    cardType: z.literal('setting'),
+    extra: cardExtraSchemaFor('setting')
   })
 ])
 
@@ -340,6 +402,12 @@ export const cardUpdateSchema = z.discriminatedUnion('cardType', [
     id: cardIdField,
     cardType: z.literal('inspiration'),
     extra: cardExtraSchemaFor('inspiration')
+  }),
+  z.object({
+    ...cardBaseShape,
+    id: cardIdField,
+    cardType: z.literal('setting'),
+    extra: cardExtraSchemaFor('setting')
   })
 ])
 
