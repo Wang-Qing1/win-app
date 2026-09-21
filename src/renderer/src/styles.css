@@ -1367,6 +1367,37 @@ html[data-theme='dark'] .editor-surface {
   gap: 6px;
 }
 
+/*
+ * 「插入」弹层（编辑器工具栏 + 号）。
+ *
+ * antd Popover 默认给内层一圈 padding 和 1px 边框，里面再套四个带边框的
+ * block 按钮，远看就是「框里套框」。这里把外壳拆掉：弹层只留一张白底
+ * 加阴影，面板宽度收缩到贴内容，按钮文字左对齐 —— 否则文字居中在
+ * 200px 里，两侧各留一截空白，看起来像没拆干净。
+ * 选择器必须挂 overlayClassName（Popover 渲染在 portal 里，
+ * 从组件树上加 className 到不了这一层）。
+ */
+.editor-insert-popover .ant-popover-inner {
+  padding: 4px 0;
+  border: none;
+}
+
+.editor-insert-popover .ant-popover-inner-content {
+  padding: 4px 0;
+}
+
+.editor-insert-popover .toolbar-panel--actions {
+  width: auto;
+}
+
+.editor-insert-popover .toolbar-panel--actions .ant-btn {
+  border: none;
+  border-radius: 0;
+  display: flex;
+  justify-content: flex-start;
+  padding-inline: 14px;
+}
+
 .toolbar-panel__row + .toolbar-panel__row {
   margin-top: 10px;
 }

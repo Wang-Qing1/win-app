@@ -367,10 +367,12 @@ export function EditorToolbar({ editor, prefs, onPrefsChange, readOnly }: Editor
           </Popover>
 
           {/* ---------------- 插入 ---------------- */}
+          {/* 不设标题：四个动作一眼可读，「插入」两个字只是占高度的重复。
+              样式（无边框、无左右留白）见 styles.css 的 .editor-insert-popover */}
           <Popover
             trigger="click"
             placement="bottomLeft"
-            title="插入"
+            overlayClassName="editor-insert-popover"
             content={<InsertPanel editor={editor} disabled={disabled} />}
           >
             <Tooltip title="插入分隔线与引号">
