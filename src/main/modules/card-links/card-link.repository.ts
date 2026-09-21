@@ -1,5 +1,10 @@
 import { isCardType, type CardType } from '@shared/modules/cards'
-import type { CardChapterLink, ChapterCardRef } from '@shared/modules/card-links'
+import type {
+  CardChapterLink,
+  CardOutlineLink,
+  ChapterCardRef,
+  OutlineCardRef
+} from '@shared/modules/card-links'
 import type { Db } from '../../db/types'
 
 interface LinkRow {
@@ -12,6 +17,15 @@ interface CardLinkRow extends LinkRow {
   chapter_title: string
   volume_title: string | null
   book_title: string
+}
+
+interface CardOutlineLinkRow {
+  card_id: number
+  node_id: number
+  node_title: string
+  node_type: string
+  book_title: string
+  created_at: string
 }
 
 interface ChapterCardRow {
@@ -88,6 +102,78 @@ export class CardLinkRepository {
       volumeTitle: row.volume_title,
       bookTitle: row.book_title,
       createdAt: row.created_at
+    }))
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 大纲节点侧（第三期）
+   *
+   * 与章节侧同构，只是目标表换成 card_outline_links。
+   * ------------------------------------------------------------------ */
+
+  insertNode(cardId: number, nodeId: number, now: string): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO card_outline_links (card_id, node_id, created_at)
+         VALUES (@cardId, @nodeId, @now)`
+      )
+      .run({ cardId, nodeId, now })
+  }
+
+  deleteNode(cardId: number, nodeId: number): void {
+    this.db
+      .prepare('DELETE FROM card_outline_links WHERE card_id = ? AND node_id = ?')
+      .run(cardId, nodeId)
+  }
+
+  /**
+   * 一张卡挂在哪些节点上。
+   *
+   * 排序按 `order_index`：大纲的节点顺序就是作者的叙事顺序，
+   * 按它读才知道「这条设定在情节里分布在哪几个位置」。
+   */
+  listNodesByCard(cardId: number): CardOutlineLink[] {
+    const rows = this.db
+      .prepare(
+        `SELECT l.card_id AS card_id, l.node_id AS node_id, l.created_at AS created_at,
+                n.title AS node_title,
+                n.node_type AS node_type,
+                b.title AS book_title
+           FROM card_outline_links l
+           JOIN outline_nodes n ON n.id = l.node_id
+           JOIN books b ON b.id = n.book_id
+          WHERE l.card_id = ?
+          ORDER BY n.order_index, n.id`
+      )
+      .all(cardId) as CardOutlineLinkRow[]
+
+    return rows.map((row) => ({
+      cardId: row.card_id,
+      nodeId: row.node_id,
+      nodeTitle: row.node_title,
+      nodeType: row.node_type,
+      bookTitle: row.book_title,
+      createdAt: row.created_at
+    }))
+  }
+
+  /** 某个节点用到了哪几张卡 */
+  listByNode(nodeId: number): OutlineCardRef[] {
+    const rows = this.db
+      .prepare(
+        `SELECT c.id AS card_id, c.card_type AS card_type, c.title AS title, c.subtitle AS subtitle
+           FROM card_outline_links l
+           JOIN cards c ON c.id = l.card_id
+          WHERE l.node_id = ?
+          ORDER BY c.updated_at DESC, c.id DESC`
+      )
+      .all(nodeId) as ChapterCardRow[]
+
+    return rows.map((row) => ({
+      cardId: row.card_id,
+      cardType: isCardType(row.card_type) ? row.card_type : 'inspiration',
+      title: row.title,
+      subtitle: row.subtitle
     }))
   }
 

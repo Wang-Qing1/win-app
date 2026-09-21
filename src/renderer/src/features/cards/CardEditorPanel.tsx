@@ -28,6 +28,7 @@ import { useToast } from '../../components/Toast'
 import { IconButton } from '../../components/IconButton'
 import { formatDateTime } from '../../lib/format'
 import { CardChapterLinks } from './CardChapterLinks'
+import { CardOutlineLinks } from './CardOutlineLinks'
 import { CARD_TYPE_COLORS, CARD_TYPE_ICONS } from './card-meta'
 
 const { Text, Paragraph } = Typography
@@ -378,6 +379,9 @@ export function CardEditorPanel({
              * 去列章节。
              */}
             <CardChapterLinks cardId={card.id} bookId={card.bookId} />
+
+            {/* 节点侧与章节侧并列：一个是「写过的地方」，一个是「打算写的地方」 */}
+            <CardOutlineLinks cardId={card.id} bookId={card.bookId} />
 
             <Divider className="cards-panel__divider">其它</Divider>
 

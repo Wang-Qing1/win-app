@@ -14,8 +14,9 @@ import { IpcChannel } from '@shared/ipc-channels'
  * 6：导出新增整本书/整卷批量导出（exporter.book / exporter.volume）。
  * 7：新增数据库备份（backup.database）。
  * 8：新增卡片 ↔ 章节关联（cards.linkChapter / unlinkChapter / listLinks / listByChapter）。
+ * 9：新增卡片 ↔ 大纲节点关联（cards.linkNode / unlinkNode / listNodeLinks / listByNode）。
  */
-const BRIDGE_VERSION = '8'
+const BRIDGE_VERSION = '9'
 
 /**
  * preload 是主进程与渲染进程之间唯一的通道。
@@ -81,7 +82,11 @@ const api: WinbookApi = {
     linkChapter: (input) => ipcRenderer.invoke(IpcChannel.CardsLinkChapter, input),
     unlinkChapter: (input) => ipcRenderer.invoke(IpcChannel.CardsUnlinkChapter, input),
     listLinks: (input) => ipcRenderer.invoke(IpcChannel.CardsListLinks, input),
-    listByChapter: (input) => ipcRenderer.invoke(IpcChannel.CardsListByChapter, input)
+    listByChapter: (input) => ipcRenderer.invoke(IpcChannel.CardsListByChapter, input),
+    linkNode: (input) => ipcRenderer.invoke(IpcChannel.CardsLinkNode, input),
+    unlinkNode: (input) => ipcRenderer.invoke(IpcChannel.CardsUnlinkNode, input),
+    listNodeLinks: (input) => ipcRenderer.invoke(IpcChannel.CardsListNodeLinks, input),
+    listByNode: (input) => ipcRenderer.invoke(IpcChannel.CardsListByNode, input)
   },
 
   search: {

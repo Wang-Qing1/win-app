@@ -49,6 +49,10 @@ export const IpcChannel = {
   CardsDuplicate: 'cards:duplicate',
   CardsLinkChapter: 'cards:link-chapter',
   CardsUnlinkChapter: 'cards:unlink-chapter',
+  CardsListNodeLinks: 'cards:list-node-links',
+  CardsListByNode: 'cards:list-by-node',
+  CardsLinkNode: 'cards:link-node',
+  CardsUnlinkNode: 'cards:unlink-node',
   CardsListLinks: 'cards:list-links',
   CardsListByChapter: 'cards:list-by-chapter',
 

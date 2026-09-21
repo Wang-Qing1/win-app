@@ -74,7 +74,9 @@ export const queryKeys = {
   cardLinks: {
     all: ['card-links'] as const,
     byCard: (cardId: number | null) => ['card-links', 'card', cardId] as const,
-    byChapter: (chapterId: number | null) => ['card-links', 'chapter', chapterId] as const
+    byChapter: (chapterId: number | null) => ['card-links', 'chapter', chapterId] as const,
+    nodesByCard: (cardId: number | null) => ['card-links', 'nodes-of-card', cardId] as const,
+    byNode: (nodeId: number | null) => ['card-links', 'node', nodeId] as const
   },
 
   search: {

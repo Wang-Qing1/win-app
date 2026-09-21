@@ -37,6 +37,32 @@ export interface ChapterCardRef {
   subtitle: string
 }
 
+/**
+ * 一张卡片关联到的某个**大纲节点**（第三期）。
+ *
+ * 与「关联到章节」是两件事：章节是已经写出来的正文，节点是还没落地的
+ * 构想。一条设定常常先挂在某个情节节点上（「这里要用到那条禁忌」），
+ * 等那一章写出来之后再补上章节关联 —— 两者并存，不互相替代。
+ *
+ * 带上书名：大纲是分书的，只给节点标题分不清是哪一本。
+ */
+export interface CardOutlineLink {
+  cardId: number
+  nodeId: number
+  nodeTitle: string
+  nodeType: string
+  bookTitle: string
+  createdAt: string
+}
+
+/** 某个大纲节点关联到的某张卡片 */
+export interface OutlineCardRef {
+  cardId: number
+  cardType: CardType
+  title: string
+  subtitle: string
+}
+
 const idField = z.number().int().positive('ID 非法')
 
 export const cardLinkPairSchema = z.object({
@@ -57,3 +83,16 @@ export const cardLinkChapterSchema = z.object({
 })
 
 export type CardLinkChapterInput = z.infer<typeof cardLinkChapterSchema>
+
+export const cardLinkNodePairSchema = z.object({
+  cardId: idField,
+  nodeId: idField
+})
+
+export type CardLinkNodePairInput = z.infer<typeof cardLinkNodePairSchema>
+
+export const cardLinkNodeSchema = z.object({
+  nodeId: idField
+})
+
+export type CardLinkNodeInput = z.infer<typeof cardLinkNodeSchema>

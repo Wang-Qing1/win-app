@@ -296,5 +296,31 @@ export const migrations: readonly Migration[] = [
         CREATE INDEX idx_card_links_chapter ON card_chapter_links (chapter_id);
       `)
     }
+  },
+  {
+    name: '007_card_outline_links',
+    up(db) {
+      /*
+       * 卡片 ↔ 大纲节点的关联（第三期）。
+       *
+       * 与 006 完全同构，只是目标换成 outline_nodes。
+       *
+       * **为什么不合并成一张带 target_type 的表**：合并要改 006 的全部
+       * SQL、IPC 契约与渲染层代码，而两处关联在语义上确实不同 ——
+       * 章节是「已经写出来的正文」，节点是「还没写的构想」。分开之后
+       * 每一侧的查询都不必带一个恒定的过滤条件，也不必为「另一半」的
+       * 字段让出可为 NULL 的列。代价是两张表，换来两条各自独立的读路径。
+       */
+      db.exec(`
+        CREATE TABLE card_outline_links (
+          card_id    INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+          node_id    INTEGER NOT NULL REFERENCES outline_nodes(id) ON DELETE CASCADE,
+          created_at TEXT    NOT NULL,
+          PRIMARY KEY (card_id, node_id)
+        );
+
+        CREATE INDEX idx_card_outline_node ON card_outline_links (node_id);
+      `)
+    }
   }
 ]

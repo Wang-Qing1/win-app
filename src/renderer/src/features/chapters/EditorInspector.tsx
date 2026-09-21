@@ -3,18 +3,20 @@ import { Flex, Select, Tabs, Tooltip, Typography } from 'antd'
 import {
   AimOutlined,
   AppstoreOutlined,
+  ArrowLeftOutlined,
   AuditOutlined,
   ClearOutlined,
   CompassOutlined,
+  ExportOutlined,
   PartitionOutlined,
   SelectOutlined,
   TeamOutlined
 } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router'
-import type { CardType } from '@shared/modules/cards'
 import { PLATFORM_SPECS, platformOf } from './platform-preview'
 import { PlatformPreview } from './PlatformPreview'
 import { FillerPanel, ProofreadPanel } from './ProofreadPanel'
+import { CardLookupPanel, OutlineLookupPanel } from './InspectorLookups'
 import { IconButton } from '../../components/IconButton'
 import { withOrigin } from '../../components/OriginReturn'
 import { ChapterCardRefs } from '../cards/ChapterCardRefs'
@@ -23,7 +25,28 @@ import type { ProofreadState } from './use-proofread'
 
 const { Text } = Typography
 
-export type InspectorView = 'proofread' | 'filler' | 'preview' | 'refs'
+/**
+ * 右侧展示栏的视图。
+ *
+ * 后三个（大纲 / 角色 / 设定）是**查阅视图**：它们把本书的资料列在右侧，
+ * 点一条弹窗看全文，而不跳走 —— 见 InspectorLookups 的说明。
+ * 与前面几个写作工具（纠错 / 废字 / 预览 / 本章设定）不是一类东西，
+ * 所以切换到它们时整个 Tabs 会被替换掉，而不是多出几个页签把窄栏挤爆。
+ */
+export type InspectorView =
+  | 'proofread'
+  | 'filler'
+  | 'preview'
+  | 'refs'
+  | 'outline'
+  | 'characters'
+  | 'setups'
+
+const LOOKUP_TITLES: Partial<Record<InspectorView, string>> = {
+  outline: '本书大纲',
+  characters: '角色卡片',
+  setups: '设定卡片'
+}
 
 interface RailItem {
   key: string
@@ -132,18 +155,23 @@ export function EditorInspector({
   }, [onRevealParagraph, previewFocus])
 
   /**
-   * 通往卡片库的那一类竖栏项（角色 / 设定）。
+   * 查阅面板头部的「打开完整页面」。
    *
-   * 带上 `type` 与 `book` 两个参数，而不是跳到卡片库首页：从正文里跳过去的
-   * 目的是「查我正在写的这一本书的某类资料」，落到「全部书籍的全部卡片」
-   * 等于让人再筛一次。带着来源（`?from=`）则是为了右下角那枚回程票。
+   * 查阅视图解决的是「写到一半查一下」，但**批量整理**卡片或大纲时
+   * 完整页面才够用 —— 所以入口保留，只是从「点竖栏就跳」降级成
+   * 「明确点这一枚才跳」。
+   *
+   * 带上 `type` 与 `book` 而不是跳到模块首页：从正文里过去的目的是
+   * 「查我正在写的这一本书的某类资料」，落到「全部书籍的全部卡片」
+   * 等于让人再筛一次。带 `?from=` 则是为了右下角那枚回程票。
    */
-  const openCards = useCallback(
-    (cardType: CardType): void => {
-      void navigate(withOrigin(`/cards?type=${cardType}&book=${bookId}`, location.pathname))
-    },
-    [bookId, location.pathname, navigate]
-  )
+  const openFullPage = useCallback((): void => {
+    const target =
+      view === 'outline'
+        ? `/outline?bookId=${bookId}`
+        : `/cards?type=${view === 'characters' ? 'character' : 'setting'}&book=${bookId}`
+    void navigate(withOrigin(target, location.pathname))
+  }, [bookId, location.pathname, navigate, view])
 
   const rail: RailItem[] = [
     {
@@ -173,18 +201,28 @@ export function EditorInspector({
       onClick: () => setView('preview')
     },
     {
+      /*
+       * 2026-09-21 改：这三项原来是「跳去对应模块页」，现在改成在右侧
+       * 展示栏就地列出、点开弹窗看详情。
+       *
+       * 跳走的代价是每次查资料都要离开正文、回来再找光标；而这件事
+       * 在写作中是高频动作。完整页面仍然可达 —— 查阅面板头部有一枚
+       * 「打开完整页面」的圆钮，批量整理时用得上。
+       */
       key: 'outline',
       label: '大纲',
       icon: <PartitionOutlined />,
-      hint: '卷章树与情节节点（右下角有回到正文的圆钮）',
-      onClick: () => void navigate(withOrigin('/outline', location.pathname))
+      active: view === 'outline',
+      hint: '在右侧列出本书的情节节点，点一条看摘要',
+      onClick: () => setView('outline')
     },
     {
       key: 'characters',
       label: '角色',
       icon: <TeamOutlined />,
-      hint: '这本书的人物卡（右下角有回到正文的圆钮）',
-      onClick: () => openCards('character')
+      active: view === 'characters',
+      hint: '在右侧列出本书的人物卡，点一张看全文',
+      onClick: () => setView('characters')
     },
     {
       /*
@@ -195,18 +233,57 @@ export function EditorInspector({
       key: 'setups',
       label: '设定',
       icon: <CompassOutlined />,
-      hint: '这本书的地点 / 势力 / 规则体系 / 时间线设定卡（右下角有回到正文的圆钮）',
-      onClick: () => openCards('setting')
+      active: view === 'setups',
+      hint: '在右侧列出地点 / 势力 / 规则体系 / 时间线设定卡，点一张看全文',
+      onClick: () => setView('setups')
     }
   ]
 
   return (
     <div className="inspector" data-testid="editor-inspector">
       <div className="inspector__panel">
+        {/*
+         * 查阅视图把整组 Tabs 换掉，而不是「再加三个页签」：
+         * 右栏很窄，七个页签会挤成两行；而且「设定」会出现两次
+         * （本章用到的 vs 全书设定卡），两个不同东西共用一个名字
+         * 比多一行页签更难懂。
+         */}
+        {LOOKUP_TITLES[view] === undefined ? null : (
+          <div className="inspector__lookup" data-testid="inspector-lookup">
+            <Flex align="center" gap={6} className="inspector__lookup-head">
+              <IconButton
+                label="返回写作工具"
+                icon={<ArrowLeftOutlined />}
+                data-testid="inspector-lookup-back"
+                onClick={() => setView('proofread')}
+              />
+              <Text strong className="inspector__lookup-title">
+                {LOOKUP_TITLES[view]}
+              </Text>
+              <IconButton
+                label="打开完整页面"
+                icon={<ExportOutlined />}
+                data-testid="inspector-open-page"
+                onClick={openFullPage}
+              />
+            </Flex>
+
+            {view === 'outline' ? (
+              <OutlineLookupPanel bookId={bookId} />
+            ) : (
+              <CardLookupPanel
+                bookId={bookId}
+                cardType={view === 'characters' ? 'character' : 'setting'}
+              />
+            )}
+          </div>
+        )}
+
         <Tabs
           size="small"
           activeKey={view}
           onChange={(key) => setView(key as InspectorView)}
+          className={LOOKUP_TITLES[view] === undefined ? undefined : 'inspector__tabs--hidden'}
           items={[
             {
               key: 'proofread',

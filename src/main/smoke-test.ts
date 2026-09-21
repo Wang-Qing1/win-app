@@ -324,6 +324,12 @@ export interface ShowcaseTargets {
    * 缺了它就只能靠标题反查 —— 同名章节会让反查落到错误的那一章上。
    */
   chaptersOf: (bookId: number) => Array<{ id: number; title: string }>
+  /** 这本书的大纲节点 id 与标题（第三期：卡片 ↔ 节点关联要对账用） */
+  nodesOf: (bookId: number) => Array<{ id: number; title: string }>
+  /** 这张卡挂在哪几个节点上（节点 id） */
+  nodesOfCard: (cardId: number) => number[]
+  /** 这个节点关联到哪几张卡（卡片 id） */
+  cardsOfNode: (nodeId: number) => number[]
 }
 
 export interface BackendSmokeRun {
@@ -361,7 +367,8 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
   const cardLinkService = new CardLinkService(
     new CardLinkRepository(db),
     cardRepository,
-    chapterRepository
+    chapterRepository,
+    outlineRepository
   )
   const searchService = new SearchService(new SearchRepository(db))
 
@@ -2041,7 +2048,16 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
             chaptersOf: (id) =>
               chapterService
                 .list({ bookId: id, volumeId: undefined })
-                .map((item) => ({ id: item.id, title: item.title }))
+                .map((item) => ({ id: item.id, title: item.title })),
+            nodesOf: (id) =>
+              outlineService
+                .tree(id)
+                .nodes.flatMap(function flatten(node): Array<{ id: number; title: string }> {
+                  return [{ id: node.id, title: node.title }, ...node.children.flatMap(flatten)]
+                }),
+            nodesOfCard: (cardId) =>
+              cardLinkService.listNodesByCard(cardId).map((item) => item.nodeId),
+            cardsOfNode: (nodeId) => cardLinkService.listByNode(nodeId).map((item) => item.cardId)
           }
         : null
   }
@@ -2162,6 +2178,7 @@ export async function runRendererSmokeChecks(
      * 前面几步要看的页面之后），而且会真的建一张卡再删掉 —— 排在卡片库
      * 那一步之后，才不会把总数搅乱在「渲染 5 行」的断言里。
      */
+    results.push(await checkCardNodeLink(window, showcase))
     results.push(await checkSettingCard(window, showcase))
     results.push(await checkSettingCategoryFilter(window, showcase))
     results.push(await checkCardChapterLink(window, showcase))
@@ -5846,6 +5863,26 @@ const RETURN_TICKET_PROBE_JS = `(() => {
  * 它是「外出的回程票」而不是常驻导航，摆得到处都是就又变回一条常驻导航栏 ——
  * 那正是上一轮刚拆掉的东西。
  */
+/**
+ * 查阅面板出现时，写作工具那组 Tabs 必须真的被藏住。
+ *
+ * 读**计算样式**而不是看类名在不在：藏 Tabs 的类名一直挂在元素上，
+ * 但只要 `display: none` 被更高特异度的规则压掉（真踩过 ——
+ * `.inspector__panel .ant-tabs { display: flex }` 两个类压过单类的
+ * 藏匿规则），页签就会原样画在查阅面板底下，两行字叠成一团；
+ * 而此时「面板在、hash 没变」等断言照样全绿。这种坏法只有读
+ * computed display 看得见。
+ */
+async function readHiddenTabsDisplay(window: BrowserWindow): Promise<string> {
+  return (await window.webContents.executeJavaScript(
+    `(() => {
+      const el = document.querySelector('.inspector__tabs--hidden')
+      if (el === null) return '(类名不在)'
+      return getComputedStyle(el).display
+    })()`
+  )) as string
+}
+
 async function checkOriginReturn(window: BrowserWindow, ctx: ShowcaseTargets): Promise<StepResult> {
   const name = '外出后返回正文'
   const problems: string[] = []
@@ -5871,10 +5908,30 @@ async function checkOriginReturn(window: BrowserWindow, ctx: ShowcaseTargets): P
       label: string
       /** 这一趟必须出现在 hash 里的查询片段 */
       query?: string
+      /**
+       * 点竖栏之后**先在右侧出现的查阅面板**。
+       *
+       * 2026-09-21 起竖栏这三项不再直接跳界面：它们把资料列在右侧展示栏，
+       * 要看完整页面得再点面板上的「打开完整页面」。两步都要验 ——
+       * 只验跳转的话，「竖栏点下去什么也没发生」这种故障会全绿。
+       */
+      panel: string
     }> = [
-      { rail: 'rail-outline', target: '#/outline', label: '大纲' },
-      { rail: 'rail-characters', target: '#/cards', label: '角色', query: 'type=character' },
-      { rail: 'rail-setups', target: '#/cards', label: '设定', query: 'type=setting' }
+      { rail: 'rail-outline', target: '#/outline', label: '大纲', panel: 'lookup-outline' },
+      {
+        rail: 'rail-characters',
+        target: '#/cards',
+        label: '角色',
+        query: 'type=character',
+        panel: 'lookup-cards'
+      },
+      {
+        rail: 'rail-setups',
+        target: '#/cards',
+        label: '设定',
+        query: 'type=setting',
+        panel: 'lookup-cards'
+      }
     ]
 
     for (const trip of trips) {
@@ -5887,6 +5944,44 @@ async function checkOriginReturn(window: BrowserWindow, ctx: ShowcaseTargets): P
 
       if (!(await clickTestId(window, trip.rail))) {
         problems.push(`点不到右侧竖栏的「${trip.label}」`)
+        continue
+      }
+
+      /*
+       * 第一步：右侧出现查阅面板，**并且 hash 不变** —— 竖栏这三项的
+       * 意义就是「不离开正文」。要是它还是跳走了，这里先红，
+       * 而不是等到后面「回程票」那条给出一个看似无关的失败。
+       */
+      if (!(await waitForTestId(window, trip.panel, 5000))) {
+        problems.push(
+          `点「${trip.label}」之后右侧没有出现查阅面板（${trip.panel}）—— ` +
+            '2026-09-21 起竖栏改为就地查阅，不再跳界面'
+        )
+        continue
+      }
+      const stayed = await readWorkspace(window, (state) => state.hash === chapterRoute, 3000)
+      if (stayed.hash !== chapterRoute) {
+        problems.push(`点「${trip.label}」之后离开了正文（hash=${stayed.hash}），应当停在原章不动`)
+        continue
+      }
+
+      /*
+       * 面板在场 ≠ 没有叠字：写作工具页签必须真的 display:none。
+       * （CSS 特异度压不过时页签会画在面板底下，其余断言全绿 —— 见
+       * readHiddenTabsDisplay 的说明。）
+       */
+      const tabsDisplay = await readHiddenTabsDisplay(window)
+      if (tabsDisplay !== 'none') {
+        problems.push(
+          `点「${trip.label}」后写作工具页签没有被藏住（display=${tabsDisplay}），` +
+            '会跟查阅面板叠在一起'
+        )
+        continue
+      }
+
+      // 第二步：明确点「打开完整页面」才跳走
+      if (!(await clickTestId(window, 'inspector-open-page'))) {
+        problems.push(`点不到「${trip.label}」查阅面板上的「打开完整页面」圆钮`)
         continue
       }
 
@@ -6247,6 +6342,25 @@ async function checkSettingCard(
 
     if (!(await clickTestId(window, 'rail-setups'))) {
       return { name, ok: false, detail: '点不到右侧竖栏的「设定」' }
+    }
+
+    /*
+     * 2026-09-21 起竖栏「设定」先把设定卡列在右侧（不再跳界面），
+     * 要进完整卡片库得再点面板上的「打开完整页面」。
+     */
+    if (!(await waitForTestId(window, 'lookup-cards', 5000))) {
+      return { name, ok: false, detail: '点「设定」之后右侧没有出现设定卡查阅面板' }
+    }
+    const tabsDisplay = await readHiddenTabsDisplay(window)
+    if (tabsDisplay !== 'none') {
+      return {
+        name,
+        ok: false,
+        detail: `点「设定」后写作工具页签没有被藏住（display=${tabsDisplay}），会跟查阅面板叠在一起`
+      }
+    }
+    if (!(await clickTestId(window, 'inspector-open-page'))) {
+      return { name, ok: false, detail: '点不到查阅面板上的「打开完整页面」圆钮' }
     }
 
     const wanted = (hash: string): boolean =>
@@ -6638,6 +6752,201 @@ async function checkSettingCategoryFilter(
  *      这里虽然没直接测跨书（展示数据里另一本书也有章），但两侧都从
  *      同一本书取数据，若服务层那条检查写反了，这趟往返会直接报错。
  */
+/**
+ * 卡片 ↔ 大纲节点的关联（第三期第 1 件）。
+ *
+ * 与 checkCardChapterLink 同一套骨架 —— 两个方向都要验：
+ * 卡片侧「挂在哪些节点」、节点侧「用到哪些卡片」。只验一侧的话，
+ * 另一侧的下拉可能一直不可用（比如取不到这本书的节点），
+ * 而界面上表现为「还没关联」，看着跟正常空态一模一样。
+ *
+ * **每一侧都回库对账**：界面上长出一行只证明渲染到了，库里真有那条
+ * 记录才证明功能做了。这是这个项目一贯的口径。
+ */
+/**
+ * 离开当前页面，然后删掉一张验证用的卡片。返回一条问题描述（没问题则空串）。
+ *
+ * 顺序很要紧：**先真的离开，再删**。页面上那些按 cardId 取数的查询（这张卡
+ * 的章节关联、节点关联）只要还在场，卡片一没就会重新取数，撞出两次
+ * NOT_FOUND —— 「IPC 无静默失败」会把它们记成真故障，而它们只是删除之后
+ * 的必然结果。（这一项连踩过两次：2 次被拒｜cards:list-links /
+ * cards:list-node-links → NOT_FOUND。）
+ *
+ * 「真的离开」要有**正面**判据：
+ *   - 只改 hash 不够 —— 导航是异步的，紧接着就删的话 React 还没卸载面板；
+ *   - 判据也不能取「卡片面板消失了」—— 选择器写错、或页面压根没渲染时，
+ *     数出来同样是 0，于是一路放行，看起来像通过了。
+ * 所以等的是首页的 `dashboard-metrics`（`#/` 渲染 DashboardPage，锚点见
+ * 该文件头的说明）：它出现即证明路由已经切走、编辑页已卸载。
+ *
+ * 就算没等到也照删：留一张野卡片在库里，后面按总数对账的检查会跟着错。
+ */
+async function leaveAndRemoveCard(
+  window: BrowserWindow,
+  ctx: ShowcaseTargets,
+  cardId: number
+): Promise<string> {
+  if (cardId === 0) return ''
+  await gotoHash(window, '#/')
+  const ready = await waitForTestId(window, 'dashboard-metrics', 5000)
+  ctx.removeCard(cardId)
+  /*
+   * 删完还要**整页重载**一次，把渲染进程的查询缓存冲掉。
+   *
+   * 缓存里的「卡片列表」结果还带着这张刚删掉的卡（staleTime 是 15 秒，足够
+   * 撑到下一个检查）。卡片库页一挂载就自动选中列表第一行，于是下一步会拿着
+   * 这个已经不存在的 id 去取关联，撞出两次 NOT_FOUND（cards:list-links /
+   * cards:list-node-links），被「IPC 无静默失败」记成真故障。
+   *
+   * 这是**测试**的副作用，不是产品缺陷：真实删除走 IPC 变更，会顺带失效
+   * 列表缓存；只有绕过前端直接改库才会留下这份陈旧结果。
+   */
+  await reloadAt(window, '#/')
+  return ready ? '' : '删掉验证用的卡片之前没能回到首页，随后的删除可能撞出 NOT_FOUND'
+}
+
+async function checkCardNodeLink(
+  window: BrowserWindow,
+  ctx: ShowcaseTargets
+): Promise<StepResult> {
+  const name = '卡片与大纲节点关联'
+  const problems: string[] = []
+  const cardTitle = `冒烟-节点关联-${STAMP}`
+  let cardId = 0
+
+  try {
+    const nodes = ctx.nodesOf(ctx.bookId)
+    if (nodes.length === 0) {
+      return { name, ok: false, detail: '展示用书里一个大纲节点都没有，无法验证关联' }
+    }
+    const node = nodes[0]
+
+    cardId = ctx.seedSettingCard(cardTitle, '势力')
+
+    /* ---------- ① 卡片侧：把这张卡挂到某个节点 ---------- */
+    await reloadAt(window, `#/cards?cardId=${cardId}`)
+    if (!(await waitForTestId(window, 'card-node-links', 8000))) {
+      const cleanup = await leaveAndRemoveCard(window, ctx, cardId)
+      return {
+        name,
+        ok: false,
+        detail: '卡片面板里没有「挂在哪些情节节点」这一块' + (cleanup ? `（${cleanup}）` : '')
+      }
+    }
+
+    if (!(await waitForSelectReady(window, 'card-link-node-select'))) {
+      problems.push('「选择情节节点」的下拉一直不可用：这本书的节点没加载出来')
+    } else if (!(await pickSelectOption(window, 'card-link-node-select', node.title))) {
+      problems.push(`节点下拉里选不到「${node.title}」`)
+    } else if (!(await waitForTestId(window, 'card-node-link-row', 5000))) {
+      problems.push('选了节点之后关联列表里没有长出这一行')
+    } else {
+      const nodeIds = (await window.webContents.executeJavaScript(
+        `Array.prototype.map.call(
+          document.querySelectorAll('[data-testid="card-node-link-row"]'),
+          (el) => Number(el.getAttribute('data-node-id'))
+        ).join(',')`
+      )) as string
+      if (!nodeIds.split(',').includes(String(node.id))) {
+        problems.push(`关联行里没有节点 #${node.id}（实测 ${nodeIds || '空'}）`)
+      }
+
+      const linked = ctx.nodesOfCard(cardId)
+      if (!linked.includes(node.id)) {
+        problems.push(`库里查不到这张卡与节点 #${node.id} 的关联（实得 ${linked.join(',') || '空'}）`)
+      }
+
+      /* ---------- ② 解除：库与界面同时清空（都等，不读一次） ---------- */
+      if (!(await clickTestId(window, 'card-unlink-node'))) {
+        problems.push('点不到节点侧的「解除关联」按钮')
+      } else {
+        const deadline = Date.now() + 5000
+        let remaining = ctx.nodesOfCard(cardId)
+        while (Date.now() < deadline && remaining.length > 0) {
+          await delay(120)
+          remaining = ctx.nodesOfCard(cardId)
+        }
+        if (remaining.length > 0) {
+          problems.push(`解除之后库里还剩 ${remaining.length} 条关联（${remaining.join(',')}）`)
+        }
+
+        const leftRows = await waitForCount(window, 'card-node-link-row', 0, 5000)
+        if (leftRows !== 0) {
+          problems.push(`库里已解除，界面上却还留着 ${leftRows} 行`)
+        }
+      }
+    }
+
+    /* ---------- ③ 节点侧：大纲面板里反方向再连一次 ---------- */
+    /*
+     * 走 `?nodeId=` 深链而不是「进去再点第一行」：大纲页默认是空状态
+     * （没选中节点时右侧面板根本不渲染），漏了这步会把「面板没叫出来」
+     * 报成「功能没做」；而点第一行还多一层风险 —— 树的第一行未必是
+     * 这里要断言的那个节点，库里对账就会对到别的节点上。
+     */
+    await gotoHash(window, `#/outline?bookId=${ctx.bookId}&nodeId=${node.id}`)
+
+    if (!(await waitForTestId(window, 'outline-node-refs', 8000))) {
+      problems.push('大纲节点面板里没有「用到的卡片」这一块')
+    } else {
+      const optionText = `${cardTitle}（设定）`
+      if (!(await waitForSelectReady(window, 'outline-node-ref-add-select'))) {
+        problems.push('「选择一张卡片」的下拉一直不可用（这本书的卡片没加载出来？）')
+      } else if (!(await pickSelectOption(window, 'outline-node-ref-add-select', optionText))) {
+        problems.push(`卡片下拉里选不到「${optionText}」`)
+      } else if (!(await waitForTestId(window, 'outline-node-ref-row', 5000))) {
+        problems.push('选了卡片之后节点侧没有长出关联行')
+      } else {
+        const refs = ctx.cardsOfNode(node.id)
+        if (!refs.includes(cardId)) {
+          problems.push(
+            `库里查不到节点 #${node.id} 与卡片 #${cardId} 的关联（实得 ${refs.join(',') || '空'}）`
+          )
+        }
+
+        if (!(await clickTestId(window, 'outline-node-ref-unlink'))) {
+          problems.push('点不到节点侧的「解除关联」按钮')
+        } else {
+          const deadline = Date.now() + 5000
+          let left = ctx.cardsOfNode(node.id)
+          while (Date.now() < deadline && left.length > 0) {
+            await delay(120)
+            left = ctx.cardsOfNode(node.id)
+          }
+          if (left.length > 0) {
+            problems.push(`节点侧解除之后库里还剩 ${left.length} 条关联`)
+          }
+
+          const leftRows = await waitForCount(window, 'outline-node-ref-row', 0, 5000)
+          if (leftRows !== 0) {
+            problems.push(`库里已解除，节点侧界面上却还留着 ${leftRows} 行`)
+          }
+        }
+      }
+    }
+
+    /*
+     * 清理写在**构建结果之前**，不能写在 finally 里：finally 是在 return 的
+     * 表达式求值之后才执行的，那时 ok 已经算完了，清理期发现的问题就再也
+     * 进不了 ok —— 记了等于没记。
+     */
+    const cleanup = await leaveAndRemoveCard(window, ctx, cardId)
+    if (cleanup) problems.push(cleanup)
+
+    return {
+      name,
+      ok: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? `卡片侧：下拉选节点「${node.title}」→ 长出关联行，回库 nodesOfCard 含 #${node.id} → 解除后界面与库同时清空；` +
+            `节点侧：大纲面板下拉选「${cardTitle}（设定）」→ 长出关联行，回库 cardsOfNode 含 #${cardId} → 解除后同样两边都空`
+          : problems.join('；')
+    }
+  } catch (err) {
+    return { name, ok: false, detail: `断言过程抛错：${String(err)}` }
+  }
+}
+
 async function checkCardChapterLink(
   window: BrowserWindow,
   ctx: ShowcaseTargets

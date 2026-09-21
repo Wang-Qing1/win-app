@@ -35,6 +35,7 @@ import {
   type OutlineTreeNode
 } from '@shared/modules/outline'
 import type { VolumeListItem } from '@shared/modules/volumes'
+import { OutlineNodeCardRefs } from '../cards/OutlineNodeCardRefs'
 import { IconButton } from '../../components/IconButton'
 import { useToast } from '../../components/Toast'
 import { NODE_TYPE_COLORS } from './outline-meta'
@@ -335,6 +336,11 @@ export function OutlineNodePanel({
             run(() => onAttachChapter(node, value ?? null))
           }
         />
+
+        {/* 卡片关联：这一节还在构想阶段时，先记下打算用哪几条设定 */}
+        <Divider className="outline-panel__divider">用到的卡片</Divider>
+
+        <OutlineNodeCardRefs nodeId={node.id} bookId={bookId} />
 
         <Divider className="outline-panel__divider">其它</Divider>
 

@@ -34,7 +34,11 @@ import type {
   CardChapterLink,
   CardLinkCardInput,
   CardLinkChapterInput,
+  CardLinkNodeInput,
+  CardLinkNodePairInput,
   CardLinkPairInput,
+  CardOutlineLink,
+  OutlineCardRef,
   ChapterCardRef
 } from './modules/card-links'
 import type {
@@ -203,6 +207,15 @@ export interface WinbookApi {
     listLinks: (input: CardLinkCardInput) => Promise<IpcResponse<CardChapterLink[]>>
     /** 这一章用到了哪几张卡 */
     listByChapter: (input: CardLinkChapterInput) => Promise<IpcResponse<ChapterCardRef[]>>
+
+    /* ---- 大纲节点侧（第三期）---- */
+
+    linkNode: (input: CardLinkNodePairInput) => Promise<IpcResponse<CardOutlineLink[]>>
+    unlinkNode: (input: CardLinkNodePairInput) => Promise<IpcResponse<CardOutlineLink[]>>
+    /** 这张卡挂在哪些节点上 */
+    listNodeLinks: (input: CardLinkCardInput) => Promise<IpcResponse<CardOutlineLink[]>>
+    /** 这个节点用到了哪几张卡 */
+    listByNode: (input: CardLinkNodeInput) => Promise<IpcResponse<OutlineCardRef[]>>
   }
 
   search: {

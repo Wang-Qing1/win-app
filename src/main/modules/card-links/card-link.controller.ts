@@ -2,6 +2,8 @@ import { IpcChannel } from '@shared/ipc-channels'
 import {
   cardLinkCardSchema,
   cardLinkChapterSchema,
+  cardLinkNodePairSchema,
+  cardLinkNodeSchema,
   cardLinkPairSchema
 } from '@shared/modules/card-links'
 import { registerHandler } from '../../core/ipc-handler'
@@ -37,5 +39,31 @@ export function registerCardLinkHandlers(service: CardLinkService): void {
     label: '解除卡片与章节的关联',
     parse: (raw) => cardLinkPairSchema.parse(raw),
     handle: (input) => service.unlink(input.cardId, input.chapterId)
+  })
+
+  /* ---- 大纲节点侧（第三期） ---- */
+
+  registerHandler(IpcChannel.CardsListNodeLinks, {
+    label: '查询卡片关联的大纲节点',
+    parse: (raw) => cardLinkCardSchema.parse(raw),
+    handle: (input) => service.listNodesByCard(input.cardId)
+  })
+
+  registerHandler(IpcChannel.CardsListByNode, {
+    label: '查询大纲节点关联的卡片',
+    parse: (raw) => cardLinkNodeSchema.parse(raw),
+    handle: (input) => service.listByNode(input.nodeId)
+  })
+
+  registerHandler(IpcChannel.CardsLinkNode, {
+    label: '把卡片关联到大纲节点',
+    parse: (raw) => cardLinkNodePairSchema.parse(raw),
+    handle: (input) => service.linkNode(input.cardId, input.nodeId)
+  })
+
+  registerHandler(IpcChannel.CardsUnlinkNode, {
+    label: '解除卡片与大纲节点的关联',
+    parse: (raw) => cardLinkNodePairSchema.parse(raw),
+    handle: (input) => service.unlinkNode(input.cardId, input.nodeId)
   })
 }

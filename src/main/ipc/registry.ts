@@ -87,7 +87,8 @@ export function registerAllIpcHandlers(config: AppConfig): void {
   const cardLinkService = new CardLinkService(
     cardLinkRepository,
     cardRepository,
-    chapterRepository
+    chapterRepository,
+    outlineRepository
   )
   const statsService = new StatsService(bookRepository, chapterRepository, sessionRepository)
   const searchService = new SearchService(searchRepository)

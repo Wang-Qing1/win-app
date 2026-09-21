@@ -1578,6 +1578,95 @@ html[data-theme='dark'] .editor-surface {
   line-height: 1.5;
 }
 
+/* ---------------- 查阅视图（大纲 / 角色 / 设定） ---------------- */
+
+/*
+ * 查阅视图会顶掉整组 Tabs，而不是再叠一层：右栏窄，两组控件同时在场
+ * 会把内容区挤到只剩几行。隐藏用 `display: none` 而不是不渲染 ——
+ * Tabs 里的面板带着滚动位置与选中态，卸载再挂回来会回到顶部。
+ *
+ * 选择器必须带上 `.inspector__panel`：上一段那条
+ * `.inspector__panel .ant-tabs { display:flex }` 是两个类的特异度，
+ * 单类的 `.inspector__tabs--hidden` 压不过它 —— 真踩过：Tabs 没藏住，
+ * 而查阅面板 flex-basis 是 0、高度为 0，内容溢出来画在 Tabs 上面，
+ * 界面上就是「纠错 / 角色卡片 / 校对」叠成一团。
+ */
+.inspector__panel .ant-tabs.inspector__tabs--hidden {
+  display: none;
+}
+
+.inspector__lookup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  flex: 1;
+}
+
+.inspector__lookup-head {
+  flex: 0 0 auto;
+}
+
+.inspector__lookup-title {
+  flex: 1;
+  font-size: 13px;
+}
+
+.lookup {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.lookup__list {
+  gap: 2px;
+}
+
+/* 一行一项，整行可点：列表里点空白处也该有反应，那是直觉 */
+.lookup__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lookup__row:hover {
+  background: var(--winbook-surface-soft);
+}
+
+.lookup__title {
+  font-size: 13px;
+}
+
+.lookup__meta,
+.lookup__empty {
+  font-size: 11px;
+}
+
+.lookup__tag {
+  margin-inline-end: 0;
+  align-self: flex-start;
+}
+
+.lookup__content {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.8;
+}
+
+.lookup__extra {
+  font-size: 12px;
+}
+
 /* ---------------- 问题列表 ---------------- */
 
 .issue-list {

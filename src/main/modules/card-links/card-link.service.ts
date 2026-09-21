@@ -1,9 +1,15 @@
-import type { CardChapterLink, ChapterCardRef } from '@shared/modules/card-links'
+import type {
+  CardChapterLink,
+  CardOutlineLink,
+  ChapterCardRef,
+  OutlineCardRef
+} from '@shared/modules/card-links'
 import { runInTransaction } from '../../db/connection'
 import { logger } from '../../core/logger'
 import { AppError } from '../../core/errors'
 import type { CardRepository } from '../cards/card.repository'
 import type { ChapterRepository } from '../chapters/chapter.repository'
+import type { OutlineRepository } from '../outline/outline.repository'
 import type { CardLinkRepository } from './card-link.repository'
 
 /**
@@ -20,7 +26,8 @@ export class CardLinkService {
   constructor(
     private readonly links: CardLinkRepository,
     private readonly cardRepository: CardRepository,
-    private readonly chapterRepository: ChapterRepository
+    private readonly chapterRepository: ChapterRepository,
+    private readonly outlineRepository: OutlineRepository
   ) {}
 
   /** 这张卡用在哪几章 */
@@ -71,6 +78,50 @@ export class CardLinkService {
   }
 
   /* ------------------------------------------------------------------ *
+   * 大纲节点侧（第三期）
+   *
+   * 同一条「两边同书」规则在这里同样成立，而且更容易踩到：
+   * 大纲节点永远属于某一本书，卡片却可能是通用的。
+   * ------------------------------------------------------------------ */
+
+  /** 这张卡挂在哪些节点上 */
+  listNodesByCard(cardId: number): CardOutlineLink[] {
+    this.assertCardExists(cardId)
+    return this.links.listNodesByCard(cardId)
+  }
+
+  /** 这个节点用到了哪几张卡 */
+  listByNode(nodeId: number): OutlineCardRef[] {
+    this.assertNodeExists(nodeId)
+    return this.links.listByNode(nodeId)
+  }
+
+  linkNode(cardId: number, nodeId: number): CardOutlineLink[] {
+    return runInTransaction(() => {
+      const card = this.assertCardExists(cardId)
+      const node = this.assertNodeExists(nodeId)
+      this.assertSameBook(card.bookId, node.book_id, card.title, node.title)
+
+      this.links.insertNode(cardId, nodeId, new Date().toISOString())
+      logger.info('卡片已关联大纲节点', { cardId, nodeId })
+
+      return this.links.listNodesByCard(cardId)
+    })
+  }
+
+  unlinkNode(cardId: number, nodeId: number): CardOutlineLink[] {
+    return runInTransaction(() => {
+      this.assertCardExists(cardId)
+      this.assertNodeExists(nodeId)
+
+      this.links.deleteNode(cardId, nodeId)
+      logger.info('卡片已解除大纲节点关联', { cardId, nodeId })
+
+      return this.links.listNodesByCard(cardId)
+    })
+  }
+
+  /* ------------------------------------------------------------------ *
    * 内部
    * ------------------------------------------------------------------ */
 
@@ -84,6 +135,12 @@ export class CardLinkService {
     const chapter = this.chapterRepository.findById(chapterId)
     if (!chapter) throw AppError.notFound(`章节不存在（ID: ${chapterId}）`)
     return chapter
+  }
+
+  private assertNodeExists(nodeId: number) {
+    const node = this.outlineRepository.findById(nodeId)
+    if (!node) throw AppError.notFound(`大纲节点不存在（ID: ${nodeId}）`)
+    return node
   }
 
   /**

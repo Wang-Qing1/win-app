@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CardChapterLink, ChapterCardRef } from '@shared/modules/card-links'
+import type {
+  CardChapterLink,
+  CardOutlineLink,
+  ChapterCardRef,
+  OutlineCardRef
+} from '@shared/modules/card-links'
 import { ApiError, getBridge, invoke } from '../../lib/api-client'
 import { queryKeys } from '../../lib/query-keys'
 
@@ -61,5 +66,58 @@ export function useUnlinkCardChapter() {
     mutationFn: (input) => invoke(() => getBridge().cards.unlinkChapter(input)),
     onSuccess: (links, variables) =>
       syncBothSides(queryClient, variables.cardId, variables.chapterId, links)
+  })
+}
+
+/* ------------------------------------------------------------------ *
+ * 大纲节点侧（第三期）
+ *
+ * 与章节侧一一对应，缓存同步的策略也照搬：本侧写入返回值，
+ * 另一侧失效重取。
+ * ------------------------------------------------------------------ */
+
+/** 一张卡片挂在哪些大纲节点上 */
+export function useCardNodeLinks(cardId: number | null) {
+  return useQuery<CardOutlineLink[], ApiError>({
+    queryKey: queryKeys.cardLinks.nodesByCard(cardId),
+    enabled: cardId !== null,
+    queryFn: () => invoke(() => getBridge().cards.listNodeLinks({ cardId: cardId as number }))
+  })
+}
+
+/** 某个大纲节点用到了哪些卡片 */
+export function useOutlineNodeCards(nodeId: number | null) {
+  return useQuery<OutlineCardRef[], ApiError>({
+    queryKey: queryKeys.cardLinks.byNode(nodeId),
+    enabled: nodeId !== null,
+    queryFn: () => invoke(() => getBridge().cards.listByNode({ nodeId: nodeId as number }))
+  })
+}
+
+function syncNodeBothSides(
+  client: ReturnType<typeof useQueryClient>,
+  cardId: number,
+  nodeId: number,
+  links: CardOutlineLink[]
+): void {
+  client.setQueryData(queryKeys.cardLinks.nodesByCard(cardId), links)
+  void client.invalidateQueries({ queryKey: queryKeys.cardLinks.byNode(nodeId) })
+}
+
+export function useLinkCardNode() {
+  const queryClient = useQueryClient()
+  return useMutation<CardOutlineLink[], ApiError, { cardId: number; nodeId: number }>({
+    mutationFn: (input) => invoke(() => getBridge().cards.linkNode(input)),
+    onSuccess: (links, variables) =>
+      syncNodeBothSides(queryClient, variables.cardId, variables.nodeId, links)
+  })
+}
+
+export function useUnlinkCardNode() {
+  const queryClient = useQueryClient()
+  return useMutation<CardOutlineLink[], ApiError, { cardId: number; nodeId: number }>({
+    mutationFn: (input) => invoke(() => getBridge().cards.unlinkNode(input)),
+    onSuccess: (links, variables) =>
+      syncNodeBothSides(queryClient, variables.cardId, variables.nodeId, links)
   })
 }
