@@ -6,6 +6,7 @@ import type {
   CardListQuery,
   CardListResult,
   CardRemovalResult,
+  CardTimelineOrderInput,
   CardUpdateInput
 } from '@shared/modules/cards'
 import { ApiError, getBridge, invoke } from '../../lib/api-client'
@@ -57,6 +58,21 @@ export function useRemoveCard() {
   const queryClient = useQueryClient()
   return useMutation<CardRemovalResult, ApiError, CardIdInput>({
     mutationFn: (input) => invoke(() => getBridge().cards.remove(input)),
+    onSuccess: () => invalidateCards(queryClient)
+  })
+}
+
+/**
+ * 设定卡时间线重排。
+ *
+ * 与章节的 `reorder` 同样的取舍：不做乐观更新。序号由**整组顺序**决定，
+ * 前端本地换一下位置虽然能立刻显示，但服务端会因为「卡片不属于这本书」
+ * 「类别不一致」之类的理由拒绝 —— 那时界面已经先动过了，回滚比等待更晃眼。
+ */
+export function useSetTimelineOrder() {
+  const queryClient = useQueryClient()
+  return useMutation<Card[], ApiError, CardTimelineOrderInput>({
+    mutationFn: (input) => invoke(() => getBridge().cards.setTimelineOrder(input)),
     onSuccess: () => invalidateCards(queryClient)
   })
 }

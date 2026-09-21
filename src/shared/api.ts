@@ -28,6 +28,7 @@ import type {
   CardListResult,
   CardRemovalResult,
   CardCreateInput,
+  CardTimelineOrderInput,
   CardUpdateInput
 } from './modules/cards'
 import type {
@@ -207,6 +208,16 @@ export interface WinbookApi {
     listLinks: (input: CardLinkCardInput) => Promise<IpcResponse<CardChapterLink[]>>
     /** 这一章用到了哪几张卡 */
     listByChapter: (input: CardLinkChapterInput) => Promise<IpcResponse<ChapterCardRef[]>>
+
+    /**
+     * 设定卡时间线重排。提交**整组**卡片的新顺序，返回重排后的卡片。
+     *
+     * 一次提交整组而不是「把 A 移到 B 后面」：后者依赖服务层当下的顺序，
+     * 两端不一致时移动会错位；整组提交是幂等的。
+     */
+    setTimelineOrder: (
+      input: CardTimelineOrderInput
+    ) => Promise<IpcResponse<Card[]>>
 
     /* ---- 大纲节点侧（第三期）---- */
 

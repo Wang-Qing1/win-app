@@ -65,7 +65,8 @@ export function isSettingCategory(value: unknown): value is SettingCategory {
 export interface CardExtraField {
   readonly key: string
   readonly label: string
-  readonly placeholder: string
+  /** 隐藏字段没有输入框，也就不需要占位文案（见 hidden 的说明） */
+  readonly placeholder?: string
   /**
    * 取值被限定在这几个选项里时，界面渲染成下拉而不是输入框。
    *
@@ -74,6 +75,17 @@ export interface CardExtraField {
    * 「地理位置」「地名」三种说法，聚合就废了。
    */
   readonly options?: readonly string[]
+  /**
+   * 只存值、不在表单里渲染。
+   *
+   * 给「界面不该让人手填、但数据要落在这张卡上」的字段用 —— 目前只有
+   * 设定卡的时间线排序号：它由时间线视图的上下移动写入，手填一个数字
+   * 既没有意义（作者关心的是先后，不是具体数值），也很容易填成重复值。
+   *
+   * 仍然登记在 CARD_EXTRA_FIELDS 里而不是绕过它：`normalizeExtra` 只保留
+   * 这张表里登记过的键，绕过它的话，排序号会在下一次保存卡片时被丢掉。
+   */
+  readonly hidden?: boolean
 }
 
 /**
@@ -100,9 +112,23 @@ export const CARD_EXTRA_FIELDS = {
     { key: 'usage', label: '打算用在哪儿', placeholder: '如：第三卷的转折点' }
   ],
   setting: [
-    { key: 'category', label: '设定类别', placeholder: '这条设定属于哪一类', options: SETTING_CATEGORIES }
+    { key: 'category', label: '设定类别', placeholder: '这条设定属于哪一类', options: SETTING_CATEGORIES },
+    /*
+     * 时点是**自由文本**而不是日期：虚构世界的计时方式五花八门
+     * （星历 2103 年、霜降之月、开战前三天），强行套 ISO 日期只会让人
+     * 把「星历 2103」写成 2103-01-01 然后自己都不信。排序另有一个隐藏的
+     * 序号字段 —— 时点是给人看的，先后是给机器排的，两者分开。
+     */
+    { key: 'timePoint', label: '时点', placeholder: '如：星历 2103 年 / 开战前三天' },
+    { key: 'order', label: '时间线序号', hidden: true }
   ]
 } as const satisfies Record<CardType, readonly CardExtraField[]>
+
+/** 设定卡「时点」的键。时间线视图与冒烟断言共用，避免各处写裸字符串 */
+export const SETTING_TIME_POINT_KEY = 'timePoint'
+
+/** 设定卡「时间线序号」的键。由时间线视图的上下移动写入，不出现在表单里 */
+export const SETTING_ORDER_KEY = 'order'
 
 /** 所有类型专属字段的键。用于把 extra 的键收在一个联合类型里 */
 export type CardExtraKey = (typeof CARD_EXTRA_FIELDS)[CardType][number]['key']
@@ -488,6 +514,62 @@ export function normalizeCardListQuery(input: CardListQueryInput): CardListQuery
     pageSize: input.pageSize,
     sortBy: normalizeCardSortField(input.sortBy),
     sortOrder: normalizeCardSortOrder(input.sortOrder)
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 设定卡时间线（第三期第 2 件）
+ * ------------------------------------------------------------------ */
+
+export const TIMELINE_LIMITS = {
+  /** 一次能重排多少张。设定卡的数量级是几十条，200 是宽容的上限不是预期值 */
+  items: 200
+} as const
+
+/**
+ * 设定卡在时间线上的序号。
+ *
+ * 没排过序（空串 / 非法值）返回 **null 而不是 0**：0 是一个合法序号
+ * （排在最早），「还没排过」与「排在第一位」必须分得开 —— 否则新建的
+ * 设定卡会一出现就插到时间线最前面，把作者排好的顺序挤乱。
+ */
+export function timelineOrderOf(card: Card): number | null {
+  const raw = card.extra[SETTING_ORDER_KEY]
+  if (typeof raw !== 'string' || raw.trim().length === 0) return null
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : null
+}
+
+/**
+ * 时间线重排。
+ *
+ * 一次提交**整组顺序**而不是「把 A 移到 B 后面」：后者的语义要依赖
+ * 服务层当前的排序状态，客户端与服务端的顺序一旦不一致（比如另一个窗口
+ * 刚改过），移动的结果就会错位；而整组提交是幂等的 —— 同样的顺序
+ * 提交两次结果相同，中间夹杂别的改动也不会累积偏差。
+ */
+export const cardTimelineOrderSchema = z.object({
+  bookId: z.number().int().positive('书籍 ID 非法').nullable().default(null),
+  category: z.union([z.string().trim(), z.null()]).default(''),
+  orderedIds: z
+    .array(z.number().int().positive('卡片 ID 非法'))
+    .max(TIMELINE_LIMITS.items, `一次最多排 ${TIMELINE_LIMITS.items} 张设定卡`)
+})
+
+export type CardTimelineOrderRawInput = z.infer<typeof cardTimelineOrderSchema>
+
+export interface CardTimelineOrderInput {
+  bookId: number | null
+  /** null 表示不校验类别（时间线视图可能横跨各类别） */
+  category: SettingCategory | null
+  orderedIds: number[]
+}
+
+export function normalizeTimelineOrder(input: CardTimelineOrderRawInput): CardTimelineOrderInput {
+  return {
+    bookId: input.bookId,
+    category: isSettingCategory(input.category) ? input.category : null,
+    orderedIds: input.orderedIds
   }
 }
 

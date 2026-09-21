@@ -2296,6 +2296,135 @@ html[data-theme='dark'] .rail__badge {
   margin-left: 2px;
 }
 
+/*
+ * 类别计数是可点的入口（点一下把 ?category= 写进地址栏）。
+ * 做成裸按钮：它躺在 summary 那一行的文字流里，加了边框就变成一排按钮，
+ * 而这一行的语义是「共几张、各类多少」，不是一排操作。
+ */
+.cards-summary__entry {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.cards-summary__entry:hover {
+  color: var(--winbook-text);
+  text-decoration: underline;
+}
+
+/* ---------------- 设定卡时间线 ---------------- */
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 6px 4px 6px 6px;
+}
+
+.timeline__hint {
+  padding: 6px 8px 10px;
+  font-size: 11px;
+}
+
+/*
+ * 一行 = 一个时点。左侧那条竖线由每一行的 marker 自己画一段，
+ * 于是「最后一行不拖一条多余的尾巴」不需要额外的 :last-child 规则。
+ */
+.timeline__item {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.timeline__marker {
+  position: relative;
+  flex: 0 0 14px;
+  display: flex;
+  justify-content: center;
+}
+
+.timeline__marker::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--winbook-border);
+}
+
+.timeline__item:first-of-type .timeline__marker::before {
+  top: 14px;
+}
+
+.timeline__item:last-of-type .timeline__marker::before {
+  bottom: calc(100% - 14px);
+}
+
+.timeline__dot {
+  position: relative;
+  margin-top: 10px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--winbook-surface);
+  border: 2px solid var(--winbook-accent, var(--winbook-text-soft));
+}
+
+.timeline__item--active .timeline__dot {
+  background: var(--winbook-accent, var(--winbook-text));
+}
+
+/*
+ * 内容整块可点，但不能是 flex 里的裸按钮：按钮默认不撑满宽度，
+ * 于是「点这一行右侧的空白处没反应」—— 而那正是最顺手的点击区域。
+ */
+.timeline__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.timeline__body:hover {
+  background: var(--winbook-surface-soft);
+}
+
+.timeline__item--active .timeline__body {
+  background: var(--winbook-surface-soft);
+}
+
+.timeline__time {
+  font-size: 11px;
+  color: var(--winbook-text-soft);
+}
+
+.timeline__title {
+  font-size: 13px;
+}
+
+.timeline__subtitle {
+  font-size: 11px;
+}
+
+.timeline__actions {
+  flex: 0 0 auto;
+  align-items: center;
+}
+
 .cards-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 420px;

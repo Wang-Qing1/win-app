@@ -8,6 +8,7 @@ import {
   type CardListQuery,
   type CardListResult,
   type CardRemovalResult,
+  type CardTimelineOrderInput,
   type CardType,
   type CardUpdateInput
 } from '@shared/modules/cards'
@@ -173,6 +174,63 @@ export class CardService {
 
       logger.info('卡片已复制', { sourceId: id, id: id2, title })
       return created
+    })
+  }
+
+  /**
+   * 设定卡时间线重排。
+   *
+   * 三条硬规则，缺一条都会让时间线变成一个说谎的视图：
+   *   1. **只能是设定卡。** 人物 / 物品卡没有时点，混进来会变成一排空白；
+   *   2. **必须同一本书。** 跨书的时间线在故事上不存在；
+   *   3. **同一组里类别必须一致**（给了 category 时）。「地点」与「时间线」
+   *      混排看着像「这些事按先后发生」，其实一半是静态设定。
+   *
+   * 返回重排后的完整卡片：调用方直接拿它替换本地列表，不必再查一次。
+   */
+  setTimelineOrder(input: CardTimelineOrderInput): Card[] {
+    return runInTransaction(() => {
+      this.assertBookExists(input.bookId)
+
+      // 重复 id 会让「第 N 位」这个语义自相矛盾：同一张卡既在第 2 位
+      // 又在第 5 位，写进去的序号取决于循环顺序，界面上则表现为
+      // 「有一行消失了」—— 那个坑排查起来非常费劲
+      if (new Set(input.orderedIds).size !== input.orderedIds.length) {
+        throw AppError.validation('排序里出现了同一张卡片，请刷新后重试')
+      }
+
+      const cards = input.orderedIds.map((id) => {
+        const card = this.repository.findById(id)
+        if (!card) {
+          throw AppError.notFound(`卡片不存在（ID: ${id}）`)
+        }
+        if (card.cardType !== 'setting') {
+          throw AppError.validation(`「${card.title}」不是设定卡，排不进时间线`)
+        }
+        // 用 IS 语义比较而不是 ===：两边都可能是 null（通用设定卡）
+        if (card.bookId !== input.bookId) {
+          throw AppError.validation(
+            `「${card.title}」不属于这本书，不能跟这本书的设定排在同一条时间线上`
+          )
+        }
+        if (input.category !== null && card.extra.category !== input.category) {
+          throw AppError.validation(
+            `「${card.title}」的类别是${card.extra.category || '（未分类）'}，` +
+              `排不进「${input.category}」这一组`
+          )
+        }
+        return card
+      })
+
+      this.repository.setTimelineOrder(cards.map((card, index) => ({ id: card.id, order: index })))
+
+      return cards.map((card) => {
+        const saved = this.repository.findById(card.id)
+        if (!saved) {
+          throw AppError.internal(`时间线重排后无法回读卡片（ID: ${card.id}）`)
+        }
+        return saved
+      })
     })
   }
 

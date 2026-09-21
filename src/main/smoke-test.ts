@@ -301,6 +301,13 @@ export interface ShowcaseTargets {
     extraKeys: string
     /** 设定卡的类别；非设定卡为空串 */
     category: string
+    /** 设定卡的时点（第三期）。没填为空串 */
+    timePoint: string
+    /**
+     * 设定卡的时间线序号（第三期）。**空串与 '0' 含义不同**：
+     * 空串是「还没排过」，'0' 是「排在最前」。
+     */
+    order: string
   } | null
   /** 删掉一张卡片。验证用的卡片建完就删，展示数据要恢复原样 */
   removeCard: (id: number) => void
@@ -312,7 +319,12 @@ export interface ShowcaseTargets {
    * 排查时就分不清是筛选错了还是新建错了。
    * 调用方负责用 removeCard 删掉。
    */
-  seedSettingCard: (title: string, category: string) => number
+  /**
+   * 同上，`timePoint` 用于时间线视图（第三期）：时点是自由文本，
+   * 也走主进程写，理由与上面一致 —— 要验的是「视图排得对不对」，
+   * 不是「界面能不能把字打进输入框」。
+   */
+  seedSettingCard: (title: string, category: string, timePoint?: string) => number
   /** 这张卡关联到哪几章（章节 id）。关联是主进程的一张表，界面说了不算 */
   linksOfCard: (cardId: number) => number[]
   /** 这一章关联到哪几张卡（卡片 id） */
@@ -1575,11 +1587,12 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
       [
         '设定卡类别枚举',
         cardSetting.cardType === 'setting' &&
-          settingExtraKeys === 'category' &&
+          // 第三期第 2 件起设定卡多了时点与时间线序号，键集随之变成三个
+          settingExtraKeys === 'category,order,timePoint' &&
           cardSetting.extra.category === '势力' &&
           badSettingCategory === '',
         cardSetting.extra.category === '势力' && badSettingCategory === ''
-          ? `设定卡「${cardSetting.title}」落库为 category=势力（extra 恰好 ${settingExtraKeys} 一个键）；类别写成「地理位置」被收敛为空串 —— 拼错的类别不会悄悄混进同一组`
+          ? `设定卡「${cardSetting.title}」落库为 category=势力（extra 恰好 ${settingExtraKeys} 三个键）；类别写成「地理位置」被收敛为空串 —— 拼错的类别不会悄悄混进同一组`
           : `cardType=${cardSetting.cardType}，extra 键「${settingExtraKeys}」，category=「${cardSetting.extra.category}」，非法类别读回「${badSettingCategory}」（应为空）`
       ],
       [
@@ -2023,13 +2036,15 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
                 title: found.title,
                 cardType: found.cardType,
                 extraKeys: Object.keys(found.extra).sort().join(','),
-                category: found.extra.category ?? ''
+                category: found.extra.category ?? '',
+                timePoint: found.extra.timePoint ?? '',
+                order: found.extra.order ?? ''
               }
             },
             removeCard: (id) => {
               cardService.remove(id)
             },
-            seedSettingCard: (title, category) =>
+            seedSettingCard: (title, category, timePoint = '') =>
               cardService.create({
                 bookId: showcaseBookId as number,
                 cardType: 'setting',
@@ -2037,7 +2052,7 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
                 subtitle: '',
                 content: '',
                 tags: [],
-                extra: { category }
+                extra: { category, timePoint }
               }).id,
             // 两个方向都直接从服务层读：界面上的行数对不对是一回事，
             // 库里到底有没有这条关联是另一回事，只有后者能证明功能真的做了
@@ -2181,6 +2196,12 @@ export async function runRendererSmokeChecks(
     results.push(await checkCardNodeLink(window, showcase))
     results.push(await checkSettingCard(window, showcase))
     results.push(await checkSettingCategoryFilter(window, showcase))
+    /*
+     * 时间线排在类别筛选之后：它同样要造几张「时间线」设定卡，
+     * 而类别筛选那一项断言的是**总数**（时间线 2 / 势力 1），
+     * 多出三张会把它打成红的。
+     */
+    results.push(await checkSettingTimeline(window, showcase))
     results.push(await checkCardChapterLink(window, showcase))
     /*
      * 「正文自动保存往返」同样排最后：它往正文里真的打进一段字，
@@ -6429,8 +6450,15 @@ async function checkSettingCard(
       if (created.cardType !== 'setting') {
         problems.push(`落库类型是 ${created.cardType}，应为 setting`)
       }
-      if (created.extraKeys !== 'category') {
-        problems.push(`extra 的键是「${created.extraKeys}」，应当恰好是 category`)
+      /*
+       * 2026-09-21 起设定卡多了「时点」与「时间线序号」两个字段（第三期
+       * 第 2 件），所以完整的键集是这三个。写死在这里而不是「包含 category」
+       * 就够了：多出一个键往往意味着别的类型切过来时没被清干净。
+       */
+      if (created.extraKeys !== 'category,order,timePoint') {
+        problems.push(
+          `extra 的键是「${created.extraKeys}」，应当恰好是 category,order,timePoint`
+        )
       }
       if (created.category !== '时间线') {
         problems.push(`类别存成了「${created.category}」，应为「时间线」`)
@@ -6463,7 +6491,7 @@ async function checkSettingCard(
       ok: problems.length === 0,
       detail:
         problems.length === 0
-          ? `竖栏「设定」直达这本书的设定卡（列表 ${snap.rows} 行全是设定卡）→ 新建一张并把类别选成「时间线」，回库核对 cardType=setting、extra 恰好 category=时间线 → 删掉这张验证卡 → 点回程票回到同一章`
+          ? `竖栏「设定」直达这本书的设定卡（列表 ${snap.rows} 行全是设定卡）→ 新建一张并把类别选成「时间线」，回库核对 cardType=setting、extra 恰好 category,order,timePoint 且 category=时间线 → 删掉这张验证卡 → 点回程票回到同一章`
           : problems.join('；')
     }
   } catch (error) {
@@ -6654,6 +6682,19 @@ async function checkSettingCategoryFilter(
      * 是造数据之前的计数 —— 那会把「缓存没换」报成「筛选算错了」。
      */
     await gotoHash(window, `#/cards?type=setting&book=${ctx.bookId}&category=时间线`)
+
+    /*
+     * 类别是「时间线」时卡片库默认就给**时间线视图**（第三期第 2 件），
+     * 而这一项要读的是列表行上的类别 —— 时间线视图里没有 cards-list。
+     * 先切回列表，顺带把那枚切换按钮也验了。
+     */
+    if (!(await waitForTestId(window, 'cards-view-list', 5000))) {
+      return { name, ok: false, detail: '卡片库里没有「列表 / 时间线」视图切换' }
+    }
+    if (!(await clickTestId(window, 'cards-view-list'))) {
+      return { name, ok: false, detail: '点不到「列表」视图切换按钮' }
+    }
+
     const snap = await waitForCards(window)
     if (!snap.mounted || !snap.hasList) {
       return { name, ok: false, detail: '卡片库没有渲染出来，无法验证类别筛选' }
@@ -6695,7 +6736,10 @@ async function checkSettingCategoryFilter(
     if (!(await pickSelectOption(window, 'cards-category-select', '势力'))) {
       problems.push('类别下拉里选不到「势力」')
     } else {
-      await waitForCardRowCount(window, 1)
+      const only = await waitForCardRowCount(window, 1)
+      if (only.length !== 1) {
+        problems.push(`切到「势力」应剩 1 行，实得 ${only.length} 行`)
+      }
       const after = await readCategoryCounts(window)
       if (after['时间线'] !== counts['时间线'] || after['势力'] !== counts['势力']) {
         problems.push(
@@ -6708,6 +6752,12 @@ async function checkSettingCategoryFilter(
     if (!(await pickSelectOption(window, 'cards-category-select', '时间线'))) {
       problems.push('类别下拉里选不到「时间线」')
     } else {
+      /*
+       * 类别选回「时间线」会**自动切到时间线视图**（第三期第 2 件），
+       * 那时列表行是不存在的。切回列表再读行数 ——
+       * 这一项验的是「筛得对不对」，不是视图切换。
+       */
+      await clickTestId(window, 'cards-view-list')
       const back = await waitForCardRowCount(window, 2)
       if (back.length !== 2) {
         problems.push(`切回「时间线」应剩 2 行，实得 ${back.length} 行`)
@@ -6735,6 +6785,181 @@ async function checkSettingCategoryFilter(
   } finally {
     // 造的卡片一定删掉：后面的检查还要看卡片总数
     for (const id of seeded) ctx.removeCard(id)
+  }
+}
+
+/**
+ * 设定卡时间线（第三期第 2 件）。
+ *
+ * 押的是三个「界面排出来了、顺序却没真的排」的失败点：
+ *
+ *   1. **上下移动只动了界面。** 本地 state 换一下位置是最容易写出来的实现，
+ *      而它看起来完全正常 —— 只有回库读 extra 里的序号才看得出没落库。
+ *   2. **「没排过序号」被当成 0。** 那样新建的卡会一出现就插到最前面，
+ *      把作者刚排好的顺序挤乱。这里用「没排过的按建卡先后跟在后面」
+ *      这条规则挡住，并断言建卡顺序。
+ *   3. **时点没渲染。** 时间线的全部意义就是那一串时点，行上看不到
+ *      就退化成一个普通列表 —— 所以逐行读 data-time 对账。
+ */
+async function checkSettingTimeline(
+  window: BrowserWindow,
+  ctx: ShowcaseTargets
+): Promise<StepResult> {
+  const name = '设定卡时间线'
+  const problems: string[] = []
+  const seeded: number[] = []
+
+  /** 时间线当前的行：卡片 id、所在位次、显示的时点 */
+  const readRows = async (): Promise<
+    Array<{ cardId: number; order: number; time: string }>
+  > => {
+    const raw = (await window.webContents.executeJavaScript(
+      `JSON.stringify(Array.prototype.map.call(
+        document.querySelectorAll('[data-testid="timeline-item"]'),
+        (el) => ({
+          cardId: Number(el.getAttribute('data-card-id')),
+          order: Number(el.getAttribute('data-order')),
+          time: el.getAttribute('data-time') || ''
+        })
+      ))`
+    )) as string
+    return JSON.parse(raw) as Array<{ cardId: number; order: number; time: string }>
+  }
+
+  /** 点某一行内部的按钮（上下移动是按卡片定位的，不能只按 testid 点第一个） */
+  const clickIn = async (selector: string): Promise<boolean> =>
+    (await window.webContents.executeJavaScript(
+      `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)})
+        if (el === null || el.disabled === true) return false
+        el.click()
+        return true
+      })()`
+    )) as boolean
+
+  try {
+    const times = ['星历 2103 年', '星历 2104 年', '开战前三天']
+    const titles = times.map((_, index) => `冒烟-时序${index}-${STAMP}`)
+    for (let index = 0; index < titles.length; index += 1) {
+      seeded.push(ctx.seedSettingCard(titles[index], '时间线', times[index]))
+    }
+
+    /*
+     * 与类别筛选那一项同样的理由：换一个**没被查过**的 queryKey。
+     * 全局 staleTime 是 15 秒，这几张卡是主进程直接建进去的，
+     * 命中旧缓存的话读到的会是造数据之前的列表。
+     */
+    await reloadAt(window, `#/cards?type=setting&book=${ctx.bookId}&category=时间线`)
+
+    if (!(await waitForTestId(window, 'setting-timeline', 8000))) {
+      return { name, ok: false, detail: '类别是「时间线」时没有直接给出时间线视图' }
+    }
+
+    // 等三行都渲染出来：等目标状态，而不是读一次
+    const deadline = Date.now() + 6000
+    let rows = await readRows()
+    while (
+      Date.now() < deadline &&
+      !seeded.every((id) => rows.some((row) => row.cardId === id))
+    ) {
+      await delay(120)
+      rows = await readRows()
+    }
+
+    const at = (list: typeof rows, cardId: number): number =>
+      list.findIndex((row) => row.cardId === cardId)
+    const positions = seeded.map((id) => at(rows, id))
+
+    if (positions.some((index) => index < 0)) {
+      problems.push(
+        `时间线里没有找齐这三张验证卡（实测 ${rows.map((row) => row.cardId).join(',') || '空'}）`
+      )
+    } else if (!(positions[0] < positions[1] && positions[1] < positions[2])) {
+      problems.push(
+        `没排过序号时应当按建卡先后排列，实测位次 ${positions.map((i) => i + 1).join(' → ')}`
+      )
+    }
+
+    const firstRow = rows.find((row) => row.cardId === seeded[0])
+    if (firstRow !== undefined && firstRow.time !== times[0]) {
+      problems.push(
+        `时间线行上没有显示时点（期望「${times[0]}」，实测「${firstRow.time || '空'}」）`
+      )
+    }
+
+    /* ---------- 下移一位：界面要动，库里也要动 ---------- */
+    if (
+      !(await clickIn(
+        `[data-testid="timeline-item"][data-card-id="${seeded[0]}"] ` +
+          '[data-testid="timeline-move-down"]'
+      ))
+    ) {
+      problems.push('点不到时间线第一行的「下移」按钮')
+    } else {
+      const moveDeadline = Date.now() + 6000
+      let after = await readRows()
+      while (Date.now() < moveDeadline) {
+        after = await readRows()
+        const a = at(after, seeded[0])
+        const b = at(after, seeded[1])
+        if (a >= 0 && b >= 0 && b < a) break
+        await delay(120)
+      }
+
+      const a = at(after, seeded[0])
+      const b = at(after, seeded[1])
+      if (!(b >= 0 && a >= 0 && b < a)) {
+        problems.push(
+          `点了「下移」之后界面顺序没变（#${seeded[0]} 在第 ${a + 1} 位，` +
+            `#${seeded[1]} 在第 ${b + 1} 位）`
+        )
+      }
+
+      /*
+       * 回库对账 —— 这是这一项唯一能证明「排序真的存下来了」的判据。
+       * 第三张卡也必须有序号：提交的是**整组顺序**，只改两张的话
+       * 第三张会留在「没排过」的状态，下次加卡就会乱。
+       */
+      const orderOf = (index: number): string => ctx.lookupCard(titles[index])?.order ?? ''
+      const [o0, o1, o2] = [orderOf(0), orderOf(1), orderOf(2)]
+      if (o0 !== '1' || o1 !== '0' || o2 !== '2') {
+        problems.push(
+          `下移之后库里的序号不对（「${titles[0]}」=${o0 || '空'}、` +
+            `「${titles[1]}」=${o1 || '空'}、「${titles[2]}」=${o2 || '空'}，期望 1 / 0 / 2）`
+        )
+      }
+    }
+
+    /* ---------- 类别计数那一格是入口：点它要把类别写进地址栏 ---------- */
+    if (!(await clickTestId(window, 'cards-category-entry-时间线'))) {
+      problems.push('点不到类别计数上的「时间线」入口')
+    } else {
+      const arrived = await waitForHash(window, (hash) => hash.includes('category='), 4000)
+      if (!arrived.includes('category=')) {
+        problems.push(`点类别计数之后地址栏没有带上类别（${arrived || '(空)'}）`)
+      }
+    }
+
+    return {
+      name,
+      ok: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? `三张带时点的「时间线」设定卡 → 时间线视图按建卡先后给出 ${rows.length} 行并逐行显示时点；` +
+            `点第一行「下移」→ 界面换序且库里序号跟着变成 0/1/2（整组提交，第三张也编号）；` +
+            `点类别计数那一格 → 地址栏带上 ?category=`
+          : problems.join('；')
+    }
+  } catch (error) {
+    return { name, ok: false, detail: messageOf(error) }
+  } finally {
+    for (const id of seeded) ctx.removeCard(id)
+    /*
+     * 与「卡片与大纲节点关联」那个坑是同一个道理的另一面：删完之后
+     * 整页重载，把缓存里这几张已删的卡冲掉 —— 否则下一个检查会拿着
+     * 它们的 id 去取数，撞出 NOT_FOUND。
+     */
+    await reloadAt(window, '#/')
   }
 }
 

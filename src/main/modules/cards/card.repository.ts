@@ -405,6 +405,34 @@ export class CardRepository {
     return result.changes > 0
   }
 
+  /**
+   * 时间线重排：只改 extra 里的序号键，不动其它字段。
+   *
+   * 刻意**不更新 updated_at**：序号是「排列方式」而不是卡片内容，
+   * 而列表默认按 updated_at 倒序 —— 改了它，调一次序就把这一组卡片
+   * 全顶到列表最前面，看上去像「这些卡刚被改过」。
+   *
+   * `json_valid` 那层 CASE 不是多余的防御：extra 只是一列 TEXT，
+   * 数据库不保证它是合法 JSON，而 json_set 遇到坏 JSON 会整条语句报错，
+   * 让「调序」这个动作整体失败。坏行就回退成只装序号的对象 ——
+   * 那张卡的其它专属字段本来也已经读不出来了（toCard 会补成空串）。
+   */
+  setTimelineOrder(entries: ReadonlyArray<{ id: number; order: number }>): void {
+    const statement = this.db.prepare(
+      `UPDATE cards
+          SET extra = CASE WHEN json_valid(extra)
+                           THEN json_set(extra, '$.order', @order)
+                           ELSE json_object('order', @order) END
+        WHERE id = @id`
+    )
+
+    // 序号存成字符串：extra 的其它字段都是字符串，混进一个数字会让
+    // 「读 extra」这一侧多出一条 typeof 分支
+    for (const entry of entries) {
+      statement.run({ id: entry.id, order: String(entry.order) })
+    }
+  }
+
   deleteById(id: number): boolean {
     const result = this.db.prepare('DELETE FROM cards WHERE id = ?').run(id)
     return result.changes > 0

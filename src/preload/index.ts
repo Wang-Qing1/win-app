@@ -15,8 +15,9 @@ import { IpcChannel } from '@shared/ipc-channels'
  * 7：新增数据库备份（backup.database）。
  * 8：新增卡片 ↔ 章节关联（cards.linkChapter / unlinkChapter / listLinks / listByChapter）。
  * 9：新增卡片 ↔ 大纲节点关联（cards.linkNode / unlinkNode / listNodeLinks / listByNode）。
+ * 10：新增设定卡时间线重排（cards.setTimelineOrder）。
  */
-const BRIDGE_VERSION = '9'
+const BRIDGE_VERSION = '10'
 
 /**
  * preload 是主进程与渲染进程之间唯一的通道。
@@ -86,7 +87,8 @@ const api: WinbookApi = {
     linkNode: (input) => ipcRenderer.invoke(IpcChannel.CardsLinkNode, input),
     unlinkNode: (input) => ipcRenderer.invoke(IpcChannel.CardsUnlinkNode, input),
     listNodeLinks: (input) => ipcRenderer.invoke(IpcChannel.CardsListNodeLinks, input),
-    listByNode: (input) => ipcRenderer.invoke(IpcChannel.CardsListByNode, input)
+    listByNode: (input) => ipcRenderer.invoke(IpcChannel.CardsListByNode, input),
+    setTimelineOrder: (input) => ipcRenderer.invoke(IpcChannel.CardsSetTimelineOrder, input)
   },
 
   search: {

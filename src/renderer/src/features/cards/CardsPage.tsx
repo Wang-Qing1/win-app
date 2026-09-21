@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Empty, Flex, Input, Pagination, Select, Skeleton, Tag, Tooltip, Typography } from 'antd'
+import { Button, Empty, Flex, Input, Pagination, Select, Skeleton, Tag, Tooltip, Typography } from 'antd'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router'
 import { DEFAULT_BOOK_QUERY } from '@shared/modules/books'
@@ -18,6 +18,7 @@ import {
   type CardType,
   type SettingCategory
 } from '@shared/modules/cards'
+import { SettingTimeline } from './SettingTimeline'
 import { ErrorAlert } from '../../components/ErrorAlert'
 import { IconButton } from '../../components/IconButton'
 import { PageHeader } from '../../components/PageHeader'
@@ -25,7 +26,14 @@ import { useToast } from '../../components/Toast'
 import { useBookList } from '../books/use-books'
 import { CARD_TYPE_COLORS } from './card-meta'
 import { CardEditorPanel, emptyCardDraft, type CardDraft } from './CardEditorPanel'
-import { useCardList, useCreateCard, useDuplicateCard, useRemoveCard, useUpdateCard } from './use-cards'
+import {
+  useCardList,
+  useCreateCard,
+  useDuplicateCard,
+  useRemoveCard,
+  useSetTimelineOrder,
+  useUpdateCard
+} from './use-cards'
 
 const { Text } = Typography
 
@@ -60,6 +68,11 @@ export function CardsPage() {
   const [settingCategory, setSettingCategory] = useState<SettingCategory | null>(null)
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
+  /*
+   * 设定卡的两种读法：列表（按最近改动）/ 时间线（按故事先后）。
+   * 只有设定卡有「先后」这回事，所以开关只在类型=设定时出现。
+   */
+  const [viewMode, setViewMode] = useState<'list' | 'timeline'>('list')
 
   /** 选中与「新建草稿」互斥：新建时 card 为 null，看 draftSeed */
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -69,7 +82,7 @@ export function CardsPage() {
    * 深链：从全库检索跳过来
    * ------------------------------------------------------------------ */
 
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   /**
    * 目标卡片 id（`?cardId=NN`）。
@@ -196,8 +209,12 @@ export function CardsPage() {
   const updateCard = useUpdateCard()
   const removeCard = useRemoveCard()
   const duplicateCard = useDuplicateCard()
+  const setTimelineOrder = useSetTimelineOrder()
 
   const items = useMemo(() => list.data?.items ?? [], [list.data])
+
+  /** 时间线视图只在「看设定卡 + 选了时间线视图」时顶掉列表 */
+  const showTimeline = cardType === 'setting' && viewMode === 'timeline'
 
   /**
    * 默认选中第一张卡。
@@ -262,6 +279,48 @@ export function CardsPage() {
     setCardType(value === ALL_SCOPE ? null : (value as CardType))
     setSettingCategory(null)
     setPage(1)
+  }
+
+  /*
+   * 从「设定 / 时间线」这一路进来（深链或下拉）默认就给时间线视图。
+   *
+   * 类别是「时间线」却按最近改动排一行行卡片，等于把作者最想看的那个
+   * 顺序藏起来 —— 那正是这一格存在的理由。
+   */
+  useEffect(() => {
+    if (settingCategory === '时间线') setViewMode('timeline')
+  }, [settingCategory])
+
+  /**
+   * 类别计数做成入口，点一下就把类别写进地址栏（`?category=`）。
+   *
+   * 写成深链而不是只改本地状态：这条地址是可以被复制、刷新、从别处
+   * 拼出来的 —— 而「这本书的时间线」恰恰是写作时会反复回来看的一个视图。
+   * 数据层早就支持 `?category=`，缺的一直是这个入口。
+   */
+  const openCategory = (category: SettingCategory): void => {
+    setCardType('setting')
+    setSettingCategory(category)
+    setPage(1)
+    const next = new URLSearchParams(searchParams)
+    next.set('type', 'setting')
+    next.set('category', category)
+    setSearchParams(next, { replace: true })
+  }
+
+  /** 时间线视图里正看着的那本书。跨书没有「先后」可言，因此只有它能调序 */
+  const timelineBookId = scope === 'book' ? bookId : null
+
+  const handleReorder = async (orderedIds: number[]): Promise<void> => {
+    try {
+      await setTimelineOrder.mutateAsync({
+        bookId: timelineBookId,
+        category: settingCategory,
+        orderedIds
+      })
+    } catch (error) {
+      toast.notifyError(error instanceof Error ? error.message : '调整时间线顺序失败')
+    }
   }
 
   const handleStartNew = (): void => {
@@ -428,6 +487,31 @@ export function CardsPage() {
           />
         ) : null}
 
+        {/*
+         * 列表 / 时间线。只给设定卡：人物、物品、灵感没有「故事里发生在
+         * 什么时候」这一维，给它们一个时间线只会得到一排「未标时点」。
+         */}
+        {cardType === 'setting' ? (
+          <Flex gap={4} className="cards-view-toggle">
+            <Button
+              size="small"
+              type={viewMode === 'list' ? 'primary' : 'default'}
+              data-testid="cards-view-list"
+              onClick={() => setViewMode('list')}
+            >
+              列表
+            </Button>
+            <Button
+              size="small"
+              type={viewMode === 'timeline' ? 'primary' : 'default'}
+              data-testid="cards-view-timeline"
+              onClick={() => setViewMode('timeline')}
+            >
+              时间线
+            </Button>
+          </Flex>
+        ) : null}
+
         <Input
           data-testid="cards-keyword"
           className="cards-keyword"
@@ -463,7 +547,18 @@ export function CardsPage() {
           ))}
           {cardType === 'setting' && list.data !== undefined
             ? SETTING_CATEGORIES.map((category) => (
-                <span key={category}>
+                /*
+                 * 整格可点：这一行数字本来就长得像「四类设定各有多少」，
+                 * 而它最自然的下一个动作就是「看那一类」。做成按钮之后
+                 * 地址栏也跟着变，于是这个视图可以刷新、可以分享。
+                 */
+                <button
+                  key={category}
+                  type="button"
+                  className="cards-summary__entry"
+                  data-testid={`cards-category-entry-${category}`}
+                  onClick={() => openCategory(category)}
+                >
                   {category}{' '}
                   <strong
                     data-testid={`cards-category-count-${category}`}
@@ -471,7 +566,7 @@ export function CardsPage() {
                   >
                     {list.data?.settingCounts[category] ?? 0}
                   </strong>
-                </span>
+                </button>
               ))
             : null}
           {list.data === undefined || list.data.globalCount === 0 ? null : (
@@ -514,6 +609,18 @@ export function CardsPage() {
                 onClick={handleStartNew}
               />
             </Empty>
+          ) : showTimeline ? (
+            <SettingTimeline
+              cards={items}
+              selectedId={selectedId}
+              onSelect={(cardId) => {
+                setNewDraft(null)
+                setSelectedId(cardId)
+              }}
+              onReorder={(orderedIds) => void handleReorder(orderedIds)}
+              reorderDisabled={timelineBookId === null}
+              reorderHint="时间线要在某一本书里查看才能调顺序 —— 跨书的设定没有共同的先后。"
+            />
           ) : (
             <div className="cards-list" data-testid="cards-list">
               {items.map((card) => (

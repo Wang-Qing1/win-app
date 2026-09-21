@@ -55,6 +55,7 @@ export const IpcChannel = {
   CardsUnlinkNode: 'cards:unlink-node',
   CardsListLinks: 'cards:list-links',
   CardsListByChapter: 'cards:list-by-chapter',
+  CardsSetTimelineOrder: 'cards:set-timeline-order',
 
   /* ---------------- 全库检索 ---------------- */
   SearchQuery: 'search:query',

@@ -3,8 +3,10 @@ import {
   cardCreateSchema,
   cardIdSchema,
   cardListQuerySchema,
+  cardTimelineOrderSchema,
   cardUpdateSchema,
-  normalizeCardListQuery
+  normalizeCardListQuery,
+  normalizeTimelineOrder
 } from '@shared/modules/cards'
 import { registerHandler } from '../../core/ipc-handler'
 import type { CardService } from './card.service'
@@ -42,5 +44,11 @@ export function registerCardHandlers(service: CardService): void {
     label: '复制卡片',
     parse: (raw) => cardIdSchema.parse(raw),
     handle: (input) => service.duplicate(input.id)
+  })
+
+  registerHandler(IpcChannel.CardsSetTimelineOrder, {
+    label: '设定卡时间线重排',
+    parse: (raw) => normalizeTimelineOrder(cardTimelineOrderSchema.parse(raw)),
+    handle: (input) => service.setTimelineOrder(input)
   })
 }

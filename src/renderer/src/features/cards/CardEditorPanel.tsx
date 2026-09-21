@@ -292,11 +292,20 @@ export function CardEditorPanel({
           改这里。带 `options` 的字段渲染成下拉（设定卡的「类别」就是）——
           类别是拿来聚合的，自由输入会写成「地点」「地名」两种说法。
         */}
-        {fields.map((field) => (
+        {/*
+          hidden 字段不渲染：它们由别处写入（目前只有时间线序号），
+          放进表单只会多出一个没人看得懂的数字输入框。
+          值仍然留在 draft.extra 里，保存时一并回传 —— 否则改一次标题
+          就会把这张卡排好的顺序清掉。
+         */}
+        {fields
+          .filter((field) => field.hidden !== true)
+          .map((field) => (
           <label className="cards-field" key={field.key}>
             <span className="cards-field__label">{field.label}</span>
             {field.options === undefined ? (
               <Input
+                data-testid={`card-extra-${field.key}`}
                 value={draft.extra[field.key] ?? ''}
                 maxLength={CARD_LIMITS.extra}
                 placeholder={field.placeholder}
@@ -323,7 +332,7 @@ export function CardEditorPanel({
               />
             )}
           </label>
-        ))}
+          ))}
 
         <label className="cards-field">
           <span className="cards-field__label">正文</span>
