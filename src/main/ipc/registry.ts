@@ -16,6 +16,9 @@ import { registerOutlineHandlers } from '../modules/outline/outline.controller'
 import { CardRepository } from '../modules/cards/card.repository'
 import { CardService } from '../modules/cards/card.service'
 import { registerCardHandlers } from '../modules/cards/card.controller'
+import { CardLinkRepository } from '../modules/card-links/card-link.repository'
+import { CardLinkService } from '../modules/card-links/card-link.service'
+import { registerCardLinkHandlers } from '../modules/card-links/card-link.controller'
 import { SearchRepository } from '../modules/search/search.repository'
 import { SearchService } from '../modules/search/search.service'
 import { registerSearchHandlers } from '../modules/search/search.controller'
@@ -62,6 +65,7 @@ export function registerAllIpcHandlers(config: AppConfig): void {
    * 共享纯函数里，没有第二份实现。
    */
   const searchRepository = new SearchRepository(db)
+  const cardLinkRepository = new CardLinkRepository(db)
 
   /* ---------------- 服务 ---------------- */
   const bookService = new BookService(bookRepository, db)
@@ -78,6 +82,13 @@ export function registerAllIpcHandlers(config: AppConfig): void {
   )
   // 卡片只需要校验「归属书籍是否存在」，因此复用书籍仓储，不另开查询路径
   const cardService = new CardService(cardRepository, bookRepository)
+  // 关联服务复用卡片与章节仓储：它要校验「两边存在且同属一本书」，
+  // 这两件事分别只有那两个仓储知道怎么做，另开查询路径就会出现第二份口径
+  const cardLinkService = new CardLinkService(
+    cardLinkRepository,
+    cardRepository,
+    chapterRepository
+  )
   const statsService = new StatsService(bookRepository, chapterRepository, sessionRepository)
   const searchService = new SearchService(searchRepository)
 
@@ -90,6 +101,7 @@ export function registerAllIpcHandlers(config: AppConfig): void {
   registerChapterHandlers(chapterService)
   registerOutlineHandlers(outlineService)
   registerCardHandlers(cardService)
+  registerCardLinkHandlers(cardLinkService)
   registerSearchHandlers(searchService)
   registerSessionHandlers(sessionService)
   registerStatsHandlers(statsService)

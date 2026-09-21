@@ -37,6 +37,8 @@ import { OutlineRepository } from './modules/outline/outline.repository'
 import { OutlineService } from './modules/outline/outline.service'
 import { CardRepository } from './modules/cards/card.repository'
 import { CardService } from './modules/cards/card.service'
+import { CardLinkRepository } from './modules/card-links/card-link.repository'
+import { CardLinkService } from './modules/card-links/card-link.service'
 import { SearchRepository } from './modules/search/search.repository'
 import { SearchService } from './modules/search/search.service'
 import { StatsService } from './modules/stats/stats.service'
@@ -302,6 +304,26 @@ export interface ShowcaseTargets {
   } | null
   /** 删掉一张卡片。验证用的卡片建完就删，展示数据要恢复原样 */
   removeCard: (id: number) => void
+  /**
+   * 造一张用于验证的设定卡，返回它的 id。
+   *
+   * 走主进程而不是在界面上点出来：类别筛选要验的是「筛得对不对」，
+   * 若卡片本身也是界面建出来的，一次失败会连带另一条也失败，
+   * 排查时就分不清是筛选错了还是新建错了。
+   * 调用方负责用 removeCard 删掉。
+   */
+  seedSettingCard: (title: string, category: string) => number
+  /** 这张卡关联到哪几章（章节 id）。关联是主进程的一张表，界面说了不算 */
+  linksOfCard: (cardId: number) => number[]
+  /** 这一章关联到哪几张卡（卡片 id） */
+  cardsOfChapter: (chapterId: number) => number[]
+  /**
+   * 这本书的章节 id 与标题。
+   *
+   * 界面上选章节的下拉里写的是标题，而断言要拿到的却是 id（去库里对账），
+   * 缺了它就只能靠标题反查 —— 同名章节会让反查落到错误的那一章上。
+   */
+  chaptersOf: (bookId: number) => Array<{ id: number; title: string }>
 }
 
 export interface BackendSmokeRun {
@@ -336,6 +358,11 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
   )
   const statsService = new StatsService(bookRepository, chapterRepository, sessionRepository)
   const cardService = new CardService(cardRepository, bookRepository)
+  const cardLinkService = new CardLinkService(
+    new CardLinkRepository(db),
+    cardRepository,
+    chapterRepository
+  )
   const searchService = new SearchService(new SearchRepository(db))
 
   /* 1. 数据库可查询 */
@@ -1994,7 +2021,27 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
             },
             removeCard: (id) => {
               cardService.remove(id)
-            }
+            },
+            seedSettingCard: (title, category) =>
+              cardService.create({
+                bookId: showcaseBookId as number,
+                cardType: 'setting',
+                title,
+                subtitle: '',
+                content: '',
+                tags: [],
+                extra: { category }
+              }).id,
+            // 两个方向都直接从服务层读：界面上的行数对不对是一回事，
+            // 库里到底有没有这条关联是另一回事，只有后者能证明功能真的做了
+            linksOfCard: (cardId) =>
+              cardLinkService.listByCard(cardId).map((item) => item.chapterId),
+            cardsOfChapter: (chapterId) =>
+              cardLinkService.listByChapter(chapterId).map((item) => item.cardId),
+            chaptersOf: (id) =>
+              chapterService
+                .list({ bookId: id, volumeId: undefined })
+                .map((item) => ({ id: item.id, title: item.title }))
           }
         : null
   }
@@ -2116,6 +2163,8 @@ export async function runRendererSmokeChecks(
      * 那一步之后，才不会把总数搅乱在「渲染 5 行」的断言里。
      */
     results.push(await checkSettingCard(window, showcase))
+    results.push(await checkSettingCategoryFilter(window, showcase))
+    results.push(await checkCardChapterLink(window, showcase))
     /*
      * 「正文自动保存往返」同样排最后：它往正文里真的打进一段字，
      * 会改动这一章的字数与内容 —— 放在前面会把「正文字数与预期一致」
@@ -6305,6 +6354,448 @@ async function checkSettingCard(
     }
   } catch (error) {
     return { name, ok: false, detail: messageOf(error) }
+  }
+}
+
+/**
+ * 读卡片列表里每一行的类型与类别。
+ *
+ * 逐行读而不是只比总数：类别筛选最容易出现的假通过就是「总数对了、
+ * 行数也对了，但行是别的类别」—— 数字层面看不出来，只有逐行读才知道。
+ */
+async function readCardRowInfo(
+  window: BrowserWindow
+): Promise<Array<{ type: string; category: string }>> {
+  const raw = (await window.webContents.executeJavaScript(
+    `JSON.stringify(Array.prototype.map.call(
+      document.querySelectorAll('[data-testid="card-row"]'),
+      (el) => ({
+        type: el.getAttribute('data-card-type') || '',
+        category: el.getAttribute('data-card-category') || ''
+      })
+    ))`
+  )) as string
+  return JSON.parse(raw) as Array<{ type: string; category: string }>
+}
+
+/**
+ * 等一个下拉**可用**再动手。
+ *
+ * 这里的下拉在数据没到之前是 `disabled` 的（选项为空，点了也没意义）。
+ * 直接去选的话，mousedown 打在一个禁用的下拉上，浮层压根不展开，
+ * 3 秒重试窗口内每次都扑空 —— 表现是「随机失败」：机器快的时候数据
+ * 早就回来了，慢一点就红。等目标状态，不要等固定时长。
+ */
+async function waitForSelectReady(
+  window: BrowserWindow,
+  testId: string,
+  timeoutMs = 8000
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const ready = (await window.webContents.executeJavaScript(
+      `(() => {
+        const el = document.querySelector('[data-testid="${testId}"]')
+        if (!el) return false
+        if (el.classList.contains('ant-select-disabled')) return false
+        return el.getAttribute('aria-disabled') !== 'true'
+      })()`
+    )) as boolean
+    if (ready) return true
+    await delay(120)
+  }
+  return false
+}
+
+/**
+ * 等某个 testid 的元素个数变成预期值。
+ *
+ * 0 也很有用：「点了删除，行要消失」这类断言如果读一次就下结论，
+ * 等于在赌 IPC 回程与 React 重渲染的几十毫秒 —— 本地快、偶发慢，
+ * 就成了那种「本机全绿、别人偶尔红」的守卫。
+ */
+async function waitForCount(
+  window: BrowserWindow,
+  testId: string,
+  expected: number,
+  timeoutMs = 4000
+): Promise<number> {
+  const deadline = Date.now() + timeoutMs
+  let last = -1
+  while (Date.now() < deadline) {
+    last = (await window.webContents.executeJavaScript(
+      `document.querySelectorAll('[data-testid="${testId}"]').length`
+    )) as number
+    if (last === expected) return last
+    await delay(120)
+  }
+  return last
+}
+
+/** 等列表行数稳定在某个值。筛选是异步的：点完下拉，请求要等一拍才回来 */
+async function waitForCardRowCount(
+  window: BrowserWindow,
+  expected: number,
+  timeoutMs = 4000
+): Promise<Array<{ type: string; category: string }>> {
+  const deadline = Date.now() + timeoutMs
+  let last = await readCardRowInfo(window)
+  while (Date.now() < deadline) {
+    if (last.length === expected) return last
+    await delay(120)
+    last = await readCardRowInfo(window)
+  }
+  return last
+}
+
+/**
+ * 重新加载渲染进程，并停在当前 hash 上。
+ *
+ * 冒烟有两处数据是**绕着界面直接写进库**的（seed 一张卡），而全局
+ * staleTime 是 15 秒：同一个 queryKey 在这期间被当成 fresh 不再请求，
+ * 界面于是停在造数据之前的那一版列表上。真实写入不存在这个问题 ——
+ * 它们都走 mutation 并 invalidate，前端立刻知道。
+ *
+ * reload 清空 React Query 的缓存，等价于用户按了一次刷新，
+ * 是拿到真实数据最直接的方式，也顺带验了深链在刷新之后仍然有效。
+ */
+async function reloadAt(window: BrowserWindow, hash: string): Promise<void> {
+  await gotoHash(window, hash)
+  await window.webContents.reload()
+  await waitForLoad(window)
+}
+
+/** 设定卡各类别的计数（界面上那一行数字） */
+async function readCategoryCounts(window: BrowserWindow): Promise<Record<string, number>> {
+  const raw = (await window.webContents.executeJavaScript(
+    `(() => {
+      const out = {}
+      document.querySelectorAll('[data-testid^="cards-category-count-"]').forEach((el) => {
+        const key = el.getAttribute('data-testid').replace('cards-category-count-', '')
+        out[key] = Number(el.getAttribute('data-value'))
+      })
+      return JSON.stringify(out)
+    })()`
+  )) as string
+  return JSON.parse(raw) as Record<string, number>
+}
+
+/**
+ * 点开某个页签（按标题文字）。
+ *
+ * antd 的 Tabs 没有稳定的 testid 可挂，只能按文本找。这里只用于**驱动**，
+ * 断言读的仍然是 testid 与库里的真实关联。
+ */
+async function clickTabByLabel(window: BrowserWindow, label: string): Promise<boolean> {
+  return (await window.webContents.executeJavaScript(
+    `(() => {
+      const tab = Array.prototype.slice
+        .call(document.querySelectorAll('.ant-tabs-tab'))
+        .find((el) => (el.getAttribute('data-testid') || '') === ${JSON.stringify(label)} ||
+                       (el.textContent || '').trim().startsWith(${JSON.stringify(label)}))
+      if (!tab) return false
+      tab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      return true
+    })()`
+  )) as boolean
+}
+
+/**
+ * 设定卡按类别筛选。
+ *
+ * 类别只是 extra 里的一个字段，界面上表现为列表行里的一段文字，于是
+ * 「筛选生效了」有太多看起来正确的失败方式：行数变了、总数变了，
+ * 可筛出来的可能是别的类别。所以断言逐行读 data-card-category。
+ *
+ * 另一半风险在 SQL：类别过滤走 json_extract。若有人把这项条件也加进了
+ * 计数查询，表现是「选了时间线之后另外三类计数全变 0」—— 而那看起来
+ * 像是数据被删了。因此计数也要对账：选完类别，各类别的数字不许变。
+ */
+async function checkSettingCategoryFilter(
+  window: BrowserWindow,
+  ctx: ShowcaseTargets
+): Promise<StepResult> {
+  const name = '设定卡类别筛选'
+  const problems: string[] = []
+  const seeded: number[] = []
+
+  try {
+    /*
+     * 造两张「时间线」设定卡。展示数据里本来就有一张设定卡（势力），
+     * 只靠它的话「筛出 1 行」证明不了筛对了 —— 少写条件的 bug
+     * 同样会碰巧剩 1 行。两张才能把「筛出来的是这一类」和
+     * 「筛出来的不是那一类」分开。
+     */
+    for (const suffix of ['甲', '乙']) {
+      seeded.push(ctx.seedSettingCard(`冒烟-时间线${suffix}-${STAMP}`, '时间线'))
+    }
+
+    /*
+     * 直接进「这本书的设定卡 + 时间线」这一格。
+     *
+     * 除了顺带验一遍类别深链，更重要的是**换一个没被查过的 queryKey**：
+     * 全局 staleTime 是 15 秒，而上面两张卡是主进程直接建进去的、前端
+     * 无从知晓（真实写入都走 mutation 并 invalidate，只有冒烟这种
+     * 「绕着界面改库」的造数方式会遇到）。命中旧缓存的话，第一帧读到的
+     * 是造数据之前的计数 —— 那会把「缓存没换」报成「筛选算错了」。
+     */
+    await gotoHash(window, `#/cards?type=setting&book=${ctx.bookId}&category=时间线`)
+    const snap = await waitForCards(window)
+    if (!snap.mounted || !snap.hasList) {
+      return { name, ok: false, detail: '卡片库没有渲染出来，无法验证类别筛选' }
+    }
+
+    if (!(await waitForTestId(window, 'cards-category-select', 4000))) {
+      problems.push('选中「设定」之后没有出现类别下拉')
+    }
+
+    const rows = await waitForCardRowCount(window, 2)
+    if (rows.length !== 2) {
+      problems.push(`深链「时间线」应筛出 2 行，实得 ${rows.length} 行`)
+    } else {
+      const wrong = rows.filter((row) => row.category !== '时间线')
+      if (wrong.length > 0) {
+        problems.push(
+          `深链「时间线」之后有 ${wrong.length} 行的类别不对（实测 ${rows
+            .map((row) => row.category || '(空)')
+            .join(' / ')}）`
+        )
+      }
+      if (!rows.every((row) => row.type === 'setting')) {
+        problems.push('按类别筛完之后列表里出现了非设定卡')
+      }
+    }
+
+    const counts = await readCategoryCounts(window)
+    if (counts['时间线'] !== 2) {
+      problems.push(`时间线的类别计数应为 2，实得 ${counts['时间线']}`)
+    }
+    if (counts['势力'] !== 1) {
+      problems.push(`势力的类别计数应为 1，实得 ${counts['势力']}`)
+    }
+
+    /*
+     * 换到「势力」再读一次计数：各类别的数字不许跟着筛选清零。
+     * 它们是导航用的数字，被自己这一维筛没了就变成「那些设定被删了」的错觉。
+     */
+    if (!(await pickSelectOption(window, 'cards-category-select', '势力'))) {
+      problems.push('类别下拉里选不到「势力」')
+    } else {
+      await waitForCardRowCount(window, 1)
+      const after = await readCategoryCounts(window)
+      if (after['时间线'] !== counts['时间线'] || after['势力'] !== counts['势力']) {
+        problems.push(
+          `选了「势力」之后类别计数跟着变了（时间线 ${counts['时间线']}→${after['时间线']}，` +
+            `势力 ${counts['势力']}→${after['势力']}）—— 计数是导航用的，不该被自己这一项筛掉`
+        )
+      }
+    }
+
+    if (!(await pickSelectOption(window, 'cards-category-select', '时间线'))) {
+      problems.push('类别下拉里选不到「时间线」')
+    } else {
+      const back = await waitForCardRowCount(window, 2)
+      if (back.length !== 2) {
+        problems.push(`切回「时间线」应剩 2 行，实得 ${back.length} 行`)
+      } else if (!back.every((row) => row.category === '时间线')) {
+        problems.push(
+          `切回「时间线」之后有行的类别不对（实测 ${back
+            .map((row) => row.category || '(空)')
+            .join(' / ')}）`
+        )
+      }
+    }
+
+    return {
+      name,
+      ok: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? `库中 3 张设定卡（势力 1 / 时间线 2）→ ?category=时间线 深链直达，2 行逐行核对类别都是时间线；` +
+            `再切到「势力」剩 1 行，而各类别计数保持不变（时间线 2 / 势力 1）—— ` +
+            `计数是导航用的数字，不该被自己这一维筛成 0；切回「时间线」仍是 2 行`
+          : problems.join('；')
+    }
+  } catch (error) {
+    return { name, ok: false, detail: messageOf(error) }
+  } finally {
+    // 造的卡片一定删掉：后面的检查还要看卡片总数
+    for (const id of seeded) ctx.removeCard(id)
+  }
+}
+
+/**
+ * 卡片 ↔ 章节的关联，两个方向各走一遍。
+ *
+ * 押的是三个「界面绿、数据是空」的失败点：
+ *
+ *   1. **下拉里选了章，列表长出一行，但库里根本没有那条关联。**
+ *      界面本地 state 自己加一行是最容易写出来的 bug，而它看起来完全正常。
+ *      所以每一步都回库读 linksOfCard / cardsOfChapter 对账。
+ *   2. **只做通了一个方向。** 关联是对称的，但两个方向的 UI 是两套代码；
+ *      卡片页连上了、章节页「设定」页签里却空着，是最典型的漏做。
+ *   3. **同书约束被绕过。** 跨书关联没有意义（点过去是另一本书的章节），
+ *      这里虽然没直接测跨书（展示数据里另一本书也有章），但两侧都从
+ *      同一本书取数据，若服务层那条检查写反了，这趟往返会直接报错。
+ */
+async function checkCardChapterLink(
+  window: BrowserWindow,
+  ctx: ShowcaseTargets
+): Promise<StepResult> {
+  const name = '卡片与章节关联'
+  const problems: string[] = []
+  const cardTitle = `冒烟-关联-${STAMP}`
+  let cardId = 0
+
+  try {
+    const chapters = ctx.chaptersOf(ctx.bookId)
+    if (chapters.length === 0) {
+      return { name, ok: false, detail: '展示用书里一章都没有，无法验证关联' }
+    }
+    const chapter = chapters[0]
+    const chapterRoute = `#/books/${ctx.bookId}/chapters/${chapter.id}`
+
+    cardId = ctx.seedSettingCard(cardTitle, '地点')
+
+    /* ---------- ① 卡片侧：把这张卡连到某一章 ---------- */
+    // reload 而不是直接 gotoHash：这张卡是主进程直接建进去的，
+    // 前端缓存不知道它存在（见 reloadAt 的说明）。不刷新的话，
+    // 列表里根本没有这一行，面板会停在空态 —— 那是缓存问题，不是功能问题
+    await reloadAt(window, `#/cards?cardId=${cardId}`)
+    if (!(await waitForTestId(window, 'card-links', 8000))) {
+      // 失败时把「面板打开的是哪张卡」一起报出来：面板停在空态（card-id=new）
+      // 与停在另一张卡上，是两个完全不同的故障，detail 里看不出来就白跑一趟
+      const diag = (await window.webContents.executeJavaScript(
+        `(() => {
+          const panel = document.querySelector('[data-testid="card-editor"]')
+          return JSON.stringify({
+            hash: location.hash,
+            panelCardId: panel ? panel.getAttribute('data-card-id') : 'no-panel',
+            panelMode: panel ? panel.getAttribute('data-mode') : 'no-panel',
+            rows: document.querySelectorAll('[data-testid="card-row"]').length
+          })
+        })()`
+      )) as string
+      return {
+        name,
+        ok: false,
+        detail: `卡片面板里没有「用在哪几章」这一块（诊断：${diag}，目标卡片 #${cardId}）`
+      }
+    }
+
+    if (!(await waitForSelectReady(window, 'card-link-chapter-select'))) {
+      problems.push('「选择一章」的下拉一直不可用：这本书的章节没加载出来，或这本书没有章节')
+    } else if (!(await pickSelectOption(window, 'card-link-chapter-select', chapter.title))) {
+      problems.push(`章节下拉里选不到「${chapter.title}」`)
+    } else if (!(await waitForTestId(window, 'card-link-row', 5000))) {
+      problems.push('选了章节之后关联列表里没有长出这一行')
+    } else {
+      const rowChapterIds = (await window.webContents.executeJavaScript(
+        `Array.prototype.map.call(
+          document.querySelectorAll('[data-testid="card-link-row"]'),
+          (el) => Number(el.getAttribute('data-chapter-id'))
+        ).join(',')`
+      )) as string
+      if (!rowChapterIds.split(',').includes(String(chapter.id))) {
+        problems.push(`关联行里没有第 ${chapter.id} 章（实测 ${rowChapterIds || '空'}）`)
+      }
+
+      // 界面绿不算数：库里必须真有这一条
+      const linked = ctx.linksOfCard(cardId)
+      if (!linked.includes(chapter.id)) {
+        problems.push(`库里查不到这张卡与第 ${chapter.id} 章的关联（实得 ${linked.join(',') || '空'}）`)
+      }
+
+      /* ---------- ② 解除：界面上的行消失，库里也要跟着没 ---------- */
+      if (!(await clickTestId(window, 'card-unlink-chapter'))) {
+        problems.push('点不到「解除关联」的按钮')
+      } else {
+        const deadline = Date.now() + 5000
+        let remaining = ctx.linksOfCard(cardId)
+        while (Date.now() < deadline && remaining.length > 0) {
+          await delay(120)
+          remaining = ctx.linksOfCard(cardId)
+        }
+        if (remaining.length > 0) {
+          problems.push(`解除之后库里还剩 ${remaining.length} 条关联（${remaining.join(',')}）`)
+        }
+
+        /*
+         * 界面那一行也要消失 —— 同样是等，不是读一次。
+         *
+         * 「库里没有了」与「界面上没有了」之间隔着 IPC 回程、mutation 的
+         * onSuccess、以及一次 React 重渲染。读一次就断言的话，这个检查
+         * 变成在赌那几十毫秒：多数机器快、偶发机器慢，于是就成了
+         * 「本地全绿、别人偶尔红」的那种守卫。
+         */
+        const leftRows = await waitForCount(window, 'card-link-row', 0, 5000)
+        if (leftRows !== 0) {
+          problems.push(`库里已解除，界面上却还留着 ${leftRows} 行`)
+        }
+      }
+    }
+
+    /* ---------- ③ 章节侧：编辑器的「设定」页签，反方向再连一次 ---------- */
+    await gotoHash(window, chapterRoute)
+    const editor = await waitForEditor(window)
+    if (!editor.mounted) {
+      problems.push(`进入编辑器失败，无法验证章节侧的关联（hash=${editor.hash}）`)
+    } else if (!(await clickTabByLabel(window, '设定'))) {
+      problems.push('编辑器右侧点不到「设定」页签')
+    } else if (!(await waitForTestId(window, 'chapter-refs', 5000))) {
+      problems.push('「设定」页签里没有「这一章用到了哪几条设定」这一块')
+    } else {
+      // 卡片下拉里的选项写成「标题（类型）」，类型文案变了这里会红 —— 那正是要报出来的
+      const optionText = `${cardTitle}（设定）`
+      if (!(await waitForSelectReady(window, 'chapter-ref-add-select'))) {
+        problems.push('「选择一张卡片」的下拉一直不可用（这本书的卡片没加载出来？）')
+      } else if (!(await pickSelectOption(window, 'chapter-ref-add-select', optionText))) {
+        problems.push(`卡片下拉里选不到「${optionText}」`)
+      } else if (!(await waitForTestId(window, 'chapter-ref-row', 5000))) {
+        problems.push('选了卡片之后章节侧没有长出关联行')
+      } else {
+        const refs = ctx.cardsOfChapter(chapter.id)
+        if (!refs.includes(cardId)) {
+          problems.push(
+            `库里查不到这一章与卡片 #${cardId} 的关联（实得 ${refs.join(',') || '空'}）`
+          )
+        }
+
+        if (!(await clickTestId(window, 'chapter-ref-unlink'))) {
+          problems.push('点不到章节侧的「解除关联」按钮')
+        } else {
+          const deadline = Date.now() + 5000
+          let left = ctx.cardsOfChapter(chapter.id)
+          while (Date.now() < deadline && left.length > 0) {
+            await delay(120)
+            left = ctx.cardsOfChapter(chapter.id)
+          }
+          if (left.length > 0) {
+            problems.push(`章节侧解除之后库里还剩 ${left.length} 条关联`)
+          }
+
+          const leftRows = await waitForCount(window, 'chapter-ref-row', 0, 5000)
+          if (leftRows !== 0) {
+            problems.push(`章节侧库里已解除，界面上却还留着 ${leftRows} 行`)
+          }
+        }
+      }
+    }
+
+    return {
+      name,
+      ok: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? `卡片侧：下拉选「${chapter.title}」→ 长出关联行，回库 linksOfCard 含 #${chapter.id} → ` +
+            `点解除，界面与库同时清空；章节侧：编辑器「设定」页签下拉选「${cardTitle}（设定）」→ ` +
+            `长出关联行，回库 cardsOfChapter 含 #${cardId} → 解除后同样两边都空`
+          : problems.join('；')
+    }
+  } catch (error) {
+    return { name, ok: false, detail: messageOf(error) }
+  } finally {
+    if (cardId > 0) ctx.removeCard(cardId)
   }
 }
 

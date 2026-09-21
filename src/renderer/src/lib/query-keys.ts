@@ -64,6 +64,19 @@ export const queryKeys = {
     list: (query: CardListQuery) => ['cards', 'list', query] as const
   },
 
+  /**
+   * 卡片 ↔ 章节的关联。
+   *
+   * 两个方向各一个键，但共用 `all` 前缀：关联是对称的，改一端另一端
+   * 立刻就旧了。若两侧各起一套前缀，写操作要记得失效两个 —— 那是
+   * 迟早会漏掉的清单，而漏掉的表现是「卡片页显示已关联、章节页却看不到」。
+   */
+  cardLinks: {
+    all: ['card-links'] as const,
+    byCard: (cardId: number | null) => ['card-links', 'card', cardId] as const,
+    byChapter: (chapterId: number | null) => ['card-links', 'chapter', chapterId] as const
+  },
+
   search: {
     all: ['search'] as const,
     /**

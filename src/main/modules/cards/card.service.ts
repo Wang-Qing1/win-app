@@ -37,7 +37,7 @@ export class CardService {
   /**
    * 卡片列表。
    *
-   * 三个数字来自三条 SQL（本页数据 + 总数 + 分类计数），它们共用同一份
+   * 几个数字来自几条 SQL（本页数据 + 总数 + 各维度计数），它们共用同一份
    * WHERE 条件（见仓储的 buildFilter），因此不会出现「共 3 张、却列出 4 行」
    * 这种自相矛盾 —— 那比数字算错更难排查，因为看起来像是界面出了问题。
    */
@@ -47,6 +47,7 @@ export class CardService {
     return {
       ...paged,
       typeCounts: this.repository.countByType(query),
+      settingCounts: this.repository.countBySettingCategory(query),
       globalCount: this.repository.countGlobal(query)
     }
   }

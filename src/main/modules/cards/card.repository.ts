@@ -1,6 +1,8 @@
 import {
   CARD_TYPES,
+  SETTING_CATEGORIES,
   isCardType,
+  isSettingCategory,
   normalizeExtra,
   normalizeTags,
   type Card,
@@ -8,7 +10,8 @@ import {
   type CardExtra,
   type CardListQuery,
   type CardSortField,
-  type CardType
+  type CardType,
+  type SettingCategory
 } from '@shared/modules/cards'
 import type { Db } from '../../db/types'
 import { containsPattern, parseJsonArray, parseJsonObject, toNumber } from '../../db/sql-utils'
@@ -97,14 +100,20 @@ interface FilterClause {
 /**
  * 把查询条件拼成 WHERE 子句。
  *
- * 抽出来是因为同一个筛选条件要被跑三次：取本页数据、取总数、取各类型计数。
- * 三处各写一遍的话，任何一处漏掉一个条件都会让「总数」与「实际列出的条数」
- * 对不上，而且界面看起来完全正常（只是数字略大）。
+ * 抽出来是因为同一套筛选条件要被跑四次：取本页数据、取总数、取各类型计数、
+ * 取设定卡各类别计数。四处各写一遍的话，任何一处漏掉一个条件都会让
+ * 「总数」与「实际列出的条数」对不上，而且界面看起来完全正常（只是数字略大）。
  *
- * `includeType` 是给类型计数用的开关：它必须**忽略 cardType 这一项**，
- * 否则选中「人物」之后另外两类的计数会全变成 0。
+ * 两个开关都是给**计数**用的：计数是导航用的数字，不是当前结果集的分解，
+ * 所以每组计数都要忽略自己那一维 —— 否则选中「时间线」之后另外三类
+ * 会全变成 0，读起来像「那些设定被删了」，而不是「被筛掉了」。
+ *   - `includeType = false`     → 算各类型数量时忽略「类型」这一项
+ *   - `includeCategory = false` → 算各类别数量时忽略「类别」这一项
  */
-function buildFilter(query: CardListQuery, includeType: boolean): FilterClause {
+function buildFilter(
+  query: CardListQuery,
+  options: { includeType: boolean; includeCategory: boolean }
+): FilterClause {
   const conditions: string[] = []
   const params: Record<string, unknown> = {}
 
@@ -122,9 +131,28 @@ function buildFilter(query: CardListQuery, includeType: boolean): FilterClause {
     params.bookId = query.bookId
   }
 
-  if (includeType && query.cardType !== null) {
+  if (options.includeType && query.cardType !== null) {
     conditions.push('card_type = @cardType')
     params.cardType = query.cardType
+  }
+
+  /*
+   * 设定卡类别。
+   *
+   * 只比对 `extra` 里的 category，不额外加 `card_type = 'setting'`：
+   * 只有设定卡的 extra 里有这个键（共享层的 normalizeExtra 按类型投影），
+   * 其它类型的 json_extract 一律得到 NULL，NULL 不等于任何类别值，
+   * 于是自动被排除 —— 少写一个条件，就少一处会与类型筛选打架的地方。
+   *
+   * `json_valid` 是必要的护栏：extra 是 TEXT 列，数据库不会替我们保证
+   * 它是合法 JSON。一旦出现一行脏数据，json_extract 会直接抛
+   * 「malformed JSON」，把整张列表炸掉 —— 而不是只跳过那一行。
+   */
+  if (options.includeCategory && query.settingCategory !== null) {
+    conditions.push(
+      "(json_valid(extra) AND json_extract(extra, '$.category') = @settingCategory)"
+    )
+    params.settingCategory = query.settingCategory
   }
 
   if (query.keyword.length > 0) {
@@ -168,9 +196,9 @@ export class CardRepository {
     total: number
     page: number
     pageSize: number
-    pageCount: number
+      pageCount: number
   } {
-    const filter = buildFilter(query, true)
+    const filter = buildFilter(query, { includeType: true, includeCategory: true })
 
     const total = toNumber(
       (
@@ -206,12 +234,12 @@ export class CardRepository {
   /**
    * 按类型计数（忽略 cardType 筛选，见 buildFilter 的说明）。
    *
-   * 用一条 GROUP BY 而不是对三类各查一次：三次查询之间若发生写入，
-   * 三个数字之和就可能不等于总数，界面上「人物 1 + 物品 1 + 灵感 2 ≠ 共 3」
+   * 用一条 GROUP BY 而不是对每个类型各查一次：多次查询之间若发生写入，
+   * 各数字之和就可能不等于总数，界面上「人物 1 + 物品 1 + 灵感 2 ≠ 共 3」
    * 会让人怀疑整个数据。
    */
   countByType(query: CardListQuery): Record<CardType, number> {
-    const filter = buildFilter(query, false)
+    const filter = buildFilter(query, { includeType: false, includeCategory: false })
     const rows = this.db
       .prepare(
         `SELECT card_type AS card_type, COUNT(*) AS n
@@ -232,10 +260,43 @@ export class CardRepository {
     return counts
   }
 
-  /** 不受书籍范围影响的「通用卡片」计数：只看当前的关键字与类型条件 */
+  /**
+   * 设定卡按类别计数（忽略 settingCategory 筛选，见 buildFilter 的说明）。
+   *
+   * 同样一条 GROUP BY 出全部类别，理由与 countByType 相同。
+   * `json_valid` 那层 CASE 必不可少：GROUP BY 会对每一行求值，
+   * 一行坏掉的 extra 会让整条查询抛错，而不是只跳过那一行。
+   * 认不出的类别（含 NULL，即未分类的设定卡）不进任何一格 ——
+   * 「未分类」不是一类，它只是还没填。
+   */
+  countBySettingCategory(query: CardListQuery): Record<SettingCategory, number> {
+    const filter = buildFilter(query, { includeType: true, includeCategory: false })
+    const rows = this.db
+      .prepare(
+        `SELECT CASE WHEN json_valid(extra) THEN json_extract(extra, '$.category') END AS category,
+                COUNT(*) AS n
+           FROM cards
+           ${filter.where}
+          GROUP BY category`
+      )
+      .all(filter.params) as Array<{ category: unknown; n: number }>
+
+    const counts = {} as Record<SettingCategory, number>
+    for (const category of SETTING_CATEGORIES) counts[category] = 0
+    for (const row of rows) {
+      if (isSettingCategory(row.category)) counts[row.category] = toNumber(row.n)
+    }
+
+    return counts
+  }
+
+  /** 不受书籍范围影响的「通用卡片」计数：只看当前的其它筛选条件 */
   countGlobal(query: CardListQuery): number {
     const scope: CardBookScope = 'global'
-    const filter = buildFilter({ ...query, bookScope: scope }, true)
+    const filter = buildFilter(
+      { ...query, bookScope: scope },
+      { includeType: true, includeCategory: true }
+    )
     const row = this.db
       .prepare(`SELECT COUNT(*) AS total FROM cards ${filter.where}`)
       .get(filter.params) as CountRow | undefined

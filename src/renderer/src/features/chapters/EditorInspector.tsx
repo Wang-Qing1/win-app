@@ -17,11 +17,13 @@ import { PlatformPreview } from './PlatformPreview'
 import { FillerPanel, ProofreadPanel } from './ProofreadPanel'
 import { IconButton } from '../../components/IconButton'
 import { withOrigin } from '../../components/OriginReturn'
+import { ChapterCardRefs } from '../cards/ChapterCardRefs'
+import { useChapterCards } from '../cards/use-card-links'
 import type { ProofreadState } from './use-proofread'
 
 const { Text } = Typography
 
-export type InspectorView = 'proofread' | 'filler' | 'preview'
+export type InspectorView = 'proofread' | 'filler' | 'preview' | 'refs'
 
 interface RailItem {
   key: string
@@ -38,6 +40,11 @@ interface RailItem {
 interface EditorInspectorProps {
   /** 当前这本书。竖栏「角色 / 设定」跳卡片库时带上它，只让作者看这一本 */
   bookId: number
+  /**
+   * 当前这一章。「设定」页签要列的是**本章**用到的卡片。
+   * null 表示这本书还没有任何章节（空书直落编辑器时的状态）。
+   */
+  chapterId: number | null
   bookTitle: string
   text: string
   charCount: number
@@ -62,6 +69,7 @@ interface EditorInspectorProps {
  */
 export function EditorInspector({
   bookId,
+  chapterId,
   bookTitle,
   text,
   charCount,
@@ -86,6 +94,14 @@ export function EditorInspector({
     () => (proofread.result?.fillers ?? []).reduce((sum, item) => sum + item.count, 0),
     [proofread.result]
   )
+
+  /*
+   * 本章关联的卡片数，只为了给「设定」页签挂一个数字。
+   * 与页签内部那个组件用的是同一个 queryKey（因此是同一份缓存，
+   * 不会多打一次 IPC），这里读到的数字与点开后看到的必然一致。
+   */
+  const chapterCards = useChapterCards(chapterId)
+  const refCount = chapterCards.data?.length ?? 0
 
   /**
    * 把预览滚到某一段。
@@ -264,6 +280,25 @@ export function EditorInspector({
                   </Flex>
                 </div>
               )
+            },
+            {
+              /*
+               * 「设定」页签：这一章用到了哪几条设定 / 人物 / 道具。
+               *
+               * 它是卡片 ↔ 章节关联的**反方向**。卡片侧看的是「这条设定
+               * 用在哪几章」，这一侧看的是「这一章答应读者要用上的东西
+               * 到底用上了没有」—— 同一份数据的两个视角。
+               */
+              key: 'refs',
+              label: `设定${refCount > 0 ? ` ${refCount}` : ''}`,
+              children:
+                chapterId === null ? (
+                  <Text type="secondary" className="inspector__hint">
+                    这本书还没有章节，先建一章再回来看这一章用到了哪些设定。
+                  </Text>
+                ) : (
+                  <ChapterCardRefs chapterId={chapterId} bookId={bookId} />
+                )
             }
           ]}
         />

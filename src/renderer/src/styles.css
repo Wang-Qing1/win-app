@@ -2577,6 +2577,65 @@ html[data-theme='dark'] .search-hit__mark {
   color: #1b1b1b;
 }
 
+/* ------------------------------------------------------------------ *
+ * 卡片 ↔ 章节关联
+ *
+ * 两侧（卡片页的「用在哪几章」、编辑器「设定」页签的「这一章用了哪几条」）
+ * 共用同一套类名后缀：它们是同一份数据的两个视角，长得一样才不会让人
+ * 以为是两套互不相干的功能。
+ * ------------------------------------------------------------------ */
+
+.card-links__title {
+  font-size: 13px;
+}
+
+.card-links__row,
+.chapter-refs__row {
+  justify-content: space-between;
+}
+
+/*
+ * 章名 / 卡名做成「看起来像链接的按钮」而不是 antd 的 Link：
+ * 它需要的是「点一下就跳走」这一件事，Link 组件带的下划线与内边距
+ * 在紧凑的检查区里会把行高撑开。
+ */
+.card-links__jump,
+.chapter-refs__jump {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--winbook-accent);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.card-links__jump:hover,
+.chapter-refs__jump:hover {
+  text-decoration: underline;
+}
+
+.card-links__meta,
+.card-links__hint,
+.card-links__count,
+.chapter-refs__hint {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--winbook-text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-links__select,
+.chapter-refs__select {
+  width: 100%;
+}
+
 @media (max-width: 860px) {
   .app-header__center {
     display: none;

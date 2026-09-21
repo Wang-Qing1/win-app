@@ -13,8 +13,9 @@ import { IpcChannel } from '@shared/ipc-channels'
  * 5：新增全库检索（章节正文 / 卡片 / 大纲 / 书籍信息，LIKE 扫描非 FTS5）。
  * 6：导出新增整本书/整卷批量导出（exporter.book / exporter.volume）。
  * 7：新增数据库备份（backup.database）。
+ * 8：新增卡片 ↔ 章节关联（cards.linkChapter / unlinkChapter / listLinks / listByChapter）。
  */
-const BRIDGE_VERSION = '7'
+const BRIDGE_VERSION = '8'
 
 /**
  * preload 是主进程与渲染进程之间唯一的通道。
@@ -76,7 +77,11 @@ const api: WinbookApi = {
     create: (input) => ipcRenderer.invoke(IpcChannel.CardsCreate, input),
     update: (input) => ipcRenderer.invoke(IpcChannel.CardsUpdate, input),
     remove: (input) => ipcRenderer.invoke(IpcChannel.CardsRemove, input),
-    duplicate: (input) => ipcRenderer.invoke(IpcChannel.CardsDuplicate, input)
+    duplicate: (input) => ipcRenderer.invoke(IpcChannel.CardsDuplicate, input),
+    linkChapter: (input) => ipcRenderer.invoke(IpcChannel.CardsLinkChapter, input),
+    unlinkChapter: (input) => ipcRenderer.invoke(IpcChannel.CardsUnlinkChapter, input),
+    listLinks: (input) => ipcRenderer.invoke(IpcChannel.CardsListLinks, input),
+    listByChapter: (input) => ipcRenderer.invoke(IpcChannel.CardsListByChapter, input)
   },
 
   search: {

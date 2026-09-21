@@ -8,12 +8,15 @@ import {
   CARD_TYPES,
   CARD_TYPE_LABELS,
   DEFAULT_CARD_QUERY,
+  SETTING_CATEGORIES,
   isCardBookScope,
   isCardType,
+  isSettingCategory,
   type Card,
   type CardBookScope,
   type CardListQuery,
-  type CardType
+  type CardType,
+  type SettingCategory
 } from '@shared/modules/cards'
 import { ErrorAlert } from '../../components/ErrorAlert'
 import { IconButton } from '../../components/IconButton'
@@ -37,6 +40,8 @@ const { Text } = Typography
 const ALL_SCOPE = 'all'
 const GLOBAL_SCOPE = 'global'
 const BOOK_PREFIX = 'book:'
+/** 类别下拉里「不限类别」那一项的取值 */
+const ALL_CATEGORY = 'all'
 
 function scopeToValue(scope: CardBookScope, bookId: number | null): string {
   if (scope === 'book' && bookId !== null) return `${BOOK_PREFIX}${bookId}`
@@ -52,6 +57,7 @@ export function CardsPage() {
   const [scope, setScope] = useState<CardBookScope>('all')
   const [bookId, setBookId] = useState<number | null>(null)
   const [cardType, setCardType] = useState<CardType | null>(null)
+  const [settingCategory, setSettingCategory] = useState<SettingCategory | null>(null)
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
 
@@ -103,6 +109,17 @@ export function CardsPage() {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null
   }, [searchParams])
 
+  /**
+   * 类别深链（`?category=时间线`）—— 竖栏「设定」可以指定某一类。
+   * 与类型深链配对使用：单独给类别不给类型也能工作（类别条件本身就隐含
+   * 「只看设定卡」），但界面上的类别下拉只在选中「设定」时才出现，
+   * 所以两者通常一起传，免得用户看到一个莫名生效却看不见的筛选。
+   */
+  const deepLinkCategory = useMemo<SettingCategory | null>(() => {
+    const raw = searchParams.get('category')
+    return isSettingCategory(raw) ? raw : null
+  }, [searchParams])
+
   const consumedTypeRef = useRef<CardType | null>(null)
 
   useEffect(() => {
@@ -115,6 +132,17 @@ export function CardsPage() {
     }
     setPage(1)
   }, [deepLinkBookId, deepLinkType])
+
+  const consumedCategoryRef = useRef<SettingCategory | null>(null)
+
+  useEffect(() => {
+    if (deepLinkCategory === null || consumedCategoryRef.current === deepLinkCategory) return
+    consumedCategoryRef.current = deepLinkCategory
+    setSettingCategory(deepLinkCategory)
+    // 类别只在设定卡上存在，顺手把类型定下来，否则下拉不在、筛选却生效
+    setCardType('setting')
+    setPage(1)
+  }, [deepLinkCategory])
 
   useEffect(() => {
     if (deepLinkCardId === null || consumedCardRef.current === deepLinkCardId) return
@@ -131,6 +159,7 @@ export function CardsPage() {
     setScope('all')
     setBookId(null)
     setCardType(null)
+    setSettingCategory(null)
     setKeyword('')
     setPage(1)
     setNewDraft(null)
@@ -155,10 +184,11 @@ export function CardsPage() {
       bookScope: scope,
       bookId: scope === 'book' ? bookId : null,
       cardType,
+      settingCategory,
       keyword,
       page
     }),
-    [scope, bookId, cardType, keyword, page]
+    [scope, bookId, cardType, settingCategory, keyword, page]
   )
 
   const list = useCardList(query)
@@ -221,10 +251,33 @@ export function CardsPage() {
     setPage(1)
   }
 
+  /**
+   * 切换类型。
+   *
+   * 顺手清掉类别筛选：类别只在设定卡上存在，从「设定 / 时间线」切到「人物」
+   * 时若留着类别条件，列表会一片空白，而界面上根本没有类别下拉可看 ——
+   * 用户只会以为「这本书没有人物卡」。看不见的筛选都是这种下场。
+   */
+  const handleTypeChange = (value: string): void => {
+    setCardType(value === ALL_SCOPE ? null : (value as CardType))
+    setSettingCategory(null)
+    setPage(1)
+  }
+
   const handleStartNew = (): void => {
-    // 新建的类型跟随当前类型筛选，否则新建出来的卡片会被自己的筛选条件挡住
+    /*
+     * 新建的类型跟随当前类型筛选，否则新建出来的卡片会被自己的筛选条件挡住
+     * ——「保存成功了，列表里却没有」看起来像保存失败。
+     * 类别同理：正看着「时间线」这一类，新建的设定卡就该预填时间线。
+     */
+    const type = cardType ?? 'character'
+    const draft = emptyCardDraft(type, defaultBookId)
     setSelectedId(null)
-    setNewDraft(emptyCardDraft(cardType ?? 'character', defaultBookId))
+    setNewDraft(
+      type === 'setting' && settingCategory !== null
+        ? { ...draft, extra: { ...draft.extra, category: settingCategory } }
+        : draft
+    )
   }
 
   const handleCreate = async (draft: CardDraft): Promise<void> => {
@@ -264,6 +317,10 @@ export function CardsPage() {
     if (cardType !== null && updated.cardType !== cardType) {
       setCardType(null)
       toast.notifySuccess(`类型已改为「${CARD_TYPE_LABELS[updated.cardType]}」，筛选已切回全部类型`)
+    } else if (settingCategory !== null && updated.extra.category !== settingCategory) {
+      // 类别改了也一样：卡片会从「时间线」这一组里消失，看着像保存把它丢了
+      setSettingCategory(null)
+      toast.notifySuccess('类别已改，类别筛选已切回全部')
     }
   }
 
@@ -341,15 +398,35 @@ export function CardsPage() {
           data-testid="cards-type-select"
           className="cards-type-select"
           value={cardType ?? ALL_SCOPE}
-          onChange={(value: string) => {
-            setCardType(value === ALL_SCOPE ? null : (value as CardType))
-            setPage(1)
-          }}
+          onChange={handleTypeChange}
           options={[
             { value: ALL_SCOPE, label: '全部类型' },
             ...CARD_TYPES.map((type) => ({ value: type, label: CARD_TYPE_LABELS[type] }))
           ]}
         />
+
+        {/*
+         * 类别下拉只在选中「设定」时出现。
+         *
+         * 类别是设定卡的专属字段，挂在别处没有意义；更重要的是不能让
+         * 「人物 + 时间线」这种组合可以被选出来 —— 它必然是空列表，
+         * 而空列表看起来跟「这本书还没有设定」一模一样。
+         */}
+        {cardType === 'setting' ? (
+          <Select
+            data-testid="cards-category-select"
+            className="cards-category-select"
+            value={settingCategory ?? ALL_CATEGORY}
+            onChange={(value: string) => {
+              setSettingCategory(isSettingCategory(value) ? value : null)
+              setPage(1)
+            }}
+            options={[
+              { value: ALL_CATEGORY, label: '全部类别' },
+              ...SETTING_CATEGORIES.map((category) => ({ value: category, label: category }))
+            ]}
+          />
+        ) : null}
 
         <Input
           data-testid="cards-keyword"
@@ -384,6 +461,19 @@ export function CardsPage() {
               </strong>
             </span>
           ))}
+          {cardType === 'setting' && list.data !== undefined
+            ? SETTING_CATEGORIES.map((category) => (
+                <span key={category}>
+                  {category}{' '}
+                  <strong
+                    data-testid={`cards-category-count-${category}`}
+                    data-value={list.data?.settingCounts[category] ?? 0}
+                  >
+                    {list.data?.settingCounts[category] ?? 0}
+                  </strong>
+                </span>
+              ))
+            : null}
           {list.data === undefined || list.data.globalCount === 0 ? null : (
             <span>
               其中通用{' '}
@@ -497,6 +587,12 @@ function CardRow({ card, selected, bookTitle, onSelect }: CardRowProps) {
       data-testid="card-row"
       data-card-id={card.id}
       data-card-type={card.cardType}
+      /*
+       * 类别也挂到行上：列表里它只是一行补充文字里的一段，
+       * 而「按类别筛选到底筛对了没有」只有逐行读回来才知道 ——
+       * 界面上的总数对、行数对，行却可能是别的类别。
+       */
+      data-card-category={card.cardType === 'setting' ? (card.extra.category ?? '') : ''}
       data-selected={selected ? 'true' : 'false'}
       onClick={onSelect}
     >

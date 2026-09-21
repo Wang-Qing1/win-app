@@ -47,6 +47,10 @@ export const IpcChannel = {
   CardsUpdate: 'cards:update',
   CardsRemove: 'cards:remove',
   CardsDuplicate: 'cards:duplicate',
+  CardsLinkChapter: 'cards:link-chapter',
+  CardsUnlinkChapter: 'cards:unlink-chapter',
+  CardsListLinks: 'cards:list-links',
+  CardsListByChapter: 'cards:list-by-chapter',
 
   /* ---------------- 全库检索 ---------------- */
   SearchQuery: 'search:query',

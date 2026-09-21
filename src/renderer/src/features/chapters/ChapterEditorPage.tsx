@@ -1043,6 +1043,7 @@ export function ChapterEditorPage() {
         {focusMode ? null : (
           <EditorInspector
             bookId={bookId}
+            chapterId={chapterId}
             bookTitle={book.data?.title ?? '未命名书籍'}
             text={doc?.text ?? ''}
             charCount={liveChars}

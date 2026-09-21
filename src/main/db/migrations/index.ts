@@ -266,5 +266,35 @@ export const migrations: readonly Migration[] = [
          WHERE (SELECT MAX(target_words) FROM chapters WHERE chapters.book_id = books.id) > 0;
       `)
     }
+  },
+  {
+    name: '006_card_chapter_links',
+    up(db) {
+      /*
+       * 卡片 ↔ 章节的关联：「这条设定用在哪几章」「这一章用到了哪几条设定」。
+       *
+       * 为什么单独一张表，而不是在 cards 上加一个 chapter_ids 列：
+       * 反查（从章节找卡片）是这个功能的另一半，而数组列上的反查
+       * 只能全表扫后再逐行解析 JSON。一张关联表两个方向都走索引。
+       *
+       * 复合主键而不是自增 id：同一对 (card, chapter) 只能存在一次。
+       * 靠代码去判重的话，「快速连点两下」那种竞态迟早会撞出重复行，
+       * 而重复行在数据里看不出来、界面上却是一条删不干净的记录。
+       *
+       * 两个外键都是 CASCADE：卡片和章节的删除都是「这条资料本身没了」，
+       * 关联随之消失是预期的；留着指向不存在记录的悬挂行只会让
+       * 反查多出需要过滤的脏数据。
+       */
+      db.exec(`
+        CREATE TABLE card_chapter_links (
+          card_id    INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+          chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+          created_at TEXT    NOT NULL,
+          PRIMARY KEY (card_id, chapter_id)
+        );
+
+        CREATE INDEX idx_card_links_chapter ON card_chapter_links (chapter_id);
+      `)
+    }
   }
 ]

@@ -27,6 +27,7 @@ import {
 import { useToast } from '../../components/Toast'
 import { IconButton } from '../../components/IconButton'
 import { formatDateTime } from '../../lib/format'
+import { CardChapterLinks } from './CardChapterLinks'
 import { CARD_TYPE_COLORS, CARD_TYPE_ICONS } from './card-meta'
 
 const { Text, Paragraph } = Typography
@@ -370,6 +371,14 @@ export function CardEditorPanel({
           </Paragraph>
         ) : (
           <>
+            {/*
+             * 用 card.bookId 而不是 draft.bookId：关联的是**已经存下来的
+             * 这张卡**，而它的归属只有在保存之后才算数。用草稿里的值，
+             * 改了归属却还没保存就去关联章节，会按一本它还不属于的书
+             * 去列章节。
+             */}
+            <CardChapterLinks cardId={card.id} bookId={card.bookId} />
+
             <Divider className="cards-panel__divider">其它</Divider>
 
             <Descriptions

@@ -54,6 +54,10 @@ export function isCardType(value: unknown): value is CardType {
   return typeof value === 'string' && (CARD_TYPES as readonly string[]).includes(value)
 }
 
+export function isSettingCategory(value: unknown): value is SettingCategory {
+  return typeof value === 'string' && (SETTING_CATEGORIES as readonly string[]).includes(value)
+}
+
 /* ------------------------------------------------------------------ *
  * 类型专属字段
  * ------------------------------------------------------------------ */
@@ -209,6 +213,13 @@ export interface CardListResult {
    * 它是一组导航用的计数，不是当前结果集的分解。
    */
   typeCounts: Record<CardType, number>
+  /**
+   * 设定卡按类别计数（忽略 settingCategory 这一项筛选）。
+   *
+   * 与 typeCounts 同理：它是导航用的数字，不是当前结果集的分解。
+   * 只在按「设定」类型浏览时界面才读它。
+   */
+  settingCounts: Record<SettingCategory, number>
   /** 当前筛选条件下不归属任何书的卡片数，用于提示「其中通用 N 张」 */
   globalCount: number
 }
@@ -430,6 +441,7 @@ export const cardListQuerySchema = z.object({
   bookScope: cardBookScopeSchema.default('all'),
   bookId: z.number().int().positive('书籍 ID 非法').nullable().default(null),
   cardType: z.union([z.string().trim(), z.null()]).default(''),
+  settingCategory: z.union([z.string().trim(), z.null()]).default(''),
   keyword: z.string().trim().max(CARD_LIMITS.title, '搜索关键词过长').default(''),
   page: z.number().int().min(1, '页码非法').default(1),
   pageSize: z.number().int().min(1, '每页条数非法').max(200, '每页最多 200 条').default(60),
@@ -445,6 +457,14 @@ export interface CardListQuery {
   bookId: number | null
   /** null 表示不按类型筛选 */
   cardType: CardType | null
+  /**
+   * null 表示不按类别筛选。
+   *
+   * 只有设定卡的 extra 里有 category 键，所以这一项**隐含了「只看设定卡」** ——
+   * 界面上选类别时会顺手把类型定成设定，否则「人物 + 地点」会查出一片空白，
+   * 而空白看起来跟「这本书还没有设定」一模一样。
+   */
+  settingCategory: SettingCategory | null
   keyword: string
   page: number
   pageSize: number
@@ -462,6 +482,7 @@ export function normalizeCardListQuery(input: CardListQueryInput): CardListQuery
     bookId: scope === 'book' ? input.bookId : null,
     // 非法类型值静默降级为「不筛选」，与书籍列表对 status 的处理一致
     cardType: isCardType(input.cardType) ? input.cardType : null,
+    settingCategory: isSettingCategory(input.settingCategory) ? input.settingCategory : null,
     keyword: input.keyword,
     page: input.page,
     pageSize: input.pageSize,
@@ -474,6 +495,7 @@ export const DEFAULT_CARD_QUERY: CardListQuery = {
   bookScope: 'all',
   bookId: null,
   cardType: null,
+  settingCategory: null,
   keyword: '',
   page: 1,
   pageSize: 60,

@@ -31,6 +31,13 @@ import type {
   CardUpdateInput
 } from './modules/cards'
 import type {
+  CardChapterLink,
+  CardLinkCardInput,
+  CardLinkChapterInput,
+  CardLinkPairInput,
+  ChapterCardRef
+} from './modules/card-links'
+import type {
   OutlineAttachChapterInput,
   OutlineMaterializeInput,
   OutlineMaterializeResult,
@@ -182,6 +189,20 @@ export interface WinbookApi {
     remove: (input: CardIdInput) => Promise<IpcResponse<CardRemovalResult>>
     /** 复制一张卡片作为变体：标题自动加「副本」后缀并避开重名 */
     duplicate: (input: CardIdInput) => Promise<IpcResponse<Card>>
+
+    /*
+     * 与章节的关联。四个通道都**返回整份最新关联列表**而不是单个对象：
+     * 界面拿到返回值直接替换本地状态即可，不必再发一次 list ——
+     * 少一次往返，也少一处「点了关联、列表却没刷新」的时序问题。
+     * 关联与解除都是幂等的（重复关联不报错、解除不存在的关联不报错），
+     * 于是快速连点两下不会产生重复行，也不会弹出「关联已存在」。
+     */
+    linkChapter: (input: CardLinkPairInput) => Promise<IpcResponse<CardChapterLink[]>>
+    unlinkChapter: (input: CardLinkPairInput) => Promise<IpcResponse<CardChapterLink[]>>
+    /** 这张卡用在哪几章 */
+    listLinks: (input: CardLinkCardInput) => Promise<IpcResponse<CardChapterLink[]>>
+    /** 这一章用到了哪几张卡 */
+    listByChapter: (input: CardLinkChapterInput) => Promise<IpcResponse<ChapterCardRef[]>>
   }
 
   search: {
