@@ -31,6 +31,7 @@ import { BookRepository } from './modules/books/book.repository'
 import { BookService } from './modules/books/book.service'
 import { bookCreateSchema, DEFAULT_CHAPTER_WORDS } from '@shared/modules/books'
 import { CHAPTER_REVISION_LIMITS } from '@shared/modules/chapters'
+import { TRASH_LIMITS } from '@shared/modules/trash'
 import { VolumeRepository } from './modules/volumes/volume.repository'
 import { VolumeService } from './modules/volumes/volume.service'
 import { ChapterRepository } from './modules/chapters/chapter.repository'
@@ -46,6 +47,7 @@ import { CardLinkRepository } from './modules/card-links/card-link.repository'
 import { CardLinkService } from './modules/card-links/card-link.service'
 import { SearchRepository } from './modules/search/search.repository'
 import { SearchService } from './modules/search/search.service'
+import { TrashService } from './modules/trash/trash.service'
 import { StatsService } from './modules/stats/stats.service'
 
 /**
@@ -89,7 +91,8 @@ const HOME_MODULES = [
   { key: 'books', path: '/books', label: '书籍管理' },
   { key: 'outline', path: '/outline', label: '大纲管理' },
   { key: 'cards', path: '/cards', label: '卡片库' },
-  { key: 'stats', path: '/stats', label: '时间与字数' }
+  { key: 'stats', path: '/stats', label: '时间与字数' },
+  { key: 'trash', path: '/trash', label: '回收站' }
 ] as const
 
 /**
@@ -317,6 +320,15 @@ export interface ShowcaseTargets {
   /** 删掉一张卡片。验证用的卡片建完就删，展示数据要恢复原样 */
   removeCard: (id: number) => void
   /**
+   * 库里（含回收站）是否还有这个标题的卡片。
+   *
+   * 回收站那一项要验「软删除」而不是「删掉」：删除之后
+   * `lookupCard` 查不到是**应该**的（默认口径排除已删除），
+   * 但它必须还在库里躺着 —— 否则「恢复」就成了空话。
+   * 用标题而不是 id 查：探针卡是主进程建的，界面拿不到 id。
+   */
+  trashHasCard: (title: string) => boolean
+  /**
    * 造一张用于验证的设定卡，返回它的 id。
    *
    * 走主进程而不是在界面上点出来：类别筛选要验的是「筛得对不对」，
@@ -422,6 +434,8 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
     outlineRepository
   )
   const searchService = new SearchService(new SearchRepository(db))
+  // 与 registry.ts 的装配保持一致：回收站只编排两个服务，不碰仓储
+  const trashService = new TrashService(cardService, chapterService)
 
   /* 1. 数据库可查询 */
   try {
@@ -2241,6 +2255,299 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
     }
 
     /* ------------------------------------------------------------------ *
+     * 回收站（第三期第 5 件）
+     *
+     * 这一段的四条主线：
+     *   ① 删除之后**列表里没了、库里还在** —— 软删除的全部价值就在这里，
+     *      少验任何一半，「删除」与「删除但还能找回」就分不开；
+     *   ② 书与卷上的**数字要跟着变**（章节数、字数、进度），否则用户
+     *      删掉一章看到进度条纹丝不动，会以为删除没生效而反复删；
+     *   ③ 恢复要把**正文、历史版本、在容器里的位置**一起带回来 ——
+     *      「恢复了一半」比重来一遍更糟；
+     *   ④ 彻底删除之后库里真的没有了，且**恢复过的条目不能再被恢复一次**。
+     *
+     * 用一本**独立**的临时书，笔名刻意避开「冒烟作者」——
+     * 后面检索那一步断言「冒烟作者」只命中 1 处，多一本同笔名的书
+     * 就会变成 2 处，报出一条与新功能无关的假失败。
+     * 整段包在 try/finally 里，异常就地归类、临时书必定删掉（理由同上一段）。
+     * ------------------------------------------------------------------ */
+
+    // 建在 try 之外：finally 里要用它来清理，而 try 块里的 const 在 finally
+    // 是不可见的（这一点上把临时书建在 try 内、清理写在 finally 里会直接编译不过）
+    const trashBook = bookService.create({
+      title: `冒烟-回收站-${STAMP}`,
+      penName: '回收站作者',
+      genre: '都市',
+      status: 'idea',
+      summary: '',
+      targetWords: 0,
+      chapterWords: 2000,
+      accentColor: '#0f6cbd'
+    })
+
+    try {
+      const chapterDoomed = chapterService.create({
+        bookId: trashBook.id,
+        volumeId: null,
+        title: `冒烟-待删章-${STAMP}`,
+        targetWords: 0
+      })
+      /*
+       * 这一章**全程不被删**。它唯一的用途是占住容器，好让后面
+       * 「恢复的那一章落在末尾」有得比 —— 容器里若只剩被恢复的那一章，
+       * 它当然是「最后一个」，那条断言就成了永远成立的空话。
+       */
+      const chapterKeeper = chapterService.create({
+        bookId: trashBook.id,
+        volumeId: null,
+        title: `冒烟-留存章-${STAMP}`,
+        targetWords: 0
+      })
+      /*
+       * 这一章专供「回收站按删除时间倒序」：它比待删章**晚**被删，
+       * 就该排在回收站第一行。
+       *
+       * 单独建一章、而不是拿留存章兼这个角色 —— 两个断言要的容器状态
+       * 互斥：排序要求「书里还有别人活着」，而拿留存章去删的瞬间容器
+       * 就空了，落点断言随之失效。第一版正是这么写的，报出来的
+       * 「容器里现在是 冒烟-待删章」就是那个空容器。
+       */
+      const chapterSecond = chapterService.create({
+        bookId: trashBook.id,
+        volumeId: null,
+        title: `冒烟-后删章-${STAMP}`,
+        targetWords: 0
+      })
+
+      /*
+       * 存两次：第二次才会给「被替换掉的正文」留下一版历史，
+       * 那正是下面「恢复之后历史版本还在」要验的东西。
+       *
+       * 正文必须够长。短于 minHanzi 的正文按约定**不留版**（新建的章
+       * 开头那几笔没有保存价值），第一版这里每段只写了 7 个字，
+       * 两次保存下来一版都没有，断言报的是「历史版本仍是 0 版」——
+       * 看着像删除把历史连坐清掉了，其实是压根没留下过。
+       * 每段重复一次到 14 字：第二次保存时「改动前的正文」就够长了，
+       * 「首次见到这一章的正文」因而无条件留底一版。
+       */
+      const firstBody = '<p>回收站探针正文回收站探针正文</p>'
+      const secondBody = `${firstBody}<p>第二段改了一次第二段改了一次</p>`
+      chapterService.saveContent({ id: chapterDoomed.id, contentHtml: firstBody })
+      chapterService.saveContent({ id: chapterDoomed.id, contentHtml: secondBody })
+
+      const doomedBefore = chapterService.getById(chapterDoomed.id)
+      const revisionsBeforeTrash = chapterService.listRevisions(chapterDoomed.id).length
+
+      // 读「这本书有多少字」用书名做关键字查：书名带随机后缀，只可能命中它自己，
+      // 而且 hanziCount 是各章之和（回收站在外）—— 正是「书架上的进度」那个数字
+      const bookHanzi = (): number => {
+        const hit = bookService.list({
+          keyword: trashBook.title,
+          status: null,
+          page: 1,
+          pageSize: 10,
+          sortBy: 'updatedAt',
+          sortOrder: 'desc'
+        })
+        return hit.items[0]?.hanziCount ?? -1
+      }
+      const hanziBeforeTrash = bookHanzi()
+
+      /* ---- ① 删一张卡：列表里没了，回收站里在，库里也还在 ---- */
+      const probeCard = cardService.create({
+        bookId: trashBook.id,
+        cardType: 'inspiration',
+        title: `冒烟-回收站探针卡-${STAMP}`,
+        subtitle: '一句话简介也在',
+        content: '',
+        tags: [],
+        extra: { source: '', usage: '' }
+      })
+      cardService.remove(probeCard.id)
+
+      const cardInList = cardService
+        .list({ ...DEFAULT_CARD_QUERY, bookScope: 'book', bookId: trashBook.id })
+        .items.some((item) => item.id === probeCard.id)
+      // 直接问仓储「它在回收站里吗」：这是唯一能证明「数据还在」的读法，
+      // 走 list 只能证明「看不见」，而「看不见」也可能是因为查询条件写错了
+      const cardRowAlive = cardRepository.findDeletedById(probeCard.id) !== null
+
+      /* ---- ② 删一章：书的字数与目录都要跟着变 ---- */
+      chapterService.remove(chapterDoomed.id)
+      const hanziAfterTrash = bookHanzi()
+      const chaptersInBook = chapterService.list({
+        bookId: trashBook.id,
+        volumeId: undefined
+      })
+      const doomedStillListed = chaptersInBook.some((item) => item.id === chapterDoomed.id)
+      const keeperStillListed = chaptersInBook.some((item) => item.id === chapterKeeper.id)
+
+      // 两次删除之间隔开一点：回收站按 deleted_at 倒序，
+      // 同一个毫秒内删的两条之间没有「先后」可言，也就验不出排序
+      await delay(5)
+      chapterService.remove(chapterSecond.id)
+
+      const trashAfter = trashService.list({ kind: null })
+      /*
+       * 「切到只看卡片时，章节那格的数字不该变」这一条必须在**清空之前**
+       * 读，而且要和 trashAfter 取同一时刻的状态。两个数是要放在一起比
+       * 大小的，中间隔着任何一次写入（哪怕是自己后面的清空），比出来的
+       * 差就没有意义。
+       *
+       * 第一版把这次读取写在了断言数组里（数组在 empty() 之后才求值），
+       * 于是括号外那个数是清空后的 0、括号里那个数是清空前的 2，
+       * 报出来是「仍报『章节 0』（与全部视图的 2 一致）」这种自相矛盾的
+       * 一句话 —— 它既不像通过也不像失败，最费时间的就是这种读数。
+       */
+      const cardOnlyView = trashService.list({ kind: 'card' })
+      const cardEntry = trashAfter.items.find(
+        (item) => item.kind === 'card' && item.id === probeCard.id
+      )
+      const chapterEntry = trashAfter.items.find(
+        (item) => item.kind === 'chapter' && item.id === chapterDoomed.id
+      )
+      const trashSortedDesc = trashAfter.items.every(
+        (item, index) => index === 0 || trashAfter.items[index - 1].deletedAt >= item.deletedAt
+      )
+
+      /* ---- ③ 恢复章节：正文 / 历史版本 / 落点一起回来 ---- */
+      chapterService.restoreFromTrash(chapterDoomed.id)
+      const restored = chapterService.getById(chapterDoomed.id)
+      const restoredRevisions = chapterService.listRevisions(chapterDoomed.id).length
+      const afterRestore = chapterService.list({ bookId: trashBook.id, volumeId: undefined })
+      const restoredIsLast = afterRestore[afterRestore.length - 1]?.id === chapterDoomed.id
+
+      /* ---- ④ 彻底删除 ---- */
+      cardService.purgeFromTrash(probeCard.id)
+      const purgedRowGone = cardRepository.findDeletedById(probeCard.id) === null
+      const purgedCardBlocked = (() => {
+        try {
+          cardService.restoreFromTrash(probeCard.id)
+          return false
+        } catch (error) {
+          return error instanceof AppError && error.code === 'NOT_FOUND'
+        }
+      })()
+
+      /* ---- 边界：kind 非法必须被真实的校验器拦住 ---- */
+      const trashParser = getChannelParser(IpcChannel.TrashRestore)
+      let trashKindBlocked = false
+      if (trashParser) {
+        try {
+          trashParser({ kind: 'chapter_revisions', id: chapterDoomed.id })
+        } catch {
+          trashKindBlocked = true
+        }
+      }
+
+      /* ---- 清空：两条都要真的从库里消失 ---- */
+      const beforeEmpty = trashService.list({ kind: null }).total
+      const emptied = trashService.empty({ kind: null })
+      const afterEmpty = trashService.list({ kind: null })
+
+      const trashChecks: Array<[string, boolean, string]> = [
+        [
+          '删除卡片后列表里消失、回收站里能找到',
+          !cardInList && cardRowAlive && cardEntry !== undefined,
+          !cardInList && cardRowAlive && cardEntry !== undefined
+            ? `卡片列表里查不到它了（软删除生效），但库里那一行还在，回收站里带书名列出了「${cardEntry?.title}」`
+            : `列表命中 ${cardInList}、库里仍在 ${cardRowAlive}、回收站命中 ${cardEntry !== undefined}`
+        ],
+        [
+          '回收站条目带书名与简介',
+          cardEntry?.bookTitle === trashBook.title && cardEntry?.subtitle === '一句话简介也在',
+          cardEntry
+            ? `书名「${cardEntry.bookTitle}」、简介「${cardEntry.subtitle}」`
+            : '回收站里找不到这张卡片'
+        ],
+        [
+          '删章节后书的字数与目录随之变化',
+          !doomedStillListed &&
+            keeperStillListed &&
+            hanziAfterTrash === hanziBeforeTrash - doomedBefore.hanziCount,
+          !doomedStillListed && keeperStillListed
+            ? `章节列表少了一章、另一章还在；书的字数 ${hanziBeforeTrash} → ${hanziAfterTrash}（正好少掉被删那章的 ${doomedBefore.hanziCount} 字）`
+            : `被删章仍在列表 ${doomedStillListed}、留存章还在 ${keeperStillListed}、字数 ${hanziBeforeTrash} → ${hanziAfterTrash}（预期少 ${doomedBefore.hanziCount}）`
+        ],
+        [
+          '回收站按删除时间倒序',
+          trashSortedDesc &&
+            chapterEntry !== undefined &&
+            trashAfter.items[0]?.id === chapterSecond.id,
+          trashSortedDesc && trashAfter.items[0]?.id === chapterSecond.id
+            ? `最新删除的一章排在最前（共 ${trashAfter.items.length} 条，时间戳非递增）`
+            : `顺序不对：${trashAfter.items.map((item) => `${item.kind}#${item.id}@${item.deletedAt}`).join(' > ')}`
+        ],
+        [
+          '回收站页签计数不受筛选影响',
+          trashAfter.kindCounts.card >= 1 &&
+            trashAfter.kindCounts.chapter >= 2 &&
+            cardOnlyView.kindCounts.chapter === trashAfter.kindCounts.chapter,
+          `只看卡片时页签上仍报「章节 ${cardOnlyView.kindCounts.chapter}」` +
+            `（与全部视图的 ${trashAfter.kindCounts.chapter} 一致）—— 否则切页签会读成「那些被删光了」`
+        ],
+        [
+          '恢复把正文与历史版本一起带回来',
+          restored.contentHtml === doomedBefore.contentHtml &&
+            restored.hanziCount === doomedBefore.hanziCount &&
+            revisionsBeforeTrash > 0 &&
+            restoredRevisions === revisionsBeforeTrash,
+          restored.contentHtml !== doomedBefore.contentHtml
+            ? '恢复后的正文与删除前不一致'
+            : `正文与 ${doomedBefore.hanziCount} 字都回来了，历史版本仍是 ${restoredRevisions} 版（删除没有连坐清掉它）`
+        ],
+        [
+          '恢复的章节落在容器末尾',
+          restoredIsLast && afterRestore.length === 2,
+          restoredIsLast
+            ? `容器里现在是 ${afterRestore.map((item) => item.title).join(' / ')} —— 被删那一章回到末尾，而不是插回原位去和别的章争下标`
+            : `恢复后的顺序是 ${afterRestore.map((item) => item.title).join(' / ')}，它没有落在末尾`
+        ],
+        [
+          '彻底删除后库里真的没有了',
+          purgedRowGone,
+          purgedRowGone ? '连回收站也查不到那一行了' : '彻底删除之后那一行仍然在库里'
+        ],
+        [
+          '彻底删除过的条目不能再恢复',
+          purgedCardBlocked,
+          purgedCardBlocked ? '再恢复一次被拒（NOT_FOUND）' : '已经彻底删掉的卡片还能恢复'
+        ],
+        [
+          '回收站条目类型非法时拦截',
+          trashKindBlocked,
+          trashKindBlocked
+            ? 'kind 传一个不认识的值被边界拒掉 —— 写操作不会落到错误的实体上'
+            : '非法的 kind 没有被拦截'
+        ],
+        [
+          '清空回收站',
+          emptied.removed === beforeEmpty &&
+            afterEmpty.total === 0 &&
+            afterEmpty.items.length === 0 &&
+            emptied.removedCards + emptied.removedChapters === emptied.removed,
+          `清空前 ${beforeEmpty} 条，本次删掉 ${emptied.removed} 条（卡片 ${emptied.removedCards} + 章节 ${emptied.removedChapters}），清空后剩 ${afterEmpty.total} 条`
+        ]
+      ]
+
+      for (const [name, ok, detail] of trashChecks) {
+        push(name, ok, detail)
+      }
+    } catch (error) {
+      // 与上一段同样的理由：就地接住，别让异常穿到最外层去冒名顶替「业务规则」，
+      // 更别让它把后面几十条断言（含全部渲染检查）一起吞掉
+      push('回收站（后端）', false, messageOf(error))
+    } finally {
+      /*
+       * 临时书必须删掉，理由与上一段完全相同：它会成为书籍列表里最新的一本，
+       * 把大纲页 / 卡片页在「没有 ?bookId」时的默认落点整体挪走。
+       * 删书走的是 CASCADE，回收站里剩下的条目会跟着一起消失 ——
+       * 这本身就是既有行为（见 books 表的外键），不需要额外清理。
+       */
+      bookService.remove(trashBook.id)
+    }
+
+    /* ------------------------------------------------------------------ *
      * 全库检索
      *
      * 检索押在 LIKE 全表扫描上（不引 FTS5 的实测依据见
@@ -2624,6 +2931,13 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
             removeCard: (id) => {
               cardService.remove(id)
             },
+            // 按标题在「回收站口径」里找：listDeleted 已经是
+            // `deleted_at IS NOT NULL` + 删除时间倒序，刚删的那张总在头部，
+            // 因此这个上限不会漏掉它
+            trashHasCard: (title) =>
+              cardService
+                .listDeleted(TRASH_LIMITS.items)
+                .some((entry) => entry.title === title),
             seedSettingCard: (title, category, timePoint = '') =>
               cardService.create({
                 bookId: showcaseBookId as number,
@@ -2820,6 +3134,14 @@ export async function runRendererSmokeChecks(
      * 会改动 showcase 那一章的内容 —— 与上一条同样的理由。
      */
     results.push(await checkChapterRevisions(window, showcase))
+    /*
+     * 「回收站页」放在这一段的最后：它会在库里删掉一张探针卡
+     * （中途还会恢复一次、最后彻底删掉）。虽然全程只碰自己造的那张卡，
+     * 但「删除 → 列表少一条」这类断言一旦失败，意味着卡片库的条数
+     * 与预期不符 —— 让它排在所有卡片相关检查之后，失败就不会
+     * 牵连前面那些「共 N 张」的断言。
+     */
+    results.push(await checkTrash(window, showcase))
   }
 
   results.push(checkNoSilentIpcFailure())
@@ -2973,7 +3295,7 @@ async function checkDashboard(window: BrowserWindow): Promise<StepResult> {
       const sameRow = Math.max(...modules.map((m) => m.top)) - Math.min(...modules.map((m) => m.top)) <= 2
       if (!sameRow) {
         problems.push(
-          `功能模块卡片不在同一行（top ${modules.map((m) => m.top).join('/')}）—— 四张应当并作一行，否则又变成占地方`
+          `功能模块卡片不在同一行（top ${modules.map((m) => m.top).join('/')}）—— 五张应当并作一行，否则又变成占地方`
         )
       }
       // 等宽是产品要求：卡片宽度随文案长短伸缩会让一屏里的卡片高矮不齐
@@ -9692,22 +10014,67 @@ function pad(text: string, target: number): string {
 }
 
 /**
- * 章节历史版本与回档（第三期第 4 件）的渲染检查。
+ * 弹窗里某一枚按钮的实测形态。
+ *
+ * 与 `IconButtonProbe` 分开写，是因为读法不同：那一份按**类**采（一页里
+ * 所有圆钮都得合规矩），这一份按**锚点**采（弹窗里的按钮就那么两枚，
+ * 而且弹窗没打开时它们在 DOM 里根本不存在，按类采时采到的是空集）。
+ */
+interface ModalButtonProbe {
+  /** 按钮上渲染出来的文字。**必须为空** */
+  text: string
+  /** `aria-label`，与悬浮提示同源。**必须非空** */
+  label: string
+  /** 有没有挂上形状类 `.app-icon-button` */
+  shaped: boolean
+  width: number
+  height: number
+  radiusPx: number
+  /**
+   * 视口坐标下的左右边缘。同一帧里量出来的两个值才可比 ——
+   * 用来验「两枚圆钮落在同一条内容轴上」，那件事只能量几何。
+   */
+  left: number
+  right: number
+}
+
+/**
+ * 章节历史版本与回档（第三期第 4 件；2026-09-22 面板改成弹窗）的渲染检查。
  *
  * 后端那一组已经把「留几版、剪谁、回档对不对」押住了；这一条押的是
- * **另外三件在库里看不出来的事**：
+ * **另外五件在库里看不出来的事**：
  *
- *   1. **面板真的打开在正文上方，且能关掉。** 锚点存在不等于它可见 ——
- *      历史面板是条件渲染的，一个恒为 false 的条件会让「面板在的」
- *      那种断言照样绿。
- *   2. **左右两栏的差异行数相等。** 并排对比的前提是两栏一一对应；
+ *   1. **弹窗真的打开、且能关掉。** 锚点存在不等于它可见 ——
+ *      历史版本是条件渲染的，一个恒为 false 的条件会让「它在的」
+ *      那种断言照样绿。改弹窗之后还要多押一条：关闭后必须从 DOM 里
+ *      **真的移除**（`destroyOnHidden`），只藏起来的话「关掉了没有」
+ *      永远判不出来。
+ *   2. **弹窗里两枚按钮是圆形图标按钮、文字在悬浮提示里。**
+ *      用户 2026-09-22：「历史界面的按钮要修正为图标 + 鼠标悬浮提示信息
+ *      的展示样式」。这类改造的失败方式是「按钮还在、点了也有反应」——
+ *      只是又变回带文字的长条，而所有存在性断言照样绿。
+ *      **弹窗没打开时全应用的按类探针采不到它**（那是弹窗，不进路由快照），
+ *      所以必须在打开的这一帧就地采。
+ *   3. **左右两栏的差异行数相等。** 并排对比的前提是两栏一一对应；
  *      行数不等时浏览器不会报错，只是从某一行开始整体错位，
  *      读者对不上「我是把哪一段改成了哪一段」。这是布局性质的缺陷，
  *      只能量几何。
- *   3. **点了「回到这一版」之后，编辑器里的正文真的变回那一版。**
+ *   4. **点了「回到这一版」之后，编辑器里的正文真的变回那一版。**
  *      这是整条链路的终点：服务端存了、面板列了、按钮点了，
  *      但编辑器自己管正文（只在 key 变化时重建），少一个重建令牌
  *      就表现为「点了没反应」—— 而库里此时已经回档成功了。
+ *   5. **右上角两枚圆钮落在同一条内容轴上**（2026-09-22 补）。
+ *      两枚按钮分别生在标题行与右栏表头，各自贴着自己那一行的最右；
+ *      只要其中一行带了横向内边距，那一枚就会被推进去，用户看到的
+ *      就是「一列没对齐的圆」（当时实测差 10px）—— 而每一枚单看都合格，
+ *      所以「是正圆、有 aria-label、提示弹得出来」那几条一条都不会红。
+ *
+ * **打字的那两步必须发生在弹窗关着的时候**（顺序因此与上一版不同）：
+ * 弹窗有焦点陷阱（`rc-dialog` 监听 `focusin`，焦点一离开就把焦点拽回弹窗里），
+ * 而往正文里插字靠的是「聚焦编辑器 + `execCommand('insertText')`」——
+ * 焦点被拽走之后 `execCommand` 作用在一个不可编辑的元素上，一个字都插不进去，
+ * 报出来却是「往正文里插不进文字」。这不是断言过严，是**弹窗本身就挡住了编辑**，
+ * 也正是这次改成弹窗的收益之一（见 ChapterHistoryModal 顶部注释第 3 条）。
  *
  * 用 showcase 的那一章（`ctx.chapterId`）。这一条排在
  * 「正文自动保存往返」之后，两者都往同一章里打字，互不影响：
@@ -9788,22 +10155,23 @@ async function checkChapterRevisions(
       return { name, ok: false, detail: `进不了编辑器（hash=${editor.hash}），无法验证历史版本` }
     }
 
-    /* ---------- ① 打开面板：先确认它在，再量几何 ---------- */
+    /* ---------- ① 打开弹窗：先确认它在，再量几何 ---------- */
     if (!(await clickTestId(window, 'editor-history'))) {
       return { name, ok: false, detail: '顶栏里点不到「历史版本」这枚圆钮' }
     }
-    if (!(await waitForTestId(window, 'chapter-history-panel', 5000))) {
-      return { name, ok: false, detail: '点了「历史版本」之后面板没有出现' }
+    if (!(await waitForTestId(window, 'chapter-history-modal', 5000))) {
+      return { name, ok: false, detail: '点了「历史版本」之后弹窗没有出现' }
     }
 
     /*
-     * 面板必须真的占到了高度。只判锚点存在的话，「面板渲染了但高度被
-     * 压成 0」这种缺陷会被判通过 —— 而它恰恰是这个功能最容易犯的错：
-     * 面板挂在 flex 列里，少一个 flex-shrink 设置就会被内容顶掉。
+     * 弹窗内容必须真的占到了高度与宽度。只判锚点存在的话，「弹窗渲染了但
+     * 尺寸被压成一条」这种缺陷会被判通过 —— 而它恰恰是这类改造最容易犯的错：
+     * 从「占满正文区宽度的一条」改成弹窗之后，宽度不再由父级 flex 决定，
+     * 少一个 `width` 或写错一个 `styles.body` 都会让它塌下去。
      */
     const panelBox = (await window.webContents.executeJavaScript(
       `(() => {
-        const el = document.querySelector('[data-testid="chapter-history-panel"]')
+        const el = document.querySelector('[data-testid="chapter-history-modal"]')
         if (!el) return null
         const rect = el.getBoundingClientRect()
         return { height: Math.round(rect.height), width: Math.round(rect.width) }
@@ -9811,24 +10179,222 @@ async function checkChapterRevisions(
     )) as { height: number; width: number } | null
 
     if (panelBox === null || panelBox.height < 60) {
-      problems.push(`历史面板没有占到应有的高度（实测 ${panelBox?.height ?? 0}px）—— 它被压扁了`)
+      problems.push(`历史版本弹窗没有占到应有的高度（实测 ${panelBox?.height ?? 0}px）—— 它被压扁了`)
     }
     if (panelBox !== null && panelBox.width < 400) {
-      problems.push(`历史面板太窄（实测 ${panelBox.width}px），左右并排的差异读不出来`)
+      problems.push(`历史版本弹窗太窄（实测 ${panelBox.width}px），左右并排的差异读不出来`)
     }
 
-    /* ---------- ② 空状态：这一章还没有历史，必须说清楚，而不是空白 ---------- */
-    const emptyItems = await readItems()
-    if (emptyItems.length === 0) {
-      const hasEmptyText = (await window.webContents.executeJavaScript(
-        `(document.querySelector('[data-testid="chapter-history-panel"]')?.textContent || '').includes('还没有可回退的版本')`
-      )) as boolean
-      if (!hasEmptyText) {
-        problems.push('这一章还没有历史版本时，面板里既没有版本也没有说明文字')
+    /* ---------- ② 弹窗里两枚按钮必须是圆形图标按钮，文字在提示里 ---------- */
+    /*
+     * 为什么不靠全应用那套按类采的探针（`ICON_BUTTON_PROBE_JS`）：
+     * 那是**路由快照**，而这里是弹窗 —— 采快照时它根本没打开，采不到。
+     * 同类东西只在弹窗里出现的场合，只能在弹窗打开的这一帧就地采。
+     */
+    const modalButtons = (await window.webContents.executeJavaScript(
+      `(() => {
+        const read = (id) => {
+          const el = document.querySelector('[data-testid="' + id + '"]')
+          if (!el) return null
+          const rect = el.getBoundingClientRect()
+          const rawRadius = window.getComputedStyle(el).borderTopLeftRadius || '0'
+          return {
+            text: (el.textContent || '').trim(),
+            label: el.getAttribute('aria-label') || '',
+            shaped: el.classList.contains('app-icon-button'),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            radiusPx: rawRadius.trim().endsWith('%')
+              ? Math.round((rect.width * parseFloat(rawRadius)) / 100)
+              : Math.round(parseFloat(rawRadius)),
+            left: rect.left,
+            right: rect.right
+          }
+        }
+        /*
+         * body 的左右边缘就是弹窗的**内容轴**（它的 padding 是 0，
+         * 内边距由 antd 的 .ant-modal-container 提供）。形状类名不认，
+         * 只认应用自己的锚点 —— 见 README 的断言约定第 1 条。
+         */
+        const body = document.querySelector('[data-testid="chapter-history-modal"]')
+        const bodyRect = body ? body.getBoundingClientRect() : null
+        return {
+          close: read('history-close'),
+          restore: read('history-restore'),
+          body: bodyRect ? { left: bodyRect.left, right: bodyRect.right } : null
+        }
+      })()`
+    )) as {
+      close: ModalButtonProbe | null
+      restore: ModalButtonProbe | null
+      body: { left: number; right: number } | null
+    }
+
+    for (const [who, probe] of [
+      ['关闭', modalButtons.close],
+      ['回到这一版', modalButtons.restore]
+    ] as const) {
+      if (probe === null) {
+        problems.push(`历史版本弹窗里找不到「${who}」这枚按钮`)
+        continue
+      }
+      if (!probe.shaped) {
+        problems.push(
+          `弹窗里的「${who}」没有 .app-icon-button 类（class 里少了这个形状类）—— 它应当是圆形图标按钮`
+        )
+      }
+      if (probe.text.length > 0) {
+        problems.push(
+          `弹窗里的「${who}」上还写着「${probe.text}」—— 文字应当移进鼠标悬浮的提示里`
+        )
+      }
+      if (probe.label.length === 0) {
+        problems.push(
+          `弹窗里的「${who}」没有 aria-label —— 文字从画面上移走不等于可以删掉，否则读屏读不出它是什么`
+        )
+      }
+      if (Math.abs(probe.width - probe.height) > 1) {
+        problems.push(`弹窗里的「${who}」不是正方形（${probe.width}×${probe.height}px）`)
+      } else if (Math.abs(probe.radiusPx - probe.width / 2) > 1) {
+        problems.push(
+          `弹窗里的「${who}」不是正圆（宽 ${probe.width}px，圆角 ${probe.radiusPx}px，应为 ${Math.round(
+            probe.width / 2
+          )}px）`
+        )
       }
     }
 
-    /* ---------- ③④ 打字两次 → 改动前的正文应当被留成一版 ---------- */
+    /* ---------- ②b 右上角两枚圆钮必须落在同一条内容轴上 ---------- */
+    /*
+     * 用户 2026-09-22 的原话：「这两个图标对齐，现在的状态太丑了」。
+     *
+     * 「对齐」这件事**只有量几何才算数**：两枚按钮分别生在两个容器里
+     * （「关闭」在标题行、「回到这一版」在右栏表头），各自靠 `margin-left: auto`
+     * 贴到自己那一行的最右 —— 只要其中一行带了横向内边距，那一枚就会被
+     * 推进去、右边缘立刻错开。而「按钮在、是正圆、有 aria-label、提示弹得出来」
+     * 这一整套断言照样全绿，因为每一枚单看都是合格的。
+     *
+     * 当时的实测偏差是 10px（`.history__preview` 的 `padding-right`），
+     * 肉眼看就是右上角「一列没对齐的圆」。
+     *
+     * 两条一起验：①两枚各自都与弹窗的内容轴对齐；②两枚之间互相对齐。
+     * 只验①不够 —— 两枚一起被推进去时①就漏了；只验②也不够 ——
+     * 两枚一起漂出去时它们仍然互相对齐，但整体已经不在轴上。
+     */
+    if (modalButtons.body === null) {
+      problems.push(
+        '量不到历史版本弹窗的内容区（chapter-history-modal），无法校验右上角两枚圆钮是否对齐'
+      )
+    } else {
+      const axisRight = modalButtons.body.right
+      for (const [who, probe] of [
+        ['关闭', modalButtons.close],
+        ['回到这一版', modalButtons.restore]
+      ] as const) {
+        if (probe === null) continue
+        const drift = Math.abs(probe.right - axisRight)
+        if (drift > 1) {
+          problems.push(
+            `历史版本弹窗：「${who}」的右边缘没落在弹窗内容轴上（按钮 ${probe.right.toFixed(1)}px / ` +
+              `内容轴 ${axisRight.toFixed(1)}px，往里缩了 ${drift.toFixed(1)}px）—— ` +
+              '它所在的那一行自带了横向内边距，右上角两枚圆钮看起来就会是没对齐的一列'
+          )
+        }
+      }
+      if (modalButtons.close !== null && modalButtons.restore !== null) {
+        const drift = Math.abs(modalButtons.close.right - modalButtons.restore.right)
+        if (drift > 1) {
+          problems.push(
+            `历史版本弹窗：右上角两枚圆钮的右边缘互相对不齐（关闭 ${modalButtons.close.right.toFixed(1)}px / ` +
+              `回到这一版 ${modalButtons.restore.right.toFixed(1)}px，差 ${drift.toFixed(1)}px）`
+          )
+        }
+      }
+    }
+
+    /*
+     * 提示真的弹得出来才算「文字进了提示里」。
+     *
+     * 「回到这一版」这枚特别值得验：它外面套着 `Popconfirm`（回档要二次确认），
+     * 两个浮层触发器叠在同一枚按钮上 —— 组件的 `onMouseEnter` 是往下传的，
+     * 传岔了就会出现「点了有确认框、但悬浮没有任何提示」，而所有断言仍然全绿。
+     * 所以这里两枚都验，而不是只验好写的那一枚。
+     */
+    const closeLabel = modalButtons.close?.label ?? ''
+    const closeTip = await waitForTooltip(window, 'history-close', 'history-close-tip')
+    if (closeTip === '') {
+      problems.push('历史版本弹窗：「关闭」图标按钮悬浮后没有任何提示文案')
+    } else if (closeTip !== closeLabel) {
+      problems.push(
+        `历史版本弹窗：「关闭」的提示文案「${closeTip}」与 aria-label「${closeLabel}」不一致 —— 两者应当同源`
+      )
+    }
+
+    const restoreLabel = modalButtons.restore?.label ?? ''
+    const restoreTip = await waitForTooltip(window, 'history-restore', 'history-restore-tip')
+    if (restoreTip === '') {
+      problems.push(
+        '历史版本弹窗：「回到这一版」图标按钮悬浮后没有任何提示文案 —— ' +
+          '它外面套着 Popconfirm，两个浮层触发器可能把 onMouseEnter 传岔了'
+      )
+    } else if (restoreTip !== restoreLabel) {
+      problems.push(
+        `历史版本弹窗：「回到这一版」的提示文案「${restoreTip}」与 aria-label「${restoreLabel}」不一致 —— 两者应当同源`
+      )
+    }
+
+    /* ---------- ③ 空状态：这一章还没有历史，必须说清楚，而不是空白 ---------- */
+    /*
+     * 先等「列表出来了」或「空态文案出来了」—— 两者都没出现说明还在加载。
+     * 不等的话，取数还没回来时这里会读到「既没有版本也没有说明文字」，
+     * 报的却是「空状态没写清楚」：一个纯粹由时序造成的假失败。
+     */
+    {
+      const deadline = Date.now() + 5000
+      let ready = false
+      while (Date.now() < deadline && !ready) {
+        ready = (await window.webContents.executeJavaScript(
+          `(() => {
+            const root = document.querySelector('[data-testid="chapter-history-modal"]')
+            if (!root) return false
+            return (
+              root.querySelectorAll('[data-testid="history-item"]').length > 0 ||
+              (root.textContent || '').includes('还没有可回退的版本')
+            )
+          })()`
+        )) as boolean
+        if (!ready) await delay(120)
+      }
+    }
+
+    const emptyItems = await readItems()
+    if (emptyItems.length === 0) {
+      const hasEmptyText = (await window.webContents.executeJavaScript(
+        `(document.querySelector('[data-testid="chapter-history-modal"]')?.textContent || '').includes('还没有可回退的版本')`
+      )) as boolean
+      if (!hasEmptyText) {
+        problems.push('这一章还没有历史版本时，弹窗里既没有版本也没有说明文字')
+      }
+    }
+
+    /* ---------- ④ 先关掉弹窗：这一步必须在打字之前 ---------- */
+    /*
+     * 弹窗有焦点陷阱，开着的时候往正文里插字插不进去（见函数头注释）。
+     * 顺带这一关一开也是「列表会重取」的验收：`useChapterRevisions` 的
+     * `staleTime` 必须是 0 —— 第一次打开时这一章还没有历史，缓存里是空的；
+     * 若它退回全局默认的 15 秒，下面重开时读到的会是那个**空列表缓存**，
+     * 弹窗照旧显示「还没有可回退的版本」，也就是用户最怕的那句话。
+     */
+    await clickTestId(window, 'history-close')
+    if (!(await waitForTestIdGone(window, 'chapter-history-modal', 3000))) {
+      return {
+        name,
+        ok: false,
+        detail: '点了「关闭」之后历史版本弹窗没有收起来（或只是藏起来、仍留在 DOM 里）'
+      }
+    }
+
+    /* ---------- ⑤ 打字两次 → 改动前的正文应当被留成一版 ---------- */
     /*
      * 等待的判据全部取自**主进程现读**（`ctx.chapterHanzi` /
      * `ctx.revisionsOf`），不是底栏文案。
@@ -9880,28 +10446,58 @@ async function checkChapterRevisions(
       )
     }
 
+    /* ---------- ⑥ 重新打开：等价于用户主动刷新一次列表 ---------- */
     /*
-     * 关掉再打开，等价于用户主动刷新一次列表。
-     *
-     * 这一步同时是「列表会重取」的验收：`useChapterRevisions` 的
-     * `staleTime` 必须是 0。若它退回全局默认的 15 秒，这里读到的会是
-     * ① 那一次留下的**空列表缓存**（距上次取数还不到 15 秒），面板
-     * 照旧显示「还没有可回退的版本」—— 也就是用户最怕的那句话。
+     * 这一步是「列表会重取」的验收（`staleTime` 必须是 0）—— 上一次打开是
+     * 在打字**之前**（见 ③ 那段的说明），那时缓存里是空列表；若 `staleTime`
+     * 退回全局默认的 15 秒，这里读到的就会是那个空列表缓存，弹窗照旧显示
+     * 「还没有可回退的版本」，也就是用户最怕的那句话。
      */
-    await clickTestId(window, 'history-close')
-    await waitForTestIdGone(window, 'chapter-history-panel', 3000)
     await clickTestId(window, 'editor-history')
-    if (!(await waitForTestId(window, 'chapter-history-panel', 5000))) {
-      return { name, ok: false, detail: '关闭历史面板之后打不开了' }
+    if (!(await waitForTestId(window, 'chapter-history-modal', 5000))) {
+      return { name, ok: false, detail: '关闭历史版本弹窗之后打不开了' }
     }
 
     const items = await waitForItemCount(window, 1, 5000)
     if (items.length === 0) {
       problems.push(
-        `库里已经有 ${revisionsAfter} 版历史，但关掉面板再打开之后列表里一版都没有 —— ` +
+        `库里已经有 ${revisionsAfter} 版历史，但关掉弹窗再打开之后列表里一版都没有 —— ` +
           '列表读的是过期缓存'
       )
     } else {
+      /*
+       * 左边缘也要落在同一条内容轴上（与 ②b 是同一件事的另一半）。
+       *
+       * 版本列表是 body 里的一列，它一旦自带横向内边距，条目背景的左边缘
+       * 就会比标题行的时钟图标多缩进去几个像素 —— 用户看到的是「左栏整体
+       * 没对齐」。当时实测多缩了 4px（`.history__list` 的 `padding: 4px`）。
+       *
+       * 放在这里而不是 ② 那一步：列表只有在**非空**时才渲染，
+       * 而 ② 量的是「第一次打开、这一章还没有历史」的那一帧，那时它不存在。
+       * 拿不到元素就当不了判据，硬写会变成一条永远通过的假断言。
+       */
+      const leftAxis = (await window.webContents.executeJavaScript(
+        `(() => {
+          const body = document.querySelector('[data-testid="chapter-history-modal"]')
+          const list = document.querySelector('[data-testid="history-list"]')
+          if (!body || !list) return null
+          return { bodyLeft: body.getBoundingClientRect().left, listLeft: list.getBoundingClientRect().left }
+        })()`
+      )) as { bodyLeft: number; listLeft: number } | null
+
+      if (leftAxis === null) {
+        problems.push('量不到历史版本弹窗的版本列表，无法校验左栏是否与弹窗内容轴对齐')
+      } else {
+        const drift = Math.abs(leftAxis.listLeft - leftAxis.bodyLeft)
+        if (drift > 1) {
+          problems.push(
+            `历史版本弹窗：版本列表的左边缘没落在弹窗内容轴上（列表 ${leftAxis.listLeft.toFixed(1)}px / ` +
+              `内容轴 ${leftAxis.bodyLeft.toFixed(1)}px，多缩了 ${drift.toFixed(1)}px）—— ` +
+              '它自带了横向内边距，左栏看起来就比标题行的图标多缩进去一截'
+          )
+        }
+      }
+
       // 库里对账：界面列出的每一条都必须真在 chapter_revisions 里
       const inDb = ctx.revisionsOf(ctx.chapterId)
       const dbIds = new Set(inDb.map((item) => item.id))
@@ -9922,7 +10518,7 @@ async function checkChapterRevisions(
       }
     }
 
-    /* ---------- ⑤ 差异两栏行数必须相等（并排不错位的硬条件） ---------- */
+    /* ---------- ⑦ 差异两栏行数必须相等（并排不错位的硬条件） ---------- */
     if (!(await waitForTestId(window, 'history-diff', 5000))) {
       problems.push('选中一版之后差异区没有渲染出来')
     } else {
@@ -9942,7 +10538,7 @@ async function checkChapterRevisions(
       }
     }
 
-    /* ---------- ⑥ 回档：编辑器里的正文必须真的换掉 ---------- */
+    /* ---------- ⑧ 回档：编辑器里的正文必须真的换掉 ---------- */
     const beforeRestore = await readEditorText()
     if (!beforeRestore.includes(chunkB)) {
       problems.push(`回档前编辑器里找不到刚打的「${chunkB}」，后续断言无意义`)
@@ -10007,11 +10603,19 @@ async function checkChapterRevisions(
       }
     }
 
-    /* ---------- ⑦ 关闭面板：正文要回到原来的高度 ---------- */
+    /* ---------- ⑨ 关闭弹窗：锚点必须真的从 DOM 里消失 ---------- */
+    /*
+     * 判据是「找不到这个锚点」，不是「看不见它」。改成弹窗之后多了一种
+     * 全新的退化方式：`destroyOnHidden` 忘了写（或写成 false），
+     * 关闭后内容还留在 DOM 里、只是 `display: none` —— 肉眼完全正常，
+     * 而「关掉了没有」这件事就永远判不出来了（`waitForTestIdGone` 会失败）。
+     */
     await clickTestId(window, 'history-close')
-    const gone = await waitForTestIdGone(window, 'chapter-history-panel', 3000)
+    const gone = await waitForTestIdGone(window, 'chapter-history-modal', 3000)
     if (!gone) {
-      problems.push('点「关闭」之后历史面板没有收起来')
+      problems.push(
+        '点「关闭」之后历史版本弹窗没有从 DOM 里移除 —— 检查 Modal 的 destroyOnHidden'
+      )
     }
 
     return {
@@ -10019,8 +10623,11 @@ async function checkChapterRevisions(
       ok: problems.length === 0,
       detail:
         problems.length === 0
-          ? `打开面板（高 ${panelBox?.height ?? 0}px）→ 打字两次、库里的版本数从 ${revisionsBefore} 涨到 ${revisionsAfter} 且界面逐条与库对账一致 → ` +
-            `差异两栏行数相等 → 切到最旧一版并点「回到这一版」后编辑器正文真的换回该版、且回档本身又留了一版 → 关闭即收起`
+          ? `打开弹窗（${panelBox?.width ?? 0}×${panelBox?.height ?? 0}px），两枚按钮都是正圆图标钮、` +
+            `右边缘都落在弹窗内容轴上（互相对齐），悬浮提示「${closeTip}」/「${restoreTip}」→ ` +
+            `关掉后打字两次、库里的版本数从 ${revisionsBefore} 涨到 ${revisionsAfter}，重开弹窗列表与库逐条对账一致` +
+            `（左栏列表也与内容轴同轴）→ ` +
+            `差异两栏行数相等 → 切到最旧一版并点「回到这一版」后编辑器正文真的换回该版、且回档本身又留了一版 → 关闭即从 DOM 移除`
           : problems.join('；')
     }
   } catch (error) {
@@ -10133,6 +10740,437 @@ async function waitForTestIdGone(
       `document.querySelector('[data-testid="${testId}"]') !== null`
     )) as boolean
     if (!present) return true
+    await delay(120)
+  }
+  return false
+}
+
+/**
+ * 回收站页（第三期第 5 件）。
+ *
+ * 这一项验的是「删除的两个方向都通」：删掉的东西**确实进得来**，
+ * 点「恢复」**确实出得去**。主进程那一段已经把库里的状态验透了，
+ * 这里要盯的是另外三件事，它们都只有把界面真的点一遍才看得见：
+ *
+ *   1. 卡片库里删掉一张卡之后，回收站页**真的列出它**。后端返回了数据
+ *      不等于界面画了出来 —— 过滤条件写错、`metaOf` 抛异常、
+ *      或者把 `kind` 映射错了，表现都是「页面在、列表空」。
+ *   2. 「恢复」之后那一行要**从列表里消失**，而不是只有库里变了。
+ *      中间隔着 IPC 回程、mutation 的 onSuccess、一次重取与一次重渲染 ——
+ *      读一次就断言等于在赌那几十毫秒。
+ *   3. 点「彻底删除」会弹确认框，而确认按钮渲染在 **body 层的浮层**里。
+ *      锚点挂在行上查不到它（这是这个项目踩过的坑），必须挂在浮层上。
+ *      而这一步真正要证明的是：**不确认就不会删**。
+ *
+ * 全程只碰自己造的那一张探针卡；回收站里还躺着前面几步留下的探针
+ * （它们各自的 finally 会删卡片，于是也进了回收站）—— 因此查找一律
+ * **按标题定位到具体那一行**，不能拿「第一行」当默认。
+ */
+async function checkTrash(window: BrowserWindow, ctx: ShowcaseTargets): Promise<StepResult> {
+  const name = '回收站页'
+  const problems: string[] = []
+  const cardTitle = `冒烟-回收站页-${STAMP}`
+  let cardId = 0
+
+  try {
+    cardId = ctx.seedSettingCard(cardTitle, '地点')
+
+    /* ---------- ① 起点：它此刻在卡片库里 ---------- */
+    // 必须先确认「它原本在」，否则后面的「删除后消失了」可能只是因为它
+    // 从来没出现过 —— 那与回收站毫无关系，却会读成「软删除生效了」
+    if (ctx.lookupCard(cardTitle) === null) {
+      return { name, ok: false, detail: `探针卡片「${cardTitle}」没能建出来` }
+    }
+
+    /* ---------- ② 删掉它 → 卡片库里消失、但库里还在、回收站列出它 ---------- */
+    ctx.removeCard(cardId)
+    if (ctx.lookupCard(cardTitle) !== null) {
+      problems.push('删掉之后它仍然出现在卡片库里 —— 软删除没有生效')
+    }
+    if (!ctx.trashHasCard(cardTitle)) {
+      problems.push('删掉之后库里也查不到它了 —— 这是硬删除，回收站会永远空着')
+    }
+
+    // reload 而不是 gotoHash：这张卡是主进程直接建的、又是主进程删的，
+    // 前端缓存不知道（同 checkCardChapterLink 里那句说明）
+    await reloadAt(window, '#/trash')
+
+    if (!(await waitForTestId(window, 'trash-list', 8000))) {
+      /*
+       * 失败时把页面实况报出来：停在空态（过滤条件把它滤掉了）与
+       * 页面压根没渲染（路由或组件炸了）是两个完全不同的故障，
+       * 只看「没有条目」分不出来。
+       */
+      const diag = (await window.webContents.executeJavaScript(
+        `(() => {
+          const rows = document.querySelectorAll('[data-testid="trash-item"]')
+          return JSON.stringify({
+            hash: location.hash,
+            rows: rows.length,
+            empty: document.querySelector('[data-testid="trash-empty-state"]') !== null,
+            pageTitle: document.querySelector('[data-testid="page-title"]')?.textContent ?? ''
+          })
+        })()`
+      )) as string
+      return { name, ok: false, detail: `回收站页没有列出任何条目（诊断：${diag}）` }
+    }
+
+    // 先让行数稳定再记基准值：下面「恢复后少一行」要拿它做精确比对
+    const rowCountBefore = await waitForCount(window, 'trash-item', -1, 600)
+    const finding = await readTrashRow(window, cardTitle)
+    if (finding === null) {
+      const titles = (await window.webContents.executeJavaScript(
+        `JSON.stringify(Array.prototype.map.call(
+          document.querySelectorAll('[data-testid="trash-item-title"]'),
+          (el) => el.textContent.trim()
+        ))`
+      )) as string
+      return {
+        name,
+        ok: false,
+        detail: `回收站里找不到刚删掉的「${cardTitle}」（页面上这些：${titles}）`
+      }
+    }
+
+    if (finding.kind !== 'card') {
+      problems.push(`这一行的类型标签是「${finding.kind}」，应为卡片`)
+    }
+    if (ctx.bookTitle !== '' && !finding.meta.includes(ctx.bookTitle)) {
+      problems.push(
+        `这一行没有显示它所属的书名（实测副信息「${finding.meta}」，期望含「${ctx.bookTitle}」）`
+      )
+    }
+
+    /* ---------- ②b 按钮形态：页头与行内都必须是「图标 + 悬浮提示」 ---------- */
+    /*
+     * 用户 2026-09-22：「回收站界面的按钮要修正为图标 + 鼠标悬浮提示信息的
+     * 展示样式」—— 三枚按钮（清空回收站 / 恢复 / 彻底删除）改造前都是带文字的。
+     *
+     * 两种按钮要用**两种采法**，这是这里最容易糊弄过去的地方：
+     *   - 页头那枚「清空回收站」在路由快照里采得到（`ICON_BUTTON_PROBE_JS`
+     *     按 `.app-icon-button` 这个类扫全页），所以「无文字 + aria-label +
+     *     正圆」由那套统一规矩管，这里只补它独有的那一条：**提示真的弹得出来**。
+     *   - 行内两枚**采不到** —— 路由快照跑到回收站那一步时列表可能是空的
+     *     （探针都被前面几步的 finally 收拾干净了），按类扫扫到的是空集，
+     *     于是「行里还是带文字的长条」永远不会变红。所以这里按行采一次。
+     */
+    const rowActions = await readTrashRowActions(window, cardTitle)
+    if (rowActions === null) {
+      problems.push(`读不到「${cardTitle}」这一行的两个动作按钮`)
+    } else {
+      for (const [who, probe] of [
+        ['恢复', rowActions.restore],
+        ['彻底删除', rowActions.purge]
+      ] as const) {
+        if (probe === null) {
+          problems.push(`这一行里找不到「${who}」按钮`)
+          continue
+        }
+        if (!probe.shaped) {
+          problems.push(`行内「${who}」没有 .app-icon-button 类 —— 它应当是圆形图标按钮`)
+        }
+        if (probe.text.length > 0) {
+          problems.push(`行内「${who}」上还写着「${probe.text}」—— 文字应当移进鼠标悬浮的提示里`)
+        }
+        if (probe.label.length === 0) {
+          problems.push(`行内「${who}」没有 aria-label —— 读屏读不出它是什么`)
+        }
+        if (Math.abs(probe.width - probe.height) > 1) {
+          problems.push(`行内「${who}」不是正方形（${probe.width}×${probe.height}px）`)
+        } else if (Math.abs(probe.radiusPx - probe.width / 2) > 1) {
+          problems.push(
+            `行内「${who}」不是正圆（宽 ${probe.width}px，圆角 ${probe.radiusPx}px，应为 ${Math.round(
+              probe.width / 2
+            )}px）`
+          )
+        }
+      }
+    }
+
+    /*
+     * 三枚按钮的提示都要真的弹得出来，而且**文案必须等于 aria-label**
+     * （`IconButton` 的核心约定：两者同源，所以不可能「提示改了、读屏还念旧的」）。
+     *
+     * 「彻底删除」那枚特别值得验：它外面套着 `Popconfirm`（二次确认），
+     * 两个浮层触发器叠在同一枚按钮上 —— `onMouseEnter` 往下传岔了，
+     * 就会出现「点了有确认框、悬浮却没有任何提示」，而所有存在性断言全绿。
+     */
+    const emptyLabel = await readButtonLabel(window, 'trash-empty')
+    const emptyTip = await waitForTooltip(window, 'trash-empty', 'trash-empty-tip')
+    if (emptyTip === '') {
+      problems.push('回收站：「清空回收站」图标按钮悬浮后没有任何提示文案')
+    } else if (emptyTip !== emptyLabel) {
+      problems.push(
+        `回收站：「清空回收站」的提示文案「${emptyTip}」与 aria-label「${emptyLabel}」不一致 —— 两者应当同源`
+      )
+    }
+
+    const restoreTip = await hoverTrashRowActionAndWaitTip(window, cardTitle, 'restore')
+    if (restoreTip === '') {
+      problems.push('回收站：行内「恢复」图标按钮悬浮后没有任何提示文案')
+    }
+
+    const purgeTip = await hoverTrashRowActionAndWaitTip(window, cardTitle, 'purge')
+    if (purgeTip === '') {
+      problems.push(
+        '回收站：行内「彻底删除」图标按钮悬浮后没有任何提示文案 —— ' +
+          '它外面套着 Popconfirm，两个浮层触发器可能把 onMouseEnter 传岔了'
+      )
+    }
+
+    /* ---------- ③ 点「恢复」：那一行消失，卡片回到卡片库 ---------- */
+    if (!(await clickTrashRowAction(window, cardTitle, 'restore'))) {
+      problems.push('点不到这一行的「恢复」按钮')
+    } else {
+      if (!(await waitForTrashRowGone(window, cardTitle, 6000))) {
+        problems.push('点了「恢复」之后那一行仍然留在回收站列表里')
+      }
+      if (ctx.lookupCard(cardTitle) === null) {
+        problems.push('界面上说恢复成功了，但卡片库里查不到它 —— 只改了界面没改库')
+      }
+      const rowCountAfterRestore = await waitForCount(window, 'trash-item', -1, 600)
+      if (rowCountAfterRestore !== rowCountBefore - 1) {
+        problems.push(
+          `恢复之后列表应少一行（${rowCountBefore} → ${rowCountBefore - 1}），实测 ${rowCountAfterRestore}`
+        )
+      }
+    }
+
+    /* ---------- ④ 再删一次，走「彻底删除」那条路 ---------- */
+    ctx.removeCard(cardId)
+    await reloadAt(window, '#/trash')
+    if (!(await waitForTestId(window, 'trash-list', 8000))) {
+      problems.push('第二次删掉之后回收站列表没出来')
+    } else if (!(await clickTrashRowAction(window, cardTitle, 'purge'))) {
+      problems.push('点不到这一行的「彻底删除」按钮')
+    } else if (!(await waitForTestId(window, 'trash-purge-confirm', 4000))) {
+      problems.push('「彻底删除」没有弹确认框 —— 一个不可撤销的动作不该一点就执行')
+    } else if (ctx.trashHasCard(cardTitle) === false) {
+      // 确认框刚弹出来、还没点确认，条目就已经没了 —— 说明 Popconfirm
+      // 只是个装饰，真正执行删除的是点按钮那一下
+      problems.push('确认框还没点，条目就已经从库里消失了 —— 确认步骤形同虚设')
+    } else {
+      // 确认按钮落在 body 层的浮层里，必须在浮层上按锚点点（挂在行上查不到）
+      if (!(await clickTestId(window, 'trash-purge-confirm'))) {
+        problems.push('点不到确认框里的「彻底删除」')
+      } else {
+        if (!(await waitForTrashRowGone(window, cardTitle, 6000))) {
+          problems.push('确认彻底删除之后那一行仍然留在列表里')
+        }
+        if (ctx.trashHasCard(cardTitle)) {
+          problems.push('界面上说彻底删除了，但库里仍然查得到那一行')
+        }
+      }
+    }
+
+    return {
+      name,
+      ok: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? `删除「${cardTitle}」→ 卡片库里消失但它仍在库里、回收站列出该行（类型与书名都对）→ ` +
+            `三枚按钮都是正圆图标钮、悬浮提示「${emptyTip}」/「${restoreTip}」/「${purgeTip}」→ ` +
+            `点恢复：列表少一行且卡片回到卡片库 → 再删一次并点彻底删除：` +
+            `先弹确认框（未确认时条目还在），确认后界面与库同时清空`
+          : problems.join('；')
+    }
+  } catch (error) {
+    return { name, ok: false, detail: messageOf(error) }
+  } finally {
+    // 走到最后它已经被彻底删掉了，这一段是兜底：中途任何一步失败，
+    // 这张探针卡都不该留在库里（它会让下一次运行的「共 N 张」对不上）
+    if (cardId > 0 && ctx.lookupCard(cardTitle) !== null) ctx.removeCard(cardId)
+  }
+}
+
+/** 读回收站里某一行的类型标签与副信息。找不到返回 null */
+async function readTrashRow(
+  window: BrowserWindow,
+  title: string
+): Promise<{ kind: string; meta: string } | null> {
+  const raw = (await window.webContents.executeJavaScript(
+    `(() => {
+      const rows = Array.prototype.slice.call(document.querySelectorAll('[data-testid="trash-item"]'))
+      const row = rows.find((el) => {
+        const t = el.querySelector('[data-testid="trash-item-title"]')
+        return t !== null && t.textContent.trim() === ${JSON.stringify(title)}
+      })
+      if (!row) return 'null'
+      const meta = row.querySelector('[data-testid="trash-item-meta"]')
+      return JSON.stringify({
+        kind: row.getAttribute('data-kind') ?? '',
+        meta: meta === null ? '' : meta.textContent.trim()
+      })
+    })()`
+  )) as string
+
+  return raw === 'null' ? null : (JSON.parse(raw) as { kind: string; meta: string })
+}
+
+/**
+ * 读回收站里**某一行的两个动作按钮**的实测形态。
+ *
+ * 为什么要按行读、而不是复用全应用那套按 `.app-icon-button` 类扫全页的探针：
+ * 那套探针跑在**路由快照**上，跑到回收站那一步时列表很可能是空的
+ * （前面每一步的 `finally` 都会把探针卡片删掉，可删的是卡片、回收站里
+ * 未必还剩行 —— 取决于那一步是先恢复还是先删除）。列表空时按类扫到的是空集，
+ * 于是「行里那两枚还是带文字的长条」永远不会变红，而这恰恰是这次改造
+ * 最可能只改一半的地方（页头改了、行内忘了）。
+ *
+ * 顺带一提，按**行**读还顺带避开了另一个坑：一屏里每行都有一枚
+ * `trash-restore`，`querySelector` 永远只读到第一行 —— 读到的未必是我们
+ * 要验的那一行。
+ */
+async function readTrashRowActions(
+  window: BrowserWindow,
+  title: string
+): Promise<{ restore: ModalButtonProbe | null; purge: ModalButtonProbe | null } | null> {
+  const raw = (await window.webContents.executeJavaScript(
+    `(() => {
+      const rows = Array.prototype.slice.call(document.querySelectorAll('[data-testid="trash-item"]'))
+      const row = rows.find((el) => {
+        const t = el.querySelector('[data-testid="trash-item-title"]')
+        return t !== null && t.textContent.trim() === ${JSON.stringify(title)}
+      })
+      if (!row) return 'null'
+      const read = (action) => {
+        const el = row.querySelector('[data-testid="trash-' + action + '"]')
+        if (!el) return null
+        const rect = el.getBoundingClientRect()
+        const rawRadius = window.getComputedStyle(el).borderTopLeftRadius || '0'
+        return {
+          text: (el.textContent || '').trim(),
+          label: el.getAttribute('aria-label') || '',
+          shaped: el.classList.contains('app-icon-button'),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          radiusPx: rawRadius.trim().endsWith('%')
+            ? Math.round((rect.width * parseFloat(rawRadius)) / 100)
+            : Math.round(parseFloat(rawRadius))
+        }
+      }
+      return JSON.stringify({ restore: read('restore'), purge: read('purge') })
+    })()`
+  )) as string
+
+  return raw === 'null'
+    ? null
+    : (JSON.parse(raw) as { restore: ModalButtonProbe | null; purge: ModalButtonProbe | null })
+}
+
+/**
+ * 悬浮回收站里**某一行的**某个动作按钮，等它弹出提示并读回文案。
+ *
+ * 与 `waitForTooltip` 有两处刻意的不同：
+ *   1. 按钮按「哪一行 + 哪个动作」定位。一屏里每行都有 `trash-restore`，
+ *      按 testid 找只会找到第一行的那一枚。
+ *   2. 提示文案不按 testid 读，而是读**当前可见的那一个浮层**（同一条提示
+ *      被许多行共用，按 testid 读同样会读串）。判据是「有尺寸」，
+ *      不认组件库的 `ant-tooltip-hidden` 类名 —— 那是内部实现。
+ *
+ * 空串表示超时（调用方判失败）。
+ */
+async function hoverTrashRowActionAndWaitTip(
+  window: BrowserWindow,
+  title: string,
+  action: 'restore' | 'purge',
+  timeoutMs = 3000
+): Promise<string> {
+  const hover = `(() => {
+    const rows = Array.prototype.slice.call(document.querySelectorAll('[data-testid="trash-item"]'))
+    const row = rows.find((el) => {
+      const t = el.querySelector('[data-testid="trash-item-title"]')
+      return t !== null && t.textContent.trim() === ${JSON.stringify(title)}
+    })
+    if (!row) return false
+    const btn = row.querySelector('[data-testid="trash-${action}"]')
+    if (!btn) return false
+    // React 的 onMouseEnter 由根节点代理 mouseover 合成，所以必须派发
+    // mouseover（bubbles）而不是 mouseenter（原生不冒泡，React 收不到）
+    btn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    return true
+  })()`
+
+  const read = `(() => {
+    const rows = Array.prototype.slice.call(document.querySelectorAll('[data-testid="trash-item"]'))
+    const row = rows.find((el) => {
+      const t = el.querySelector('[data-testid="trash-item-title"]')
+      return t !== null && t.textContent.trim() === ${JSON.stringify(title)}
+    })
+    if (!row) return ''
+    const btn = row.querySelector('[data-testid="trash-${action}"]')
+    if (!btn) return ''
+    const label = btn.getAttribute('aria-label') || ''
+    const tips = Array.prototype.slice.call(document.querySelectorAll('.ant-tooltip'))
+    const visible = tips.filter((el) => {
+      const rect = el.getBoundingClientRect()
+      return rect.width > 0 && rect.height > 0
+    })
+    // 按**文案**认领浮层，而不是「取最后一个」：同一个页面里可能同时挂着
+    // 好几个还来不及关掉的提示（每次悬浮都会新建一个浮层），取最后一个
+    // 等于赌 DOM 里哪个元素排在后面。顺便这一条把 IconButton 的核心约定
+    // 也验掉了 —— **提示文案与 aria-label 同源**：两个都从 label 来，
+    // 所以不可能出现「提示改了、读屏还念旧的」。
+    const hit = visible.find((el) => (el.textContent || '').trim() === label)
+    return hit ? label : ''
+  })()`
+
+  await window.webContents.executeJavaScript(hover)
+
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const text = (await window.webContents.executeJavaScript(read)) as string
+    if (text !== '') return text
+    await delay(120)
+  }
+
+  return ''
+}
+
+/** 读某个锚点按钮的 `aria-label`。图标按钮画面上没有文字，它是唯一的说明渠道 */
+async function readButtonLabel(window: BrowserWindow, testId: string): Promise<string> {
+  return (await window.webContents.executeJavaScript(
+    `(document.querySelector('[data-testid="${testId}"]')?.getAttribute('aria-label') || '')`
+  )) as string
+}
+
+/**
+ * 点回收站里**指定那一行**的动作按钮。
+ *
+ * 刻意不能退化成 `clickTestId(window, 'trash-restore')`：回收站里还躺着
+ * 前面几步的探针卡片，第一行未必是我们要动的那一行 —— 点错了会恢复
+ * 或删掉别人的探针，而报出来的错会落在完全无关的位置上。
+ */
+async function clickTrashRowAction(
+  window: BrowserWindow,
+  title: string,
+  action: 'restore' | 'purge'
+): Promise<boolean> {
+  return (await window.webContents.executeJavaScript(
+    `(() => {
+      const rows = Array.prototype.slice.call(document.querySelectorAll('[data-testid="trash-item"]'))
+      const row = rows.find((el) => {
+        const t = el.querySelector('[data-testid="trash-item-title"]')
+        return t !== null && t.textContent.trim() === ${JSON.stringify(title)}
+      })
+      if (!row) return false
+      const btn = row.querySelector('[data-testid="trash-${action}"]')
+      if (!btn) return false
+      btn.click()
+      return true
+    })()`
+  )) as boolean
+}
+
+/** 等回收站里那一行消失。返回是否真的消失了 */
+async function waitForTrashRowGone(
+  window: BrowserWindow,
+  title: string,
+  timeoutMs: number
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if ((await readTrashRow(window, title)) === null) return true
     await delay(120)
   }
   return false

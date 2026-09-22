@@ -83,7 +83,13 @@ export function DashboardPage() {
       <div data-testid="module-grid">
         <Row gutter={[16, 16]} className="module-grid" data-card-row="功能模块">
           {MODULE_ITEMS.map((module) => (
-            <Col xs={24} sm={12} xl={6} key={module.key}>
+            /*
+             * `flex="1 1 0"` 而不是 24 栅格的固定跨度：模块从四个变成五个之后，
+             * 24 除不尽 5（4.8/行），用 `xl={6}` 会排成 4 + 1 —— 第 5 张单独
+             * 占一行，既难看又把首页往下顶。等分弹性列让五张**永远**在同一行，
+             * 且仍然等宽（冒烟测试量的是实测几何，这条要求照旧成立）。
+             */
+            <Col flex="1 1 0" key={module.key}>
               {/*
                * data-testid 与 data-module-key 直接挂在 antd Card 上（和书架上
                * 的 book-card 同一写法）：onClick 也在这张 Card 上，这样

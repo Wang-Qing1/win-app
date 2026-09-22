@@ -2958,29 +2958,36 @@ html[data-theme='dark'] .search-hit__mark {
 }
 
 /* ------------------------------------------------------------------ *
- * 章节历史版本与回档（第三期第 4 件）
+ * 章节历史版本与回档（第三期第 4 件；2026-09-22 由正文上方的横条改成弹窗）
  *
- * 面板占正文区上方一整条：左栏列出各版本，右栏是左右并排的段落差异。
- * 并排需要真实宽度，这是它没有做成右栏页签的唯一原因 —— 右栏两百多像素
- * 放到「左右各一栏」里每边只剩四五个字宽，读不出任何东西。
+ * 弹窗里左栏列出各版本，右栏是左右并排的段落差异。并排需要真实宽度，
+ * 这是它没有做成右栏页签的唯一原因 —— 右栏两百多像素放到「左右各一栏」里
+ * 每边只剩四五个字宽，读不出任何东西。
+ *
+ * 改成弹窗之后 `.history`（横条本体）没了：外壳由 `Modal` 提供，这里
+ * 只剩「弹窗内容怎么排」。标题那一行的容器名保留为 `history__head` ——
+ * 它是被塞进 `.ant-modal-header` 里的，不是自己画的一条带子，所以
+ * 不再需要 padding 与下边框（那两样 antd 已经给了，叠加会多出一道线）。
+ *
+ * **一条贯穿全弹窗的「内容轴」**，由 antd 的 `.ant-modal-container` 提供
+ * （`padding: 20px 24px`）。标题行与 body 都没有自己的横向内边距，
+ * 所以两者的左右边缘**本来就该落在同一根轴上**。
+ *
+ * 2026-09-22 用户指出：「这两个图标对齐，现在的状态太丑了」。实测（截图 1.5×）：
+ * 右侧「关闭」的右边缘在内容轴上，而「回到这一版」被 `.history__preview` 的
+ * `padding-right: 10px` 又推进去 10px；左侧版本条目的浅色背景同样被
+ * `.history__list` 的 `padding: 4px` 推进去 4px。于是标题行与 body 各自
+ * 贴着自己的轴走，右上角那两枚圆钮看起来就是「一列没对齐的圆」。
+ *
+ * 所以定一条规矩：**body 里的各列不再自带横向内边距**。横向留白只由
+ * 列与列之间的单侧 padding 表达（例如差异区与左栏列表之间的那 10px）。
+ * 这样「对齐」就不是两个算出来的数恰好相等，而是它们本来就在同一根轴上 ——
+ * 下一轮谁改了 antd 的内边距也不会再错开。冒烟里有一条几何断言钉着它。
  * ------------------------------------------------------------------ */
 
-.history {
-  display: flex;
-  flex-direction: column;
-  flex: 0 0 auto;
-  /* 给一个高度上限：版本多时不能让面板把正文挤到看不见 ——
-     正文才是这一页的主角，历史是临时展开的旁支 */
-  max-height: 46%;
-  min-height: 0;
-  border-bottom: 1px solid var(--winbook-border);
-  background: var(--winbook-surface-soft);
-}
-
 .history__head {
-  flex: 0 0 auto;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--winbook-border);
+  /* 关闭按钮由 `margin-left: auto` 推到最右，所以这一行必须撑满 header */
+  width: 100%;
 }
 
 .history__head-icon {
@@ -3002,25 +3009,45 @@ html[data-theme='dark'] .search-hit__mark {
 
 .history__center {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   padding: 16px;
 }
 
 .history__empty {
-  margin: 12px 0;
-}
-
-.history__body {
+  /* 空状态与加载态共用 `.history__body` 的固定高度，所以它也得会「占满并居中」——
+     否则那句「还没有可回退的版本」会贴在 520px 高区域的最上沿 */
   display: flex;
   flex: 1 1 auto;
-  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+/*
+ * 固定高度，而不是让内容自己撑。
+ *
+ * 弹窗的高度由内容决定的话，版本一多它就会一路长到屏幕外 —— 而最新的一版
+ * 在最上面、最旧的在最下面，屏幕外正好是「想回退到更早」时要去的地方。
+ * 固定之后：左栏版本列表自己滚动、右栏两栏差异各自滚动，弹窗本身不移动。
+ * `min-height` 兜住小窗口：62vh 在窗口很矮时会小于一屏该有的可读高度。
+ */
+.history__body {
+  display: flex;
+  height: min(62vh, 520px);
+  min-height: 320px;
 }
 
 .history__list {
   flex: 0 0 208px;
+  /* 固定高度的弹性子项要显式给 `min-height: 0` 才能内部滚动 ——
+     默认 `min-height: auto` 会按内容撑开，`overflow-y` 就永远不触发 */
+  min-height: 0;
   margin: 0;
-  padding: 4px;
+  /* 横向不留白：条目背景的左边缘要落在弹窗内容轴上（见上方说明） */
+  padding: 4px 0;
   list-style: none;
   overflow-y: auto;
   border-right: 1px solid var(--winbook-border);
@@ -3073,7 +3100,9 @@ html[data-theme='dark'] .search-hit__mark {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  padding: 6px 10px;
+  /* 左边那 10px 是它与左栏列表之间的间距；右边刻意不留 ——
+     「回到这一版」的右边缘必须与标题行的「关闭」同轴（见上方说明） */
+  padding: 6px 0 6px 10px;
   gap: 6px;
 }
 
@@ -3167,3 +3196,95 @@ html[data-theme='dark'] .search-hit__mark {
   background: transparent;
 }
 
+/* ================================================================== *
+ * 回收站（第三期第 5 件）
+ *
+ * 一行 = 类型标签 + 标题与副信息 + 删除时间 + 两个动作。
+ * 用 ul/li 而不是 antd Table：这里没有列对齐、排序、选择这些需求，
+ * 而 Table 会带来一套自己的边框与行高，与「卡片里的一列条目」
+ * 这种观感打架 —— 回收站读起来应该像一份清单，不像一张报表。
+ * ================================================================== */
+
+.trash__notice {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--winbook-border);
+  background: var(--winbook-surface-soft);
+  color: var(--winbook-text-soft);
+  font-size: 12px;
+}
+
+.trash__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trash__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--winbook-border);
+}
+
+/* 最后一行不要下边框：卡片自己已经有底边，两个叠在一起会显得多出一道线 */
+.trash__item:last-child {
+  border-bottom: none;
+}
+
+.trash__item:hover {
+  background: var(--winbook-surface-soft);
+}
+
+.trash__kind {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.trash__main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+
+/*
+ * 标题与副信息都要能截断。回收站里的标题是用户自己起的（章节名可能很长），
+ * 不截断的话它会把右侧的删除时间与两个按钮挤出可视区 ——
+ * 那时「恢复」按钮就点不到了，而这一页存在的意义就是点它。
+ */
+.trash__title {
+  overflow: hidden;
+  color: var(--winbook-text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash__meta {
+  overflow: hidden;
+  color: var(--winbook-text-soft);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash__time {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trash__actions {
+  flex: 0 0 auto;
+}
+
+/*
+ * 行内两枚动作按钮是 32px 正圆（`IconButton` 的紧凑规格）。这里显式禁止压缩：
+ * 标题再长也不该把两枚圆钮挤成椭圆 —— 那会让「正圆」这条形状规矩在这两枚上失效。
+ * 宽度本来由 `.trash__title` / `.trash__meta` 的截断负责，不需要按钮让步。
+ */
+.trash__actions .app-icon-button {
+  flex: 0 0 auto;
+}

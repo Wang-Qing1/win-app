@@ -67,6 +67,12 @@ export const IpcChannel = {
   /* ---------------- 全库检索 ---------------- */
   SearchQuery: 'search:query',
 
+  /* ---------------- 回收站（第三期第 5 件） ---------------- */
+  TrashList: 'trash:list',
+  TrashRestore: 'trash:restore',
+  TrashPurge: 'trash:purge',
+  TrashEmpty: 'trash:empty',
+
   /* ---------------- 写作会话 ---------------- */
   SessionsFinish: 'sessions:finish',
   SessionsList: 'sessions:list',

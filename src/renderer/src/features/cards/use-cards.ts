@@ -37,7 +37,6 @@ export function useCardList(query: CardListQuery) {
 function invalidateCards(client: ReturnType<typeof useQueryClient>): Promise<void> {
   return client.invalidateQueries({ queryKey: queryKeys.cards.all }).then(() => undefined)
 }
-
 export function useCreateCard() {
   const queryClient = useQueryClient()
   return useMutation<Card, ApiError, CardCreateInput>({
@@ -54,11 +53,23 @@ export function useUpdateCard() {
   })
 }
 
+/**
+ * 删除一张卡片 —— 第三期第 5 件起是**移到回收站**，不是真的删掉。
+ *
+ * 因此比别的卡片操作多失效一组 `trash`：卡片列表少了一条的同时，
+ * 回收站列表多了一条。漏掉它的表现是「删完卡片切到回收站，什么都没有」——
+ * 用户会以为删除失败了，再删一次。
+ * 仍然不走 invalidateLibrary：回收站里的卡片不影响任何字数与时长。
+ */
 export function useRemoveCard() {
   const queryClient = useQueryClient()
   return useMutation<CardRemovalResult, ApiError, CardIdInput>({
     mutationFn: (input) => invoke(() => getBridge().cards.remove(input)),
-    onSuccess: () => invalidateCards(queryClient)
+    onSuccess: () =>
+      Promise.all([
+        invalidateCards(queryClient),
+        queryClient.invalidateQueries({ queryKey: queryKeys.trash.all })
+      ]).then(() => undefined)
   })
 }
 

@@ -89,6 +89,14 @@ import type {
   VolumeReorderInput,
   VolumeUpdateInput
 } from './modules/volumes'
+import type {
+  TrashEmptyInput,
+  TrashEmptyResult,
+  TrashItemInput,
+  TrashItemRef,
+  TrashListInput,
+  TrashListResult
+} from './modules/trash'
 
 /**
  * preload 通过 contextBridge 暴露给渲染进程的 API 形状。
@@ -272,6 +280,27 @@ export interface WinbookApi {
      * 只读，没有对应的写通道 —— 检索不产生任何副作用。
      */
     query: (input: SearchQueryInput) => Promise<IpcResponse<SearchResult>>
+  }
+
+  /**
+   * 回收站。
+   *
+   * 删除卡片与章节时不再真的抹掉数据，只是打一个 `deleted_at` 时间戳，
+   * 于是三个动作有了意义：列出来、捞回来、真的抹掉。
+   *
+   * 刻意**不提供** `cards.trash` / `chapters.trash` 这类分实体入口：
+   * 回收站是一个混排的列表（作者找的是「我刚才误删的那个」，
+   * 未必记得它是卡片还是章节），分实体就意味着界面要先把两个列表
+   * 拼起来再自己排序 —— 而排序规则一分为二，时序问题随之而来。
+   */
+  trash: {
+    list: (input: Partial<TrashListInput>) => Promise<IpcResponse<TrashListResult>>
+    /** 恢复。恢复本身不产生历史版本，但会让列表 / 统计 / 关联重新取数 */
+    restore: (input: TrashItemInput) => Promise<IpcResponse<TrashItemRef>>
+    /** 彻底删除，不可撤销。关联与章节历史版本随外键一并消失 */
+    purge: (input: TrashItemInput) => Promise<IpcResponse<TrashItemRef>>
+    /** 清空回收站。kind 传 null 表示两种都清 */
+    empty: (input: Partial<TrashEmptyInput>) => Promise<IpcResponse<TrashEmptyResult>>
   }
 
   sessions: {

@@ -33,6 +33,18 @@ interface CountRow {
   total: number
 }
 
+/** 回收站列表用的一行：卡片自己的字段 + 书名。见 listDeleted */
+export interface DeletedCardRow {
+  id: number
+  title: string
+  subtitle: string
+  bookId: number | null
+  bookTitle: string | null
+  deletedAt: string
+  /** 原样透传，服务层收敛成 CardType —— 与 toCard 同一口径 */
+  cardType: string
+}
+
 const SELECT_COLUMNS = `
   id, book_id, card_type, title, subtitle, content, tags, extra, created_at, updated_at
 `
@@ -114,7 +126,16 @@ function buildFilter(
   query: CardListQuery,
   options: { includeType: boolean; includeCategory: boolean }
 ): FilterClause {
-  const conditions: string[] = []
+  /*
+   * 回收站（第三期第 5 件）：默认只看「还在」的卡片。
+   *
+   * 这一条放在这里而不是每个条件里，是因为它必须在**每一个**走
+   * buildFilter 的查询里都出现 —— 本页数据、总数、各类型计数、
+   * 设定类别计数、通用卡片计数，五条 SQL 共用这一个 WHERE。
+   * 五处各写一遍的话，漏掉任何一处都会让「计数」与「列出的条数」
+   * 对不上，而界面上看起来完全正常（只是数字略大）。
+   */
+  const conditions: string[] = ['deleted_at IS NULL']
   const params: Record<string, unknown> = {}
 
   /*
@@ -303,11 +324,56 @@ export class CardRepository {
     return toNumber(row?.total)
   }
 
+  /**
+   * 按 id 取**还在回收站外**的卡片。
+   *
+   * 刻意不提供「无论死活都取」的重载：调用方要么是在处理一张活卡片
+   * （编辑、复制、建关联），要么是在处理回收站里的条目（恢复、彻底删除），
+   * 这两种诉求各有一个语义明确的方法（见 findDeletedById）。
+   * 若用 `includeDeleted: boolean` 这类开关，任何一处忘了传就会让
+   * 「编辑一张已删除的卡」和「把一张活卡片彻底删掉」都成为可能，
+   * 而这两件事都不会报错。
+   */
   findById(id: number): Card | null {
-    const row = this.db.prepare(`SELECT ${SELECT_COLUMNS} FROM cards WHERE id = ?`).get(id) as
-      | CardRow
-      | undefined
+    const row = this.db
+      .prepare(`SELECT ${SELECT_COLUMNS} FROM cards WHERE id = ? AND deleted_at IS NULL`)
+      .get(id) as CardRow | undefined
     return row ? toCard(row) : null
+  }
+
+  /** 按 id 取**回收站里**的卡片。恢复与彻底删除的唯一入口 */
+  findDeletedById(id: number): DeletedCardRow | null {
+    const row = this.db
+      .prepare(
+        `SELECT c.id AS id, c.title AS title, c.subtitle AS subtitle,
+                c.book_id AS book_id, b.title AS book_title,
+                c.deleted_at AS deleted_at, c.card_type AS card_type
+           FROM cards c
+           LEFT JOIN books b ON b.id = c.book_id
+          WHERE c.id = ? AND c.deleted_at IS NOT NULL`
+      )
+      .get(id) as
+      | {
+          id: number
+          title: string
+          subtitle: string
+          book_id: number | null
+          book_title: string | null
+          deleted_at: string
+          card_type: string
+        }
+      | undefined
+
+    if (!row) return null
+    return {
+      id: row.id,
+      title: row.title,
+      subtitle: row.subtitle,
+      bookId: row.book_id,
+      bookTitle: row.book_title,
+      deletedAt: row.deleted_at,
+      cardType: row.card_type
+    }
   }
 
   /**
@@ -324,6 +390,12 @@ export class CardRepository {
    *
    * `excludeId` 默认 -1 表示「不排除任何行」：id 是自增主键、恒为正数，
    * 因此 `id <> -1` 恒成立。这样比「有没有 excludeId 就拼两种 SQL」少一条分支。
+   *
+   * 只跟**还在回收站外**的卡片比标题（第三期第 5 件）：一张卡被删掉之后，
+   * 它的名字理应重新可用 —— 否则会出现最气人的那种局面，
+   * 「我把那张卡删了，为什么还说重名？」而用户根本看不到那张卡在哪。
+   * 真要有两张同名卡，那也是回收站里那张恢复回来时才需要处理的冲突，
+   * 而恢复侧的规则是「不校验重名，直接放行」（见 TrashService）。
    */
   findByTitle(
     bookId: number | null,
@@ -339,6 +411,7 @@ export class CardRepository {
             AND card_type = ?
             AND title = ? COLLATE NOCASE
             AND id <> ?
+            AND deleted_at IS NULL
           LIMIT 1`
       )
       .get(bookId, cardType, title, excludeId) as CardRow | undefined
@@ -347,16 +420,20 @@ export class CardRepository {
   }
 
   countByBook(bookId: number): number {
-    const row = this.db.prepare('SELECT COUNT(*) AS n FROM cards WHERE book_id = ?').get(bookId) as {
+    const row = this.db
+      .prepare('SELECT COUNT(*) AS n FROM cards WHERE book_id = ? AND deleted_at IS NULL')
+      .get(bookId) as {
       n: number
     }
     return toNumber(row.n)
   }
 
-  /** 复制卡片时用来生成不撞名的标题 */
+  /** 复制卡片时用来生成不撞名的标题。同样只看还在的卡片，理由见 findByTitle */
   listTitles(bookId: number | null, cardType: CardType): string[] {
     const rows = this.db
-      .prepare('SELECT title FROM cards WHERE book_id IS ? AND card_type = ?')
+      .prepare(
+        'SELECT title FROM cards WHERE book_id IS ? AND card_type = ? AND deleted_at IS NULL'
+      )
       .all(bookId, cardType) as Array<{ title: string }>
     return rows.map((row) => row.title)
   }
@@ -433,8 +510,107 @@ export class CardRepository {
     }
   }
 
-  deleteById(id: number): boolean {
-    const result = this.db.prepare('DELETE FROM cards WHERE id = ?').run(id)
+  /*
+   * ---------------- 回收站（第三期第 5 件） ----------------
+   *
+   * 四个动作分成两组，命名上刻意让「软」与「硬」一眼可分：
+   *   softDelete / restoreById  —— 只改 deleted_at，数据一直在
+   *   purgeById / purgeAll      —— 真的 DELETE，此行之后无法恢复
+   * 「删除」在前端指的是前者；后者只由回收站里的「彻底删除」触发。
+   *
+   * 每条写语句都带上 `deleted_at IS [NOT] NULL` 作为**第二道闸**：
+   * 服务层已经校验过状态，但那道校验与这条语句之间存在时间差，
+   * 而且真正决定「会发生什么」的是 SQL。把状态写进 WHERE 之后，
+   * 「把一张已删除的卡再删一次」与「把一张活卡片彻底删掉」在
+   * 语句层面就不成立（changes === 0），不依赖调用方是否记得先读一遍。
+   */
+
+  softDelete(id: number, now: string): boolean {
+    const result = this.db
+      .prepare('UPDATE cards SET deleted_at = @deletedAt WHERE id = @id AND deleted_at IS NULL')
+      .run({ id, deletedAt: now })
     return result.changes > 0
+  }
+
+  /**
+   * 从回收站恢复。
+   *
+   * **同时把 updated_at 推到当下**，这与「删除」刻意不动它是相反的处理 ——
+   * 卡片列表默认按 updated_at 倒序，恢复后不动它，刚捞回来的卡会沉在
+   * 列表底部（用的是删除前的旧时间戳），用户看到的是「点了恢复但没出现」。
+   * 删除则相反：那是一个「让东西消失」的动作，没有任何列表会因此
+   * 把它顶到前面去，不该顺手改时间。
+   */
+  restoreById(id: number, now: string): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE cards
+            SET deleted_at = NULL, updated_at = @updatedAt
+          WHERE id = @id AND deleted_at IS NOT NULL`
+      )
+      .run({ id, updatedAt: now })
+    return result.changes > 0
+  }
+
+  /** 彻底删除。关联（章节 / 大纲节点 / 卡片关系）随外键 CASCADE 一起消失 */
+  purgeById(id: number): boolean {
+    const result = this.db
+      .prepare('DELETE FROM cards WHERE id = @id AND deleted_at IS NOT NULL')
+      .run({ id })
+    return result.changes > 0
+  }
+
+  /** 清空回收站。onlyDeleted 恒为真 —— 见上面第二道闸的说明 */
+  purgeAll(): number {
+    const result = this.db.prepare('DELETE FROM cards WHERE deleted_at IS NOT NULL').run()
+    return result.changes
+  }
+
+  /**
+   * 回收站里的卡片，最近删除的在前。
+   *
+   * 连同书名一起取：回收站是跨书混排的，只有「『林澈』人物卡」这一半信息
+   * 根本认不出是哪个项目里的那张 —— 而恢复恰恰要求用户先认出来。
+   * 书名用 LEFT JOIN：通用卡片（book_id 为 NULL）也必须出现在回收站里，
+   * 用 JOIN 会让它们整批消失。
+   */
+  listDeleted(limit: number): DeletedCardRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT c.id AS id, c.title AS title, c.subtitle AS subtitle,
+                c.book_id AS book_id, b.title AS book_title,
+                c.deleted_at AS deleted_at, c.card_type AS card_type
+           FROM cards c
+           LEFT JOIN books b ON b.id = c.book_id
+          WHERE c.deleted_at IS NOT NULL
+          ORDER BY c.deleted_at DESC, c.id DESC
+          LIMIT @limit`
+      )
+      .all({ limit }) as Array<{
+      id: number
+      title: string
+      subtitle: string
+      book_id: number | null
+      book_title: string | null
+      deleted_at: string
+      card_type: string
+    }>
+
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      subtitle: row.subtitle,
+      bookId: row.book_id,
+      bookTitle: row.book_title,
+      deletedAt: row.deleted_at,
+      cardType: row.card_type
+    }))
+  }
+
+  countDeleted(): number {
+    const row = this.db
+      .prepare('SELECT COUNT(*) AS n FROM cards WHERE deleted_at IS NOT NULL')
+      .get() as { n: number }
+    return toNumber(row.n)
   }
 }

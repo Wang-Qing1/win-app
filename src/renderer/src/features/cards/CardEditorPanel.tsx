@@ -416,20 +416,26 @@ export function CardEditorPanel({
               同一本书、同一类型下标题不能重复 —— 两张看起来一样的卡片，删的时候很难分辨该删哪张。
             </Paragraph>
 
+            {/*
+              文案与实现必须一致（第三期第 5 件）：删除现在只是移到回收站，
+              说「无法撤销」是在吓唬用户、也让他不会想到去回收站找 ——
+              而「回收站」这个词出现在这里，本身就是这个功能的入口。
+              「彻底删除」只留在回收站页里，那才是真正不可撤销的那一步。
+            */}
             <Popconfirm
               title="删除这张卡片？"
               description={
                 card.tags.length > 0
-                  ? `标签「${card.tags.join('、')}」也会一起消失，且无法撤销。`
-                  : '删除后无法撤销。'
+                  ? `标签「${card.tags.join('、')}」会一起移入回收站，之后可以在回收站里恢复。`
+                  : '移入回收站后，可以在回收站里恢复。'
               }
-              okText="删除"
+              okText="移到回收站"
               okButtonProps={{ danger: true }}
               cancelText="取消"
               onConfirm={() =>
                 run(async () => {
                   await onDelete(card)
-                  toast.notifySuccess('已删除')
+                  toast.notifySuccess('已移到回收站')
                 })
               }
             >

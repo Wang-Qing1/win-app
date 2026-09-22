@@ -443,5 +443,48 @@ export const migrations: readonly Migration[] = [
         CREATE INDEX idx_chapter_revisions_chapter ON chapter_revisions (chapter_id, created_at DESC);
       `)
     }
+  },
+  {
+    name: '010_soft_delete',
+    up(db) {
+      /*
+       * 回收站（第三期第 5 件）：卡片与章节的删除改为**软删除**。
+       *
+       * 现状是 DELETE 直接把行抹掉：作者删掉一章、一份人物设定，
+       * 再想找回来只能从数据库备份里捞 —— 而备份是整库级别的，
+       * 为了找回一张卡把三个月的稿子回退到某个时间点，显然不是可选项。
+       * 加一列 deleted_at 之后，「删除」变成打一个时间戳，列表侧统一
+       * 排除它，回收站页把它列出来，恢复就是把这个时间戳清掉。
+       *
+       * **NULL 表示还在（没被删）**，而不是用 0 / 空串表示「未删除」：
+       * updated_at 这些同类列也都是「有值即有意义」的时间戳，用一个
+       * 哨兵值会让每一处查询都要多写一个 OR。而且 deleted_at IS NULL
+       * 正是 SQLite 能走部分索引的形状（见下面的索引）。
+       *
+       * 为什么只有 cards 与 chapters 两张表：
+       *   - books（书籍）与 volumes（分卷）是容器，删它们走的是 CASCADE，
+       *     语义是「连同内容一起清掉」，与「误删一张卡想找回来」不是一回事；
+       *   - outline_nodes 是大纲树，删一个父节点会连坐整棵子树，
+       *     软删除会让「子树里哪些是被删的、哪些是活的」变得极难推理。
+       * 这两类将来若要进回收站，各自需要一套独立的语义，不该塞进这一列里。
+       *
+       * 不加 CHECK：deleted_at 是可为 NULL 的时间戳，结构上没有任何
+       * 可以断言的不变式（非空、非负都不适用）。
+       *
+       * 索引是**部分索引**（WHERE deleted_at IS NOT NULL）：回收站页要的
+       * 就是「全部被删的条目，按删除时间倒序」，条目数在几十的量级，
+       * 部分索引的体积极小，而且不会让「查活着的行」那侧多维护一份索引
+       * —— 活着的行由既有的 book_id / card_type 那些索引负责。
+       */
+      db.exec(`
+        ALTER TABLE cards    ADD COLUMN deleted_at TEXT;
+        ALTER TABLE chapters ADD COLUMN deleted_at TEXT;
+
+        CREATE INDEX idx_cards_deleted_at
+            ON cards (deleted_at DESC) WHERE deleted_at IS NOT NULL;
+        CREATE INDEX idx_chapters_deleted_at
+            ON chapters (deleted_at DESC) WHERE deleted_at IS NOT NULL;
+      `)
+    }
   }
 ]

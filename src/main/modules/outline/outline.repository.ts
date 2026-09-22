@@ -48,10 +48,18 @@ const SELECT_COLUMNS = `
 /**
  * 关联章节用 LEFT JOIN 而不是子查询：主查询本身就要取全表，
  * 子查询会对每一行再跑一次。JOIN 一次搞定，且能顺带拿到章节状态。
+ *
+ * `AND c.deleted_at IS NULL` 放在 **ON** 里而不是 WHERE 里，这是关键：
+ * 写进 WHERE 会让「章节进了回收站」的节点整行被滤掉 —— 作者会看到
+ * 大纲上凭空少了一个情节节点，而那个节点的层级、备注、其它信息都还在，
+ * 只是它关联的章节被删了。放进 ON 之后，节点照常出现，只是它的
+ * `chapterId` 读出来是 null（那一章确实已经不在工作视野里了）；
+ * 作者从回收站把章节捞回来，这个关联就自动恢复 ——
+ * 这正是软删除比起硬删除多出来的那一份能力。
  */
 const FROM_CLAUSE = `
   FROM outline_nodes o
-  LEFT JOIN chapters c ON c.id = o.chapter_id
+  LEFT JOIN chapters c ON c.id = o.chapter_id AND c.deleted_at IS NULL
 `
 
 /**

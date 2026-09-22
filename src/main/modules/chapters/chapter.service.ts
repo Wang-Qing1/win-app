@@ -14,6 +14,9 @@ import type {
   ChapterUpdateInput
 } from '@shared/modules/chapters'
 import { CHAPTER_LIMITS, CHAPTER_REVISION_LIMITS } from '@shared/modules/chapters'
+// 回收站的词法（条目形状 / 回执）收在共享层，与 CardService 共用同一份 ——
+// 两处拼出来的条目因此是同一种形状，TrashService 不需要按来源分支
+import type { TrashEntry, TrashItemRef } from '@shared/modules/trash'
 import { htmlToText, measureText } from '@shared/text'
 import { AppError } from '../../core/errors'
 import { logger } from '../../core/logger'
@@ -424,6 +427,22 @@ export class ChapterService {
     })
   }
 
+  /**
+   * 删除章节 —— 第三期第 5 件起是**软删除**，进回收站。
+   *
+   * 与卡片不同的是这里还多两件事，两件都必须做：
+   *
+   *  1. **在回收站外重排容器**。章节的 order_index 在活着的章节里必须
+   *     是连续的 0..n-1 —— 拖拽移动、上下移位的算法都建立在这个前提上
+   *     （见 reorder 里「顺序提交不完整」那条校验）。留着空位的话，
+   *     下一次移动会基于带空洞的序列计算，结果看起来像是「跳了一格」。
+   *  2. **碰一下书的 updated_at**，与硬删除时代一致：这本书的构成变了
+   *     （少了一章），书架按它排序。
+   *
+   * 注意第 1 条只重排**活着**的章节（listIdsInContainer 已经排除了
+   * 回收站里的），因此被删的那一章保留着它进回收站时的 order_index。
+   * 那个值此后没有意义 —— 恢复时会被重新指派到容器末尾（见 restoreFromTrash）。
+   */
   remove(id: number): { id: number } {
     return runInTransaction(() => {
       const existing = this.repository.findById(id)
@@ -431,18 +450,126 @@ export class ChapterService {
         throw AppError.notFound(`章节不存在（ID: ${id}）`)
       }
 
-      if (!this.repository.deleteById(id)) {
+      const now = new Date().toISOString()
+      if (!this.repository.softDelete(id, now)) {
         throw AppError.internal(`章节删除失败（ID: ${id}）`)
       }
 
-      const now = new Date().toISOString()
       // 删掉中间一章后要合拢空位，否则 order_index 出现空洞，
       // 下次拖拽移动时基于顺序的计算会带上这些幽灵下标
       this.reindexContainer(existing.bookId, existing.volumeId, now)
+
+      // 历史版本不随软删除消失（chapter_revisions 的 CASCADE 只在
+      // 真正 DELETE 时触发）—— 这正是「恢复之后历史版本还在」的原因。
+      // 恢复一章却发现它的历史被清空了，比不恢复更让人难受。
+
       this.bookRepository.touch(existing.bookId, now)
 
-      logger.info('章节已删除', { id, bookId: existing.bookId })
+      logger.info('章节已移入回收站', { id, bookId: existing.bookId })
       return { id }
+    })
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 回收站（第三期第 5 件）
+   *
+   * 与 CardService 里的同名方法一一对应，只被 TrashService 调用。
+   * 放在这一层而不是让 TrashService 直接拿仓储，是因为「章节属于哪个容器、
+   * 顺序怎么算、书的 updated_at 怎么维护」只有这一层知道。
+   * ------------------------------------------------------------------ */
+
+  /** 回收站里的章节，最近删除的在前。见仓储的 listDeleted */
+  listDeleted(limit: number): TrashEntry[] {
+    return this.repository.listDeleted(limit).map((row) => ({
+      id: row.id,
+      title: row.title,
+      // 卷名放在副标题位置：一本书里「第 3 章」这种标题会重复出现，
+      // 卷名是唯一能立刻区分两条记录的线索（未分卷时它为空串）
+      subtitle: row.volumeTitle ?? '',
+      bookId: row.bookId,
+      bookTitle: row.bookTitle,
+      deletedAt: row.deletedAt,
+      // 章节没有类型这一维
+      cardType: null,
+      hanziCount: row.hanziCount
+    }))
+  }
+
+  countDeleted(): number {
+    return this.repository.countDeleted()
+  }
+
+  /**
+   * 把一章从回收站捞回来，落在容器的末尾。
+   *
+   * **不动书的 updated_at**：恢复没有改变这本书的内容，只是把之前
+   * 拿走的东西还回去。碰它的话，从回收站捞一章回来就会把整本书顶到
+   * 书架最前面 —— 而那个位置应当留给真的在写的书。
+   * （删除则相反，它确实改变了书的构成，沿用了硬删除时代就有的 touch。）
+   *
+   * 落点用 nextOrderIndex 而不是原来的 order_index，理由见仓储
+   * restoreById 的注释：原位置可能已经被别的章节占了。
+   *
+   * volumeId 取自这一行**自己**的当前值（findDeletedById 顺带取回来），
+   * 而不是「它进回收站时的卷」：章节躺在回收站期间，它所属的分卷完全
+   * 可能被删掉，于是 volume_id 被 ON DELETE SET NULL 改成了 NULL。
+   * 按旧卷恢复会让这一章指向一个不存在的分卷，界面上表现为
+   * 「恢复了，但目录里找不到它」。
+   */
+  restoreFromTrash(id: number): TrashItemRef {
+    return runInTransaction(() => {
+      const entry = this.repository.findDeletedById(id)
+      if (!entry) {
+        throw AppError.notFound(`回收站里没有这一章（ID: ${id}）`)
+      }
+
+      // 书被删掉时会 CASCADE 掉它的全部章节（含回收站里的），
+      // 所以一般情况下这一行根本查不到；这条校验是为了兜住
+      // 「书的删除路径将来改成软删除」这类演进 —— 那时它就会真的生效。
+      if (!this.bookRepository.exists(entry.bookId)) {
+        throw AppError.notFound('这一章所属的书籍已经被删除了，无法恢复')
+      }
+
+      const orderIndex = this.repository.nextOrderIndex(entry.bookId, entry.volumeId)
+      const now = new Date().toISOString()
+
+      if (!this.repository.restoreById(id, orderIndex, now)) {
+        throw AppError.internal(`章节恢复失败（ID: ${id}）`)
+      }
+
+      logger.info('章节已从回收站恢复', {
+        id,
+        bookId: entry.bookId,
+        volumeId: entry.volumeId,
+        orderIndex
+      })
+      return { kind: 'chapter' as const, id, title: entry.title }
+    })
+  }
+
+  /** 彻底删除。历史版本与卡片关联随外键 CASCADE 一并消失 */
+  purgeFromTrash(id: number): TrashItemRef {
+    return runInTransaction(() => {
+      const entry = this.repository.findDeletedById(id)
+      if (!entry) {
+        throw AppError.notFound(`回收站里没有这一章（ID: ${id}）`)
+      }
+
+      if (!this.repository.purgeById(id)) {
+        throw AppError.internal(`章节彻底删除失败（ID: ${id}）`)
+      }
+
+      logger.info('章节已彻底删除', { id, bookId: entry.bookId })
+      return { kind: 'chapter' as const, id, title: entry.title }
+    })
+  }
+
+  /** 清空回收站里的章节。返回真正删掉的条数 */
+  purgeAllFromTrash(): number {
+    return runInTransaction(() => {
+      const removed = this.repository.purgeAll()
+      if (removed > 0) logger.info('回收站里的章节已清空', { removed })
+      return removed
     })
   }
 

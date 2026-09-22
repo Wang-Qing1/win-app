@@ -38,7 +38,7 @@
 
 winbook 是一个 **Windows 11 桌面端小说写作应用**：本地优先（全部数据在自己机器上的一个 SQLite 文件里）、离线可用、不依赖任何后端服务。
 
-代码规模：**155 个 `.ts` / `.tsx` 文件，约 37,400 行**（其中冒烟测试 10,140 行，占总量的 27%）。
+代码规模：**160 个 `.ts` / `.tsx` 文件，约 39,500 行**（其中冒烟测试 10,688 行，占总量的 27%）。
 
 ### 1.1 一张表看全
 
@@ -117,7 +117,7 @@ npmRebuild: false                      # 关键：别让 electron-builder 去重
 npm install          # 装依赖（已配置国内镜像，约几分钟）
 cp .env.example .env # 可选：本地覆盖配置。.env 已在 .gitignore 里
 npm run dev          # 开发模式：HMR + DevTools
-npm run smoke        # 端到端自检：116 项断言，退出码 0 表示全通
+npm run smoke        # 端到端自检：128 项断言，退出码 0 表示全通
 ```
 
 **第一次跑 `npm run dev` 如果应用启动即崩溃**，且日志里有 `GPU process isn't usable. Goodbye.`（退出码 3），在 `.env` 里设 `WINBOOK_DISABLE_GPU=true`。虚拟机 / 远程桌面 / 无独显的机器上几乎必然遇到。原理见 [3.1](#31-各进程能做什么)。
@@ -130,7 +130,7 @@ winbook/
 │   ├── shared/          ★ 唯一契约来源：跨进程共用的类型、Zod schema、纯函数
 │   │   ├── modules/        每个业务模块一个文件（books / chapters / cards / outline / ...）
 │   │   ├── api.ts          preload 暴露给渲染进程的 API 形状（WinbookApi）
-│   │   ├── ipc-channels.ts IPC 通道名单一来源（60 个）
+│   │   ├── ipc-channels.ts IPC 通道名单一来源（64 个）
 │   │   ├── result.ts       IpcResponse 信封 + 错误码定义
 │   │   ├── text.ts         ★ 汉字计数与 HTML→文本，主进程与渲染进程共用
 │   │   ├── datetime.ts     本地日期键等时间工具
@@ -177,7 +177,7 @@ winbook/
 | `npm run dev` | electron-vite 开发模式，渲染进程有 HMR | 日常开发 |
 | `npm run typecheck` | 跑 `typecheck:node` + `typecheck:web`，即三份 tsconfig 全查一遍 | 每次改完代码 |
 | `npm test` | Vitest 单测（130 项，node 环境） | 改了纯函数或仓储时 |
-| `npm run smoke` | 构建 + 用**临时目录**跑真主进程，执行 116 项断言 | 提交前、发版前 |
+| `npm run smoke` | 构建 + 用**临时目录**跑真主进程，执行 128 项断言 | 提交前、发版前 |
 | `npm run build` | typecheck + 构建到 `out/` | 打包前 |
 | `npm run dist:win` | 构建 + 出 NSIS 安装包与 portable 版到 `release/` | 要发给别人时 |
 
@@ -737,7 +737,7 @@ export function registerAllIpcHandlers(config: AppConfig): void {
 
 ### 6.1 迁移
 
-**位置**：`src/main/db/migrations/index.ts`，目前 9 条（`001` – `009`）。
+**位置**：`src/main/db/migrations/index.ts`，目前 10 条（`001` – `010`）。
 
 **执行器**：`src/main/db/migrator.ts`。逻辑很短，三条要点：
 
@@ -1014,11 +1014,12 @@ export const MODULE_ITEMS: readonly ModuleItem[] = [
   { key: 'books',   path: '/books',   label: '书籍管理',  icon: <BookOutlined />,     hint: '书籍、分卷与章节正文' },
   { key: 'outline', path: '/outline', label: '大纲管理',  icon: <PartitionOutlined />, hint: '自由多层情节树，节点可落地成章节' },
   { key: 'cards',   path: '/cards',   label: '卡片库',    icon: <IdcardOutlined />,   hint: '人物、物品、灵感三类卡片，可归属到某本书' },
-  { key: 'stats',   path: '/stats',   label: '时间与字数', icon: <BarChartOutlined />, hint: '字数趋势、写作时长与热力日历' }
+  { key: 'stats',   path: '/stats',   label: '时间与字数', icon: <BarChartOutlined />, hint: '字数趋势、写作时长与热力日历' },
+  { key: 'trash',   path: '/trash',   label: '回收站',    icon: <DeleteOutlined />,   hint: '删除的卡片与章节，可恢复或清除' }
 ] as const
 ```
 
-信息架构是「**首页即启动台**」：应用启动落在首页，首页顶部四张模块卡片就是导航；点卡片进模块页，模块页顶栏左侧有「返回首页」图标回来。**顶部不常驻导航条**——它在 1280 宽的窗口里占掉整整一行，而模块一共只有四个。
+信息架构是「**首页即启动台**」：应用启动落在首页，首页顶部五张模块卡片就是导航；点卡片进模块页，模块页顶栏左侧有「返回首页」图标回来。**顶部不常驻导航条**——它在 1280 宽的窗口里占掉整整一行，而模块一共只有五个。
 
 **`AppShell` 的 `FLUSH_ROUTES`** 决定哪些路由占满整个内容区、自己管理滚动：
 
@@ -1510,7 +1511,7 @@ const ors = spec.fields.map((field) => `${field.column} LIKE @${name} ESCAPE '\\
 
 **问题**：自动保存只覆盖不留存。编辑器把每次改动都写回 `chapters` 那一行，前一版正文当场就没了。作者删掉三千字、切走、过一会儿才后悔，就没救了。
 
-**方案**：新表 `chapter_revisions` 存快照 + 面板列出「历史版本」+ 差异对比 + 回到某一版。
+**方案**：新表 `chapter_revisions` 存快照 + 顶栏那枚「历史版本」圆钮打开的**弹窗**列出全部版本 + 差异对比 + 回到某一版。
 
 **四个关键决策**：
 
@@ -1570,7 +1571,7 @@ private readonly revisionBaseline = new Map<number, { contentHtml: string; hanzi
 | 文件 | 改了什么 |
 |---|---|
 | `src/shared/modules/chapters.ts` | 新增 3 个类型 + `CHAPTER_REVISION_LIMITS` + 3 个 schema |
-| `src/main/db/migrations/index.ts` | 追加 `009_chapter_revisions` |
+| `src/main/db/migrations/index.ts` | 追加 `010_soft_delete` |
 | `src/main/modules/chapters/chapter-revision.repository.ts` | 新文件：listByChapter / findById / insertSnapshot / prune |
 | `chapter.service.ts` | 注入新仓储 + `revisionBaseline` Map + `keepSnapshot` + 3 个公开方法 |
 | `chapter.controller.ts` | 3 个新 handler |
@@ -1580,13 +1581,41 @@ private readonly revisionBaseline = new Map<number, { contentHtml: string; hanzi
 | `src/main/ipc/registry.ts` | 装配新仓储、`ChapterService` 构造从 3 参 → 4 参 |
 | `lib/query-keys.ts` | 新增 `chapters.revisions(chapterId)` |
 | `use-chapters.ts` | 3 个新 hook + `revisionHtmlCache` |
-| `ChapterHistoryPanel.tsx` | 新文件：约 290 行 |
+| `ChapterHistoryModal.tsx` | 新文件：约 330 行（原为正文区上方的横条面板，2026-09-22 改成弹窗） |
 | `revision-diff.ts` + `.test.ts` | 新文件：纯函数差异算法 + 12 个单测 |
-| `ChapterEditorPage.tsx` | `historyOpen` / `restoreToken` state、`handleRestored`、顶栏按钮、条件渲染面板 |
+| `ChapterEditorPage.tsx` | `historyOpen` / `restoreToken` state、`handleRestored`、顶栏圆钮、条件渲染弹窗 |
 | `RichTextEditor.tsx` | `chapterKey: number` → `string \| number` |
-| `styles.css` | 追加 `.history` 与 `.diff` 两段样式 |
+| `styles.css` | 追加 `.history__*`（弹窗内固定高度 + 两栏各自滚动）与 `.diff` 两段样式 |
 | `smoke-test.ts` | 10 条后端断言 + 1 条渲染检查 |
 | `README.md` | 断言总数、功能节、规划表、目录结构 |
+
+**为什么是弹窗而不是正文上方的横条**（2026-09-22 改的，第四轮）：
+
+> 横条挂在正文区上方，最多只能给它 40% 左右的高度（再多就把编辑器挤没了）。而对比内容的天然形状是**两栏长文本**——两栏都长，横条逼出来的就是两条窄缝，两栏各自带一个滚动条，作者要来回滚着看。改成弹窗后宽度可以给到 920px，正文区则完全不受影响。
+>
+> 代价是弹窗有 **rc-dialog 的焦点陷阱**（`useLockFocus` 监听 `focusin`，焦点一离开弹窗就被拽回去）。它不影响正常使用，但**写自动化测试时要注意**：弹窗开着的时候往编辑器里插字是插不进去的，必须先把弹窗关掉。`smoke-test.ts` 里「打字两次」那一步就因此被挪到了关弹窗之后。
+>
+> 另一个配置是 `destroyOnHidden`：关掉后内容真的从 DOM 移除。若不开，弹窗只是 `display: none`，冒烟里那个「等锚点消失」的断言会永远等不到——它分不清「关掉了」和「只是看不见」。
+
+**弹窗里的两枚按钮也是圆形图标钮**（关闭 / 回到这一版），和全项目一致：只有图标、`label` 同时充当 `aria-label` 与悬浮提示文案。这里有个**具体的坑**：回档那枚外面裹着 `Popconfirm`，于是**同一枚按钮上叠了两个浮层触发器**（Tooltip + Popconfirm）。两者不冲突，但屏幕上谁先弹取决于触发方式，所以断言不能只看「有浮层」，要验**提示文案等于 `aria-label`**（见 README「界面与主题」的「第四轮」小节）。
+
+**两枚圆钮必须落在同一条「内容轴」上**（2026-09-22 同一天的第二处修正）：
+
+> 改完按钮之后用户又说了一句：「这两个图标对齐，现在的状态太丑了」。
+> 两枚按钮分别生在**标题行**与**右栏表头**，各自贴着自己那一行的最右 ——
+> 单看每一枚都合格（正圆、有 `aria-label`、提示弹得出来），右边缘却差了 **10px**：
+> 右栏容器 `.history__preview` 自带 `padding-right: 10px`，而标题行没有。
+> 左栏的版本条目同样差 **4px**（`.history__list` 的 `padding: 4px`）。
+>
+> **修法不是给按钮补 `margin`，而是让「同一根轴」成为结构事实**：内边距统一由
+> antd 的 `.ant-modal-container` 给（24px），标题行与 body 都不再自带横向内边距，
+> 横向留白只由列与列之间的单侧 padding 表达。冒烟里钉了两条几何断言：
+> 两枚圆钮的右边缘分别与内容轴对齐、且互相对齐；左栏列表的左边缘同样对齐。
+> **只验「互相对齐」不够** —— 两枚一起被推进去时它们仍然彼此对齐，但整体已经不在轴上。
+>
+> 教训：**用户说「丑」的时候，先把几何量出来再动手。** 这 10px 与 4px 都是从
+> 截图里逐像素扫出来的（截图是 1.5× 缩放：48px 的圆对应 32px 的按钮），
+> 量完才知道根因在「哪个容器自带内边距」，而不是「按钮该加多少 margin」。
 
 **差异算法的坑**（`revision-diff.ts`）——这是本功能里唯一需要算法的部分：
 
@@ -1601,7 +1630,98 @@ export interface DiffRow { old: string | null; new: string | null; kind: DiffKin
 
 **不变式：两侧行数必须相等**，缺的一侧标 `diff__line--absent`。超过 `MAX_CELLS = 4_000_000` 时退化成整块替换（避免超大正文把界面卡死）。
 
-### 8.6 校对与格式整理：纯函数放在哪
+### 8.6 回收站：一次横切改造（软删除）
+
+**文件**：`src/main/modules/trash/`（service + controller）、`src/shared/modules/trash.ts`、
+`src/renderer/src/features/trash/`
+
+上一节是「加一个功能」，这一节是**改一个已经存在的事实**：从「删除就是 `DELETE`」
+改成「删除是打一个标记」。两者要动的地方完全不同 —— 前者主要在新增文件，后者主要在
+**已有文件里补条件**。这一节的价值就在这里。
+
+**方案**：`cards` / `chapters` 各加一列 `deleted_at`（迁移 `010_soft_delete`）。
+`NULL` = 活着，非空 = 在回收站里。查询默认排除它。
+
+**为什么是加列，而不是加一张「已删除」表**：所有跨表 JOIN 都自动少一次关联。
+代价是每一处查询都得记得带条件，而**漏掉的症状不是报错，是「已删除的数据在某个
+角落里继续出现」**。所以这一件的真正工作量不在回收站页，而在下面这张排查表。
+
+**排查方法**：不要靠记忆，直接搜所有碰过这两张表的 SQL：
+
+```bash
+grep -rn "FROM chapters\|INTO chapters\|UPDATE chapters\|JOIN chapters" src/main/ | grep -v smoke-test
+grep -rn "FROM cards\|INTO cards\|UPDATE cards\|JOIN cards"       src/main/ | grep -v smoke-test
+```
+
+搜出来的每一处都要过一遍。实测要补过滤的一共九处：
+
+| 位置 | 漏掉会怎样 |
+|---|---|
+| `card.repository` / `chapter.repository` 自己的列表与详情 | 删除后它还在列表里 —— 整个功能失效 |
+| `book.repository` 的列表聚合 | 书架上那本书的字数不跟着减，点进去却少一章 |
+| `book.service` 删书前的计数 | 确认框报「将删除 128 章」，实际 130 章 |
+| `volume.repository` 的卷聚合与 `countChapters` | 已删章节仍占着卷的章节数；删卷提示夸大 |
+| `outline.repository` 关联章节的 `LEFT JOIN` | 大纲节点上仍挂着已删章节的标题与状态 |
+| `card-link.repository` 的 5 处 JOIN | 卡片上仍列着指向已删章节的关联行，点进去是空页 |
+| `search.repository` 按来源的范围条件 | 检索能搜出已删除的正文，回收站形同虚设 |
+| `chapter.repository` 的统计类查询 | 首页「继续写作」跳到一章已经删掉的内容上 |
+
+**架构：`TrashService` 是一台纯编排器，自己一行 SQL 也没有。**
+
+它不拿两个仓储去查，而是调用 `cardService.listDeleted()` / `chapterService.listDeleted()`。
+理由：「哪些卡片在回收站里」只有卡片服务知道答案（它有「认不出的类型退回灵感」这套
+口径），「恢复一章要落到哪个位置」只有章节服务知道（它有容器与顺序的概念）。让它自己查
+等于把这两套口径复制到第三个地方 —— 从此「同一张卡在卡片库与回收站里显示成不同类型」
+这类问题就有了生长的土壤。
+
+依赖方向是单向的 `trash → cards / chapters`。两个模块完全不认识「回收站」这个概念，
+它们只知道「有一列 `deleted_at`」。将来再加一种可回收实体（比如大纲节点），只需要它
+自己长出 `listDeleted` / `restoreFromTrash`，然后在 TrashService 里多一行 ——
+不需要改任何现有模块。**这是「编排器」与「上帝对象」的区别。**
+
+它负责的只有三种**跨实体**的判断，这三种恰好谁都不该管：
+
+1. 把两张表的条目按删除时间混排成一个列表（时间轴是唯一的视角）；
+2. 按 `kind` 分派恢复 / 彻底删除（同一个动作作用在两种东西上）；
+3. 清空时分别统计两边的条数，合成一个回执。
+
+**四个容易写反的地方：**
+
+- **恢复的章节落在容器末尾，而不是插回原来的位置。** 它躺在回收站期间，原位很可能
+  已经被别的章节占了，插回去就得把别人往后挤 ——「我恢复了个东西，结果别人的顺序
+  全变了」比「它在最后面」更让人意外。落点用 `nextOrderIndex`。
+- **恢复时容器取自这一行自己当前的值。** 章节在回收站期间它所属的分卷完全可能被删掉，
+  于是 `volume_id` 被 `ON DELETE SET NULL` 改成了 `NULL`。按「它进回收站时的那个卷」
+  去恢复，会让这一章指向一个不存在的分卷，界面上表现为「恢复了，但目录里找不到它」。
+- **恢复不动书的 `updated_at`，删除动。** 恢复没有改变这本书的内容，只是把之前拿走的
+  东西还回去；碰它的话，从回收站捞一章回来就会把整本书顶到书架最前面。
+- **页签上的计数不受类型筛选影响。** 切到「只看卡片」时章节那格若变成 0，读起来像
+  「那些被删光了」。所以两种都数、都取 —— 与卡片库 `countByType` 一致。
+
+**两处刻意的取舍：**
+
+- **混排的二级排序键用 `(kind, id)`。** 两张表的 id 是各自独立的自增序列，而删除时间
+  只精确到毫秒。同一个毫秒里删掉一张卡与一章时，仅按时间排的顺序取决于 SQLite 的返回
+  顺序，那个顺序没有保证。这个二级键没有任何业务含义，但**确定**。
+- **清空回收站的两条 `DELETE` 不在同一个事务里。** 两个模块各自的方法内部已经各起了
+  一个事务，而 better-sqlite3 的事务不可重入 —— 外面再套一层并不会让它们变成原子的。
+  真要原子得把事务提上来、让每个模块多暴露一个「无事务」的变体。这个取舍划算：
+  失败时最坏是「卡片删掉了、章节还在」，刷新后还剩几条，再点一次即完成。它不是账务
+  操作，不存在「扣了钱没到账」那种必须原子性的语义。
+
+**前端侧三处**：卡片与章节的删除确认文案都改成了「可在回收站找回」（原来的「删除后
+无法撤销」现在是假的）；回收站的失效范围要带上卡片与章节（恢复一张卡之后卡片库得
+跟着更新）；三枚动作按钮（清空回收站 / 恢复 / 彻底删除）在 2026-09-22 统一改成了
+**圆形图标钮 + 悬浮提示**，与全项目一致 —— 只有图标，文字进 `Tooltip`，而
+`label` 同时充当 `aria-label` 与提示文案。行内那两枚要特别加一条样式
+`.trash__actions .app-icon-button { flex: 0 0 auto; }`，否则在 flex 行里会被压成椭圆。
+
+**这一节最该带走的一条**：横切改造的验收标准不是「新功能能用」，而是
+**「旧功能在新语义下仍然正确」**。回收站那 12 条断言里有一半在测别的东西 ——
+书的字数、章节的排序、检索的结果、大纲的显示。它们的写法与新增功能的那一类不同：
+不是「做了 A 应该得到 B」，而是「事实变了之后，别处的读数必须跟着变」。
+
+### 8.7 校对与格式整理：纯函数放在哪
 
 **文件**：`src/shared/proofread.ts`（582 行）、`features/chapters/doc-tidy.ts`
 
@@ -1630,7 +1750,7 @@ export interface DiffRow { old: string | null; new: string | null; kind: DiffKin
 
 实现上按「**返回同一个节点表示没改动**」写：调用方靠 `next !== current` 判断要不要提交事务，这样点一次空按钮不会白白写入一次撤销历史。
 
-### 8.7 冒烟测试
+### 8.8 冒烟测试
 
 **文件**：`src/main/smoke-test.ts`（10,140 行，全项目最大的文件）
 
@@ -1670,7 +1790,7 @@ export interface ShowcaseTargets {
 }
 ```
 
-**三条最有价值的断言纪律**（详细版见 README「二十一条踩过坑的断言约定」）：
+**三条最有价值的断言纪律**（详细版见 README「二十四条踩过坑的断言约定」）：
 
 **① 清单独立写一遍，不从被测对象 import。** 两边一起改错就永远测不出来。
 
@@ -1685,7 +1805,7 @@ await waitForSaveState(window, 'saved', 10_000)
 const after = await waitForRevisionCount(ctx, ctx.chapterId, before + 1, 15_000)
 ```
 
-**③ 一个块抛异常必须就地接住。** 否则它会穿过播种函数、以**别人的名字**报错，并且**后面几十条断言一条都不执行**——断言总数从 116 静默掉到 92，那 24 项里包含全部渲染检查。
+**③ 一个块抛异常必须就地接住。** 否则它会穿过播种函数、以**别人的名字**报错，并且**后面几十条断言一条都不执行**——断言总数会静默少掉几十项（当时是从 116 掉到 92，那 24 项里包含全部渲染检查）。
 
 ```ts
 try {
@@ -1749,7 +1869,7 @@ TypeScript 会替你抓出**大多数**遗漏——改了 `shared` 的类型而�
 
 ```ts
 {
-  name: '010_book_subtitle',
+  name: '011_book_subtitle',
   up(db) {
     // ALTER TABLE ADD COLUMN 带非空默认值是 SQLite 支持的常量默认场景，
     // 老数据自动填空串，不需要回填脚本。
@@ -1866,7 +1986,7 @@ export type TimelineCreateInput = z.infer<typeof timelineCreateSchema>
 
 ```ts
 {
-  name: '010_timeline_entries',
+  name: '011_timeline_entries',
   up(db) {
     db.exec(`
       CREATE TABLE timeline_entries (
@@ -2007,7 +2127,7 @@ const HOME_MODULES = [
 npm run typecheck && npm test && npm run smoke
 ```
 
-冒烟应该从 116 项涨到 116 + 你新增的项数，且 `EXIT=0`。
+冒烟应该从 128 项涨到 128 + 你新增的项数，且 `EXIT=0`。
 
 ### 9.3 只加一个 IPC 通道（在已有模块上加功能）
 
@@ -2045,7 +2165,7 @@ listByIds(ids: number[]): ChapterListItem[] { /* WHERE id IN (...) */ }
 
 三条规矩（见 [6.1](#61-迁移)），再加五条实操细节：
 
-1. **命名格式**：`0XX_描述`，序号连续。取当前最大序号 +1（现在是 `009`）。
+1. **命名格式**：`0XX_描述`，序号连续。取当前最大序号 +1（现在是 `010`）。
 2. **一条迁移只做一件事**，便于失败时定位。多条相关的 DDL 可以放一条（如建表 + 建索引），但「加字段」与「搬迁数据」最好分开。
 3. **`up` 里只写 SQL，不写业务逻辑**。需要用 JS 循环处理数据时（如 `008` 的搬迁），直接写普通的 for 循环 + `prepare`，**不要 import 服务层**——迁移一旦发布就不能改，而服务层会变。
 4. **失败即整条回滚**，所以不用自己写清理逻辑。
@@ -2128,7 +2248,7 @@ const [ok, detail] = (() => {
 push('书籍副标题往返', ok, detail)
 ```
 
-**四条纪律**（见 [8.7](#87-冒烟测试) 与 README 的二十一条）：
+**四条纪律**（见 [8.8](#88-冒烟测试) 与 README 的二十四条）：
 
 1. **等目标状态，不等文案**。要等「保存完成」，就轮询主进程里的确定性状态，不要等底栏文本。
 2. **块内抛异常必须就地接住**，否则后续几十条断言全部消失。
@@ -2199,7 +2319,7 @@ npm run smoke          # 看断言总数涨了没、EXIT 是否 0
 会先渲染上一章再替换（闪一下），而且容易把「用户刚敲的字」和「新章节的正文」搞混。**用 `chapterKey` 触发重建。**
 
 **④ 冒烟里一个断言抛异常，后面几十条静默消失。**
-断言总数从 116 掉到 92 时没人发现，因为「失败的项」看起来只有一条。**块内就地 `catch`。**
+断言总数从 116 掉到 92（当前规模下会掉得更多）时没人发现，因为「失败的项」看起来只有一条。**块内就地 `catch`。**
 
 **⑤ 临时测试数据没在 `finally` 里删。**
 它会成为「列表里的第一本书」，而多个页面在没有 `?bookId` 时都回落到第一本——于是后续渲染断言全部跑到空数据上，报出与本次改动毫无关系的红。
@@ -2213,7 +2333,7 @@ npm run smoke          # 看断言总数涨了没、EXIT 是否 0
 ```
 ① npm run typecheck   三份 tsconfig 全查（node / web / root），0 错误
 ② npm test            130 项单测（node 环境）
-③ npm run smoke       116 项端到端断言，退出码必须为 0
+③ npm run smoke       128 项端到端断言，退出码必须为 0
 ```
 
 **什么时候用哪个**：
@@ -2295,6 +2415,8 @@ nsis:
 | 自动保存 / 编辑器页面 | `features/chapters/ChapterEditorPage.tsx` |
 | 写作会话采集 | `features/chapters/use-writing-session.ts` |
 | 校对规则 | `src/shared/proofread.ts` |
+| 「删除」是软的还是硬的 / 回收站能收哪些实体 | `src/main/modules/trash/trash.service.ts` |
+| 已删除的行为什么还在某处出现 | 搜 `deleted_at`：`card.repository` 的 `buildFilter`、`chapter.repository` 的 `containerCondition`，以及 `book` / `volume` / `outline` / `card-link` / `search` 各自的聚合与 JOIN |
 | 一键格式整理 | `features/chapters/doc-tidy.ts` |
 | 断言 | `src/main/smoke-test.ts` |
 | 构建配置 | `electron.vite.config.ts` |
@@ -2313,7 +2435,7 @@ npm run typecheck:node        # 只查主进程 / preload / shared
 npm run typecheck:web         # 只查渲染进程
 npm test                      # 单测（130 项）
 npm test -- text              # 只跑文件名匹配 text 的单测
-npm run smoke                 # 端到端自检（116 项，退出码 0=全通）
+npm run smoke                 # 端到端自检（128 项，退出码 0=全通）
 
 # 构建与打包
 npm run build                 # typecheck + 构建到 out/
@@ -2359,7 +2481,7 @@ WINBOOK_SMOKE_CAPTURE=1 npm run smoke
 1. `README.md` 的「架构约定」一节（约 70 行）
 2. `src/shared/result.ts`（65 行）—— 错误码与信封
 3. `src/main/core/ipc-handler.ts`（165 行）—— 整条链路的枢纽
-4. `src/shared/ipc-channels.ts`（89 行）—— 60 个通道，一眼看清应用有哪些能力
+4. `src/shared/ipc-channels.ts`（95 行）—— 64 个通道，一眼看清应用有哪些能力
 5. `src/preload/index.ts`（132 行）—— 跨进程边界
 6. `src/main/ipc/registry.ts`（129 行）—— 组合根，看清模块间依赖
 7. `src/renderer/src/App.tsx`（61 行）—— 路由与 Provider 层

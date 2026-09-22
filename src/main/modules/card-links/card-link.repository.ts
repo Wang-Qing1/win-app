@@ -67,6 +67,16 @@ interface RelationEdgeRow {
  * 那是一条业务规则，属于服务层；放在仓储里的话，将来若出现
  * 「复制整卷时批量建立关联」这类内部调用，就会被自己的检查挡住，
  * 而那时恰恰是允许批量写入的场景。业务规则只有一处实现 —— 服务层。
+ *
+ * 一条贯穿全文件的读取口径（第三期第 5 件）：**关联行本身留着，
+ * 但两端只要有一端进了回收站，这条关联就不出现在任何列表里**。
+ * 实现方式是在 JOIN 的 ON 里加 `deleted_at IS NULL`，而不是删掉关联行 ——
+ * 关联行留着，「恢复」那一刻两边的关系就自动回来了，不需要任何
+ * 反向补偿；而在那之前，作者看不到任何指向「他已经放弃的东西」的线索。
+ *
+ * 六处 JOIN 全部要带这个条件。漏掉一处的症状很隐蔽：卡片页显示
+ * 「用在哪几章」是一条已经删掉的章，点过去却打不开 —— 而数据本身
+ * 完全正常，只是这一处没跟上其它地方的口径。
  */
 export class CardLinkRepository {
   constructor(private readonly db: Db) {}
@@ -112,7 +122,7 @@ export class CardLinkRepository {
                 v.title AS volume_title,
                 b.title AS book_title
            FROM card_chapter_links l
-           JOIN chapters c ON c.id = l.chapter_id
+           JOIN chapters c ON c.id = l.chapter_id AND c.deleted_at IS NULL
            LEFT JOIN volumes v ON v.id = c.volume_id
            JOIN books b ON b.id = c.book_id
           WHERE l.card_id = ?
@@ -188,7 +198,7 @@ export class CardLinkRepository {
       .prepare(
         `SELECT c.id AS card_id, c.card_type AS card_type, c.title AS title, c.subtitle AS subtitle
            FROM card_outline_links l
-           JOIN cards c ON c.id = l.card_id
+           JOIN cards c ON c.id = l.card_id AND c.deleted_at IS NULL
           WHERE l.node_id = ?
           ORDER BY c.updated_at DESC, c.id DESC`
       )
@@ -208,7 +218,7 @@ export class CardLinkRepository {
       .prepare(
         `SELECT c.id AS card_id, c.card_type AS card_type, c.title AS title, c.subtitle AS subtitle
            FROM card_chapter_links l
-           JOIN cards c ON c.id = l.card_id
+           JOIN cards c ON c.id = l.card_id AND c.deleted_at IS NULL
           WHERE l.chapter_id = ?
           ORDER BY c.updated_at DESC, c.id DESC`
       )
@@ -284,6 +294,7 @@ export class CardLinkRepository {
            FROM card_relations r
            JOIN cards c
              ON c.id = CASE WHEN r.card_id = @cardId THEN r.related_id ELSE r.card_id END
+            AND c.deleted_at IS NULL
           WHERE r.card_id = @cardId OR r.related_id = @cardId
           ORDER BY r.created_at, r.card_id, r.related_id`
       )
@@ -313,8 +324,8 @@ export class CardLinkRepository {
                 a.title AS card_title, a.card_type AS card_type,
                 b.title AS related_title, b.card_type AS related_type
            FROM card_relations r
-           JOIN cards a ON a.id = r.card_id
-           JOIN cards b ON b.id = r.related_id
+           JOIN cards a ON a.id = r.card_id     AND a.deleted_at IS NULL
+           JOIN cards b ON b.id = r.related_id  AND b.deleted_at IS NULL
           WHERE a.book_id = @bookId
           ORDER BY a.title, r.relation, b.title`
       )

@@ -7,6 +7,7 @@ import { ChapterEditorPage } from './features/chapters/ChapterEditorPage'
 import { DashboardPage } from './features/dashboard/DashboardPage'
 import { OutlinePage } from './features/outline/OutlinePage'
 import { StatsPage } from './features/stats/StatsPage'
+import { TrashPage } from './features/trash/TrashPage'
 import { queryClient } from './lib/query-client'
 import { ThemeModeProvider } from './theme/ThemeProvider'
 
@@ -49,6 +50,7 @@ export default function App() {
               <Route path="cards" element={<CardsPage />} />
 
               <Route path="stats" element={<StatsPage />} />
+              <Route path="trash" element={<TrashPage />} />
 
               {/* 未知路径回首页，而不是留在空白页 */}
               <Route path="*" element={<Navigate to="/" replace />} />

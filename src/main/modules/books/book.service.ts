@@ -80,8 +80,12 @@ export class BookService {
       // 先数一遍将要连带删除的章节数，删完就查不到了。
       // 这个数字会出现在确认提示里 —— 「删掉一本书」和「删掉一本书的 128 章」
       // 是完全不同量级的操作，用户有权在动手前看到。
+      //
+      // 只数还活着的章节（第三期第 5 件）：回收站里的章节同样会被级联删掉，
+      // 但那个数字不该混进这句提示 —— 提示说的是「你将失去这本书的多少内容」，
+      // 而回收站里的东西作者已经表达过一次「我不要它了」。
       const chapterRow = this.db
-        .prepare('SELECT COUNT(*) AS n FROM chapters WHERE book_id = ?')
+        .prepare('SELECT COUNT(*) AS n FROM chapters WHERE book_id = ? AND deleted_at IS NULL')
         .get(id) as { n: number }
       const removedChapters = toNumber(chapterRow.n)
 

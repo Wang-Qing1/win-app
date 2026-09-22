@@ -23,6 +23,8 @@ import { registerCardLinkHandlers } from '../modules/card-links/card-link.contro
 import { SearchRepository } from '../modules/search/search.repository'
 import { SearchService } from '../modules/search/search.service'
 import { registerSearchHandlers } from '../modules/search/search.controller'
+import { TrashService } from '../modules/trash/trash.service'
+import { registerTrashHandlers } from '../modules/trash/trash.controller'
 import { SessionRepository } from '../modules/sessions/session.repository'
 import { SessionService } from '../modules/sessions/session.service'
 import { registerSessionHandlers } from '../modules/sessions/session.controller'
@@ -101,6 +103,16 @@ export function registerAllIpcHandlers(config: AppConfig): void {
   )
   const statsService = new StatsService(bookRepository, chapterRepository, sessionRepository)
   const searchService = new SearchService(searchRepository)
+  /*
+   * 回收站不碰任何仓储，只编排卡片与章节两个服务。
+   *
+   * 「哪些卡片在回收站里」需要卡片侧那套口径（认不出的类型退回灵感、
+   * bookId 为 null 是通用卡片），「恢复一章要落到哪个容器的哪个位置」
+   * 需要章节侧的容器与顺序概念 —— 这两件事各自由知道答案的那一层实现，
+   * 绕开它们直接拿仓储会让这两套口径多出第二份实现。
+   * 它自己只负责三件跨实体的事：混合排序、按 kind 分派、清空时合并计数。
+   */
+  const trashService = new TrashService(cardService, chapterService)
 
   // 导出模块需要书名与正文字数，因此复用书籍、章节、分卷三个仓储，不另开查询路径
   const exportService = new ExportService(chapterRepository, bookRepository, volumeRepository)
@@ -113,6 +125,7 @@ export function registerAllIpcHandlers(config: AppConfig): void {
   registerCardHandlers(cardService)
   registerCardLinkHandlers(cardLinkService)
   registerSearchHandlers(searchService)
+  registerTrashHandlers(trashService)
   registerSessionHandlers(sessionService)
   registerStatsHandlers(statsService)
   registerExportHandlers(exportService)

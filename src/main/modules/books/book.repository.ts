@@ -58,6 +58,11 @@ const SORT_COLUMN: Record<BookSortField, string> = {
  * 两个一对多关联同时 JOIN 会产生笛卡尔积，章节会被按分卷数重复累加，
  * SUM(hanzi_count) 于是虚高——而且分卷越多错得越离谱，很难第一时间发现。
  * 各自先聚合再关联，从根上避免这个问题。
+ *
+ * 章节那一侧只数 `deleted_at IS NULL` 的（第三期第 5 件）：书架上的
+ * 进度条、章节数、「最后编辑」都应当反映这本书**现在**有多少内容。
+ * 把回收站里的章节也算进去的话，删掉一章进度条纹丝不动 ——
+ * 用户会以为删除没生效，然后反复删。
  */
 const AGGREGATE_JOINS = `
   LEFT JOIN (
@@ -71,6 +76,7 @@ const AGGREGATE_JOINS = `
            SUM(hanzi_count)  AS hanzi_count,
            MAX(updated_at)   AS last_edited_at
       FROM chapters
+     WHERE deleted_at IS NULL
      GROUP BY book_id
   ) c ON c.book_id = b.id
 `
@@ -317,7 +323,11 @@ export class BookRepository {
 
     const chapterRow = this.db
       .prepare(
-        'SELECT COUNT(*) AS chapter_count, COALESCE(SUM(hanzi_count), 0) AS hanzi_count, COALESCE(SUM(char_count), 0) AS char_count FROM chapters'
+        `SELECT COUNT(*) AS chapter_count,
+                COALESCE(SUM(hanzi_count), 0) AS hanzi_count,
+                COALESCE(SUM(char_count), 0) AS char_count
+           FROM chapters
+          WHERE deleted_at IS NULL`
       )
       .get() as { chapter_count: number; hanzi_count: number; char_count: number }
 

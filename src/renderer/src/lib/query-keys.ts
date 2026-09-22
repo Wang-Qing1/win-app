@@ -126,6 +126,23 @@ export const queryKeys = {
     list: (query: SessionListQuery) => ['sessions', 'list', query] as const
   },
 
+  /**
+   * 回收站（第三期第 5 件）。
+   *
+   * 只有一个列表键、没有按 kind 分键：kind 只是一个筛选条件，而
+   * **任何**回收站变更都会让两种条目的数字都可能变（页签上的计数
+   * 是不受筛选影响的全局数字）。按 kind 分键会造成「在卡片页签下
+   * 恢复了一张卡，切到章节页签发现数字是旧的」这种看起来不像 bug 的 bug。
+   *
+   * 反过来，它必须被「删除卡片 / 删除章节 / 删书」这些操作失效 ——
+   * 删除的入口散在好几个页面，所以那几处统一走 invalidateLibrary
+   * 或 invalidateCards，见各自的实现。
+   */
+  trash: {
+    all: ['trash'] as const,
+    list: (kind: string) => ['trash', 'list', kind] as const
+  },
+
   stats: {
     all: ['stats'] as const,
     overview: () => ['stats', 'overview'] as const,
@@ -150,6 +167,16 @@ export function invalidateLibrary(client: QueryClient): Promise<void> {
     // 卡片挂在书下面（cards.book_id 是 ON DELETE CASCADE），
     // 删掉一本书会连带删掉它的卡片，列表必须重取
     client.invalidateQueries({ queryKey: queryKeys.cards.all }),
+    /*
+     * 回收站（第三期第 5 件）也在这一组的射程内，两个理由：
+     *   1. 删章节现在只是把它移进回收站 —— 回收站列表多了一条；
+     *   2. 删书会 CASCADE 掉它的全部章节，包括**回收站里的那些** ——
+     *      回收站列表会少掉几条。漏掉这一条的表现是「刚删完一本书，
+     *      回收站里还列着那本书的章节，点恢复却报「回收站里没有」」。
+     * 失效本身是廉价的：回收站页不打开时那个查询不是活跃的，
+     * invalidate 只会把它标记为陈旧，不会真的发起请求。
+     */
+    client.invalidateQueries({ queryKey: queryKeys.trash.all }),
     client.invalidateQueries({ queryKey: queryKeys.stats.all })
   ]).then(() => undefined)
 }

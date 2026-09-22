@@ -1,6 +1,7 @@
 import {
   CARD_LIMITS,
   CARD_TYPE_LABELS,
+  isCardType,
   normalizeExtra,
   normalizeTags,
   type Card,
@@ -12,6 +13,9 @@ import {
   type CardType,
   type CardUpdateInput
 } from '@shared/modules/cards'
+// 回收站的词法（kind / 条目形状 / 回执）收在共享层，卡片与章节两处
+// 拼出来的条目才会是同一种形状，界面因此不需要按来源分支
+import type { TrashEntry, TrashItemRef } from '@shared/modules/trash'
 import { AppError } from '../../core/errors'
 import { logger } from '../../core/logger'
 import { runInTransaction } from '../../db/connection'
@@ -117,6 +121,16 @@ export class CardService {
     })
   }
 
+  /**
+   * 删除卡片 —— 第三期第 5 件起是**软删除**，进回收站。
+   *
+   * 只打一个 deleted_at 时间戳，行还在库里，关联（章节 / 大纲节点 /
+   * 人物关系）也全都原样留着 — 于是恢复的那一刻，这张卡在界面上的
+   * 所有牵连都自动回来，不需要任何反向补偿逻辑。
+   *
+   * 前端那句提示语必须与这里一致：**「已移到回收站」而不是「已删除」**。
+   * 文案说「删除」而数据只是被标记时，用户不会想到去回收站找。
+   */
   remove(id: number): CardRemovalResult {
     return runInTransaction(() => {
       const existing = this.repository.findById(id)
@@ -124,11 +138,11 @@ export class CardService {
         throw AppError.notFound(`卡片不存在（ID: ${id}）`)
       }
 
-      if (!this.repository.deleteById(id)) {
+      if (!this.repository.softDelete(id, new Date().toISOString())) {
         throw AppError.internal(`卡片删除失败（ID: ${id}）`)
       }
 
-      logger.info('卡片已删除', { id, cardType: existing.cardType })
+      logger.info('卡片已移入回收站', { id, cardType: existing.cardType })
       return { id, title: existing.title }
     })
   }
@@ -231,6 +245,97 @@ export class CardService {
         }
         return saved
       })
+    })
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 回收站（第三期第 5 件）
+   *
+   * 这一节里的四个方法只被 TrashService 调用 —— 卡片模块自己不展示
+   * 回收站，它只负责回答「哪些卡片在回收站里」「把某一张捞回来」
+   * 「把某一张彻底抹掉」。把这些放在这里而不是让 TrashService 直接
+   * 拿 CardRepository：卡片的读取口径（认不出的类型退回灵感、
+   * bookId 为 null 是通用卡片）只在这一层发生过，绕开它就会在回收站
+   * 里长出一套稍有不同的口径 —— 那是同一张卡在两处显示不同的开端。
+   * ------------------------------------------------------------------ */
+
+  /** 回收站里的卡片，最近删除的在前。见仓储的 listDeleted */
+  listDeleted(limit: number): TrashEntry[] {
+    return this.repository.listDeleted(limit).map((row) => ({
+      id: row.id,
+      title: row.title,
+      // 卡片拿「一句话简介」放在副标题位置：它比类型名更能帮人认出是哪张
+      subtitle: row.subtitle,
+      bookId: row.bookId,
+      bookTitle: row.bookTitle,
+      deletedAt: row.deletedAt,
+      // 认不出的类型退回「灵感」，与 toCard 同一口径 —— 免得同一张卡
+      // 在卡片库与回收站里显示成不同的类型
+      cardType: isCardType(row.cardType) ? row.cardType : 'inspiration',
+      // 卡片不算汉字数：正文上限 5000 字符，「多少字」不是它的识别特征
+      hanziCount: 0
+    }))
+  }
+
+  countDeleted(): number {
+    return this.repository.countDeleted()
+  }
+
+  /**
+   * 把一张卡从回收站捞回来。
+   *
+   * **不校验重名**：回收站里那张卡的标题，是它进回收站之前确实用过的名字。
+   * 在它还躺在回收站期间，作者完全可能新建了一张同名的卡（见仓储
+   * findByTitle 只跟活卡片比标题）—— 此时「恢复」若以重名为由拒绝，
+   * 用户就陷入了一个死结：不删掉新建的那张，就永远救不回旧的那张，
+   * 而两张卡的内容未必相同。允许重名是这里唯一说得通的选择：
+   * 数据库层面本来也没有唯一约束，重名只是业务规则，而这条规则
+   * 应当让位于「把用户的东西还给他」。
+   *
+   * 恢复不动 updated_at 吗？——**要动**。
+   * 与「删除」不同，恢复是用户主动把一个条目重新拉回工作视野的动作，
+   * 而卡片列表默认按 updated_at 倒序：不动它的话，刚恢复的卡会
+   * 沉在列表底部（用的是删除前的旧时间），看起来像「恢复了但没出现」。
+   */
+  restoreFromTrash(id: number): TrashItemRef {
+    return runInTransaction(() => {
+      const entry = this.repository.findDeletedById(id)
+      if (!entry) {
+        throw AppError.notFound(`回收站里没有这张卡片（ID: ${id}）`)
+      }
+
+      if (!this.repository.restoreById(id, new Date().toISOString())) {
+        throw AppError.internal(`卡片恢复失败（ID: ${id}）`)
+      }
+
+      logger.info('卡片已从回收站恢复', { id, cardType: entry.cardType })
+      return { kind: 'card' as const, id, title: entry.title }
+    })
+  }
+
+  /** 彻底删除。关联（章节 / 大纲节点 / 人物关系）随外键 CASCADE 一并消失 */
+  purgeFromTrash(id: number): TrashItemRef {
+    return runInTransaction(() => {
+      const entry = this.repository.findDeletedById(id)
+      if (!entry) {
+        throw AppError.notFound(`回收站里没有这张卡片（ID: ${id}）`)
+      }
+
+      if (!this.repository.purgeById(id)) {
+        throw AppError.internal(`卡片彻底删除失败（ID: ${id}）`)
+      }
+
+      logger.info('卡片已彻底删除', { id, cardType: entry.cardType })
+      return { kind: 'card' as const, id, title: entry.title }
+    })
+  }
+
+  /** 清空回收站里的卡片。返回真正删掉的条数 */
+  purgeAllFromTrash(): number {
+    return runInTransaction(() => {
+      const removed = this.repository.purgeAll()
+      if (removed > 0) logger.info('回收站里的卡片已清空', { removed })
+      return removed
     })
   }
 

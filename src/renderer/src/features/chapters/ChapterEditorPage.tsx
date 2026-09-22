@@ -37,7 +37,7 @@ import {
 import { ChapterCatalog, type ChapterMenuAction, type ChapterPatch, type VolumeMenuAction } from './ChapterCatalog'
 import { ChapterCreateModal, type ChapterCreateValues } from './ChapterCreateModal'
 import { EditorInspector } from './EditorInspector'
-import { ChapterHistoryPanel } from './ChapterHistoryPanel'
+import { ChapterHistoryModal } from './ChapterHistoryModal'
 import { FindReplaceBar } from './FindReplaceBar'
 import { NameDialog } from './NameDialog'
 import { RichTextEditor, type EditorChange } from './RichTextEditor'
@@ -170,11 +170,11 @@ export function ChapterEditorPage() {
   const [nameOpen, setNameOpen] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
   /**
-   * 历史版本面板是否展开。展开时它占据正文区上方一整条。
+   * 历史版本弹窗是否打开。
    *
    * 单独一个 state 而不是塞进 `InspectorView`：那个类型描述的是**右栏**
-   * 里的视图，而这个面板在右栏之外。混在一起会让「点竖栏切换视图」
-   * 与「开历史面板」互相覆盖对方的显隐。
+   * 里的视图，而这个弹窗与右栏无关。混在一起会让「点竖栏切换视图」
+   * 与「开历史弹窗」互相覆盖对方的显隐。
    */
   const [historyOpen, setHistoryOpen] = useState(false)
   /**
@@ -578,15 +578,18 @@ export function ChapterEditorPage() {
 
       void confirm({
         title: `删除「${chapter.title}」？`,
-        description: '正文会一并删除且无法恢复。写作记录会保留。',
-        okText: '删除',
+        // 第三期第 5 件起删除只是移到回收站，文案必须跟着改：
+        // 说「无法恢复」会让用户不敢删，也让他事后不会去回收站找。
+        // 这一章的历史版本也一并留着，恢复之后还在。
+        description: '正文与它的历史版本会一起移入回收站，之后可以在回收站里恢复。写作记录会保留。',
+        okText: '移到回收站',
         danger: true
       }).then((ok) => {
         if (!ok) return
         void removeChapter
           .mutateAsync({ id: chapter.id })
           .then(() => {
-            notifySuccess(`已删除「${chapter.title}」`)
+            notifySuccess(`「${chapter.title}」已移到回收站`)
             /*
              * 删掉的正好是正在编辑的那一章时，要把 URL 挪走：留在
              * `/chapters/<已删 id>` 上会一直查一个不存在的章，正文区
@@ -982,12 +985,13 @@ export function ChapterEditorPage() {
                 data-testid="editor-focus-toggle"
                 onClick={() => setFocusMode((value) => !value)}
               />
-              {/*
-                历史版本：放在顶栏而不是右侧竖栏。理由见 ChapterHistoryPanel
-                顶部那段注释 —— 一句话是「差异对比要整幅宽度」。
-                打开前先落盘，否则面板里列出的「当前正文」与右边一栏
-                比对的还是上一次保存时的内容，会自己跟自己不同。
-              */}
+                {/*
+                  历史版本：入口放在顶栏，弹窗里给差异对比整幅宽度。
+                  理由见 ChapterHistoryModal 顶部那段注释 —— 一句话是
+                  「半模态的横条让『拿旧文对照正文』这件事只做了一半」。
+                  打开前先落盘，否则弹窗里列出的「当前正文」与右边一栏
+                  比对的还是上一次保存时的内容，会自己跟自己不同。
+                */}
               <IconButton
                 label="历史版本：查看并回到之前保存的正文"
                 icon={<HistoryOutlined />}
@@ -1046,19 +1050,6 @@ export function ChapterEditorPage() {
         )}
 
         <div className="editor-main">
-          {/*
-            历史版本面板占正文区上方一整个宽度。放在这里（editor-main 内、
-            编辑器之上）而不是页面的顶层：它推下去的是正文，不该把左边的
-            目录栏也一起挤动 —— 目录栏与历史无关，跟着跳会让人以为切了页面。
-          */}
-          {historyOpen && hasChapter && chapterId !== null ? (
-            <ChapterHistoryPanel
-              chapterId={chapterId}
-              currentText={doc?.text ?? ''}
-              onRestore={handleRestored}
-              onClose={() => setHistoryOpen(false)}
-            />
-          ) : null}
           {hasChapter ? (
             !ready || meta === null ? (
               <div className="editor-main__loading">
@@ -1252,6 +1243,21 @@ export function ChapterEditorPage() {
       </footer>
 
       <NameDialog open={nameOpen} onClose={() => setNameOpen(false)} onInsert={insertName} />
+
+      {/*
+        历史版本是弹窗（用户 2026-09-22：「历史版本对比界面做成弹窗的形式」），
+        所以它挂在这里、和另外两个弹窗排在一起，而不是长在正文区里 ——
+        `Modal` 自己会渲染到 body 上的浮层，写在哪儿都不影响它画在哪儿，
+        但「三个弹窗在同一处」能让下一个人一眼看清这一页有几个浮层。
+      */}
+      {historyOpen && hasChapter && chapterId !== null ? (
+        <ChapterHistoryModal
+          chapterId={chapterId}
+          currentText={doc?.text ?? ''}
+          onRestore={handleRestored}
+          onClose={() => setHistoryOpen(false)}
+        />
+      ) : null}
 
       <ChapterCreateModal
         open={chapterModalOpen}

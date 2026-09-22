@@ -18,8 +18,9 @@ import { IpcChannel } from '@shared/ipc-channels'
  * 10：新增设定卡时间线重排（cards.setTimelineOrder）。
  * 11：新增卡片 ↔ 卡片的关系（cards.listRelations / listBookRelations / relate / unrelate）。
  * 12：新增章节历史版本与回档（chapters.listRevisions / getRevision / restoreRevision）。
+ * 13：删除改为软删除，新增回收站（trash.list / restore / purge / empty）。
  */
-const BRIDGE_VERSION = '12'
+const BRIDGE_VERSION = '13'
 
 /**
  * preload 是主进程与渲染进程之间唯一的通道。
@@ -103,6 +104,13 @@ const api: WinbookApi = {
 
   search: {
     query: (input) => ipcRenderer.invoke(IpcChannel.SearchQuery, input)
+  },
+
+  trash: {
+    list: (input) => ipcRenderer.invoke(IpcChannel.TrashList, input),
+    restore: (input) => ipcRenderer.invoke(IpcChannel.TrashRestore, input),
+    purge: (input) => ipcRenderer.invoke(IpcChannel.TrashPurge, input),
+    empty: (input) => ipcRenderer.invoke(IpcChannel.TrashEmpty, input)
   },
 
   sessions: {

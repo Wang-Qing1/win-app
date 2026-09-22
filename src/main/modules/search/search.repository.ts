@@ -30,6 +30,17 @@ interface SourceSpec {
   from: string
   /** 用于 bookId 过滤的列；books 表用自己 */
   bookColumn: string
+  /**
+   * 这个来源的**固定范围条件**，恒为真时留空。
+   *
+   * 目前只有卡片与章节用到它：回收站里的东西不参与全库检索
+   * （第三期第 5 件）。不这么做的话，作者删掉一张卡、再搜它的名字，
+   * 结果里照样躺着那条记录 —— 而且点进去打不开（详情接口按 id
+   * 取的是活着的行）。用户会认为「删除没生效」。
+   * 与列表侧用同一个判据（`deleted_at IS NULL`），因此「搜不到」
+   * 与「列表里看不到」永远同步。
+   */
+  scope: string
   fields: readonly FieldSpec[]
 }
 
@@ -38,6 +49,7 @@ const SOURCES: readonly SourceSpec[] = [
     source: 'chapter',
     from: 'chapters t LEFT JOIN books b ON b.id = t.book_id',
     bookColumn: 't.book_id',
+    scope: 't.deleted_at IS NULL',
     fields: [
       { column: 't.content_text', field: 'content' },
       { column: 't.title', field: 'title' }
@@ -47,6 +59,7 @@ const SOURCES: readonly SourceSpec[] = [
     source: 'card',
     from: 'cards t LEFT JOIN books b ON b.id = t.book_id',
     bookColumn: 't.book_id',
+    scope: 't.deleted_at IS NULL',
     fields: [
       { column: 't.content', field: 'content' },
       { column: 't.subtitle', field: 'subtitle' },
@@ -58,6 +71,7 @@ const SOURCES: readonly SourceSpec[] = [
     source: 'outline',
     from: 'outline_nodes t LEFT JOIN books b ON b.id = t.book_id',
     bookColumn: 't.book_id',
+    scope: '',
     fields: [
       { column: 't.summary', field: 'summary' },
       { column: 't.title', field: 'title' }
@@ -67,6 +81,7 @@ const SOURCES: readonly SourceSpec[] = [
     source: 'book',
     from: 'books t',
     bookColumn: 't.id',
+    scope: '',
     fields: [
       { column: 't.summary', field: 'summary' },
       { column: 't.genre', field: 'genre' },
@@ -126,6 +141,10 @@ function buildCondition(
   params: Record<string, unknown>
 ): string {
   const clauses: string[] = []
+
+  // 来源自己的固定范围（回收站排除），排在最前 —— 它恒为真，
+  // 与关键词、书籍筛选之间是 AND，位置不影响语义，只在读 SQL 时先声明范围
+  if (spec.scope.length > 0) clauses.push(spec.scope)
 
   query.keywords.forEach((keyword, index) => {
     const name = `kw${index}`

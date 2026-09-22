@@ -27,6 +27,10 @@ interface VolumeAggregateRow extends VolumeRow {
  *
  * 只统计 volume_id 不为空的章节 —— 未分卷的章节不属于任何卷，
  * 若把它们也卷进来，每个卷的章节数都会多出同一批数字。
+ *
+ * 同时只数还活着的章节（`deleted_at IS NULL`，第三期第 5 件）：
+ * 卷上的「N 章 / M 字」是给作者看进度的，把回收站里的算进去会让
+ * 删掉一章之后数字不动。
  */
 const AGGREGATE_JOIN = `
   LEFT JOIN (
@@ -34,7 +38,7 @@ const AGGREGATE_JOIN = `
            COUNT(*)         AS chapter_count,
            SUM(hanzi_count) AS hanzi_count
       FROM chapters
-     WHERE volume_id IS NOT NULL
+     WHERE volume_id IS NOT NULL AND deleted_at IS NULL
      GROUP BY volume_id
   ) c ON c.volume_id = v.id
 `
@@ -167,10 +171,16 @@ export class VolumeRepository {
     return this.findById(input.id)
   }
 
-  /** 卷下章节数：删除前用它算「这些章节会退回未分卷」的提示文案 */
+  /**
+   * 卷下章节数：删除前用它算「这些章节会退回未分卷」的提示文案。
+   *
+   * 只数活着的：回收站里的章节确实也会被 SET NULL 成未分卷，但它们
+   * 本来就不在作者的工作视野里，把它们的数量报进这句提示只会让人
+   * 以为「我要删掉 3 章」，而界面上只看得到 1 章。
+   */
   countChapters(volumeId: number): number {
     const row = this.db
-      .prepare('SELECT COUNT(*) AS n FROM chapters WHERE volume_id = ?')
+      .prepare('SELECT COUNT(*) AS n FROM chapters WHERE volume_id = ? AND deleted_at IS NULL')
       .get(volumeId) as { n: number }
     return toNumber(row.n)
   }
