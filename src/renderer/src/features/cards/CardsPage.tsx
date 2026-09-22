@@ -18,6 +18,7 @@ import {
   type CardType,
   type SettingCategory
 } from '@shared/modules/cards'
+import { RelationWeb } from './RelationWeb'
 import { SettingTimeline } from './SettingTimeline'
 import { ErrorAlert } from '../../components/ErrorAlert'
 import { IconButton } from '../../components/IconButton'
@@ -77,6 +78,8 @@ export function CardsPage() {
   /** 选中与「新建草稿」互斥：新建时 card 为 null，看 draftSeed */
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [newDraft, setNewDraft] = useState<CardDraft | null>(null)
+  /** 关系网浮层（第三期第 3 件）。整本书的关系，与选中哪张卡无关 */
+  const [webOpen, setWebOpen] = useState(false)
 
   /* ------------------------------------------------------------------ *
    * 深链：从全库检索跳过来
@@ -512,6 +515,17 @@ export function CardsPage() {
           </Flex>
         ) : null}
 
+        {/*
+         * 关系网入口只在**看着某一本书**时出现：关系是同书之内的东西，
+         * 「全部书籍」下的关系网会把几本书的人物混在一张网上，
+         * 而那张网没有任何一种读法是有意义的。
+         */}
+        {scope === 'book' && bookId !== null ? (
+          <Button size="small" data-testid="cards-relations-open" onClick={() => setWebOpen(true)}>
+            关系网
+          </Button>
+        ) : null}
+
         <Input
           data-testid="cards-keyword"
           className="cards-keyword"
@@ -651,6 +665,20 @@ export function CardsPage() {
             </Flex>
           ) : null}
         </div>
+
+        {/*
+         * 关系网是浮层而不是页面：它是从当前这本书「抬头看一眼全貌」，
+         * 看完还要回到刚才那张卡上。做成页面就得再走一次返回，
+         * 而选中的卡片、筛选、页码都得重新恢复一遍。
+         */}
+        {bookId === null ? null : (
+          <RelationWeb
+            open={webOpen}
+            bookId={bookId}
+            bookTitle={bookTitles.get(bookId) ?? '这本书'}
+            onClose={() => setWebOpen(false)}
+          />
+        )}
 
         <div className="cards-panel-pane">
           <CardEditorPanel

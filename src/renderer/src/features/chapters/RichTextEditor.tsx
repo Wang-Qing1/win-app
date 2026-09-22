@@ -34,12 +34,15 @@ interface RichTextEditorProps {
   /** 章节首次加载时的正文 HTML */
   initialContent: string
   /**
-   * 章节标识。它变化时编辑器会被整体重建 ——
+   * 重建键。它变化时编辑器会被整体重建 ——
    * 这比「监听 tags 变化再 setContent」可靠得多：后者在切换章节的瞬间
    * 会先渲染上一章的内容再替换，视觉上闪一下，而且很容易把
    * 「用户刚敲的字」和「新章节的正文」搞混。
+   *
+   * 接受 `string | number`：页面传的是 `${chapterId}:${restoreToken}`，
+   * 后者让**同一章**在回档后也能触发重建（正文换了一份，但章节没变）。
    */
-  chapterKey: number
+  chapterKey: string | number
   prefs: EditorPrefs
   onPrefsChange: (patch: Partial<EditorPrefs>) => void
   marks: readonly ProofreadMark[]

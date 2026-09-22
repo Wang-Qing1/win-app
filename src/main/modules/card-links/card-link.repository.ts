@@ -2,6 +2,8 @@ import { isCardType, type CardType } from '@shared/modules/cards'
 import type {
   CardChapterLink,
   CardOutlineLink,
+  CardRelation,
+  CardRelationEdge,
   ChapterCardRef,
   OutlineCardRef
 } from '@shared/modules/card-links'
@@ -33,6 +35,29 @@ interface ChapterCardRow {
   card_type: string
   title: string
   subtitle: string
+}
+
+/** 关系行 + 对方的标题与类型（查询时才知道「对方」是哪一头） */
+interface RelationRow {
+  card_id: number
+  related_id: number
+  relation: string
+  created_at: string
+  other_id: number
+  other_title: string
+  other_type: string
+}
+
+/** 关系网里的边：两头的信息都要 */
+interface RelationEdgeRow {
+  card_id: number
+  card_title: string
+  card_type: string
+  related_id: number
+  related_title: string
+  related_type: string
+  relation: string
+  created_at: string
 }
 
 /**
@@ -202,5 +227,108 @@ export class CardLinkRepository {
       })
     }
     return refs
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 卡片 ↔ 卡片的关系（第三期）
+   *
+   * 传入的 cardId / relatedId 必须已经由调用方按 `sortRelationPair`
+   * 排过序 —— 表上有 CHECK (card_id < related_id)。
+   * ------------------------------------------------------------------ */
+
+  /**
+   * 建立（或改写）一条关系。
+   *
+   * 用 UPSERT 而不是 `INSERT OR IGNORE`：同一对卡之间只可能有一条边，
+   * 于是「再建一次」唯一合理的含义就是**改关系名**（师徒 → 师徒，后反目）。
+   * 用 IGNORE 的话它会静默什么都不做，用户填了新的关系名却没处生效，
+   * 界面上表现为「输入框清了，列表里还是旧词」。
+   *
+   * 改关系名不动 `created_at`：它记的是「这两个人什么时候被牵上线」，
+   * 不是一个编辑时间。
+   */
+  upsertRelation(cardId: number, relatedId: number, relation: string, now: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO card_relations (card_id, related_id, relation, created_at)
+         VALUES (@cardId, @relatedId, @relation, @now)
+         ON CONFLICT (card_id, related_id)
+         DO UPDATE SET relation = excluded.relation`
+      )
+      .run({ cardId, relatedId, relation, now })
+  }
+
+  /** 解除一条关系。解除一条不存在的关系不算错误：结果都是「没有了」 */
+  deleteRelation(cardId: number, relatedId: number): void {
+    this.db
+      .prepare('DELETE FROM card_relations WHERE card_id = ? AND related_id = ?')
+      .run(cardId, relatedId)
+  }
+
+  /**
+   * 这张卡与哪些卡有关系。
+   *
+   * 两个方向都要扫：一条边的两头地位相同（谁先建、谁后建只取决于 id 大小），
+   * 只查 `card_id = ?` 的话，从 id 大的那张卡看过去会是一片空白 ——
+   * 而空白看起来跟「它还没有关系」一模一样。
+   *
+   * 对方那一头用 CASE 取：这样才能一次 JOIN 出「另一边」的标题与类型，
+   * 不必在 JS 里再补一次查询、也不必返回后再排序。
+   */
+  listRelations(cardId: number): CardRelation[] {
+    const rows = this.db
+      .prepare(
+        `SELECT r.card_id AS card_id, r.related_id AS related_id,
+                r.relation AS relation, r.created_at AS created_at,
+                c.id AS other_id, c.title AS other_title, c.card_type AS other_type
+           FROM card_relations r
+           JOIN cards c
+             ON c.id = CASE WHEN r.card_id = @cardId THEN r.related_id ELSE r.card_id END
+          WHERE r.card_id = @cardId OR r.related_id = @cardId
+          ORDER BY r.created_at, r.card_id, r.related_id`
+      )
+      .all({ cardId }) as RelationRow[]
+
+    return rows.map((row) => ({
+      cardId,
+      relatedId: row.other_id,
+      relation: row.relation,
+      relatedTitle: row.other_title,
+      relatedType: isCardType(row.other_type) ? row.other_type : 'inspiration',
+      createdAt: row.created_at
+    }))
+  }
+
+  /**
+   * 一本书里所有关系的边 —— 关系网（文字版关系图）的数据源。
+   *
+   * 只按 `a.book_id` 过滤就够了：服务层保证一条边的两头同属一本书，
+   * 再按 b 过滤一遍只是多一次无意义的 JOIN 条件。
+   */
+  listRelationsByBook(bookId: number): CardRelationEdge[] {
+    const rows = this.db
+      .prepare(
+        `SELECT r.card_id AS card_id, r.related_id AS related_id,
+                r.relation AS relation, r.created_at AS created_at,
+                a.title AS card_title, a.card_type AS card_type,
+                b.title AS related_title, b.card_type AS related_type
+           FROM card_relations r
+           JOIN cards a ON a.id = r.card_id
+           JOIN cards b ON b.id = r.related_id
+          WHERE a.book_id = @bookId
+          ORDER BY a.title, r.relation, b.title`
+      )
+      .all({ bookId }) as RelationEdgeRow[]
+
+    return rows.map((row) => ({
+      cardId: row.card_id,
+      cardTitle: row.card_title,
+      cardType: isCardType(row.card_type) ? row.card_type : 'inspiration',
+      relatedId: row.related_id,
+      relatedTitle: row.related_title,
+      relatedType: isCardType(row.related_type) ? row.related_type : 'inspiration',
+      relation: row.relation,
+      createdAt: row.created_at
+    }))
   }
 }

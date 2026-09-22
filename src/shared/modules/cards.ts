@@ -96,11 +96,15 @@ export interface CardExtraField {
  * 而不是等到运行时 `CARD_EXTRA_FIELDS[type]` 返回 undefined。
  */
 export const CARD_EXTRA_FIELDS = {
+  /*
+   * 人物卡的字段里**没有「关系」**：关系在第三期第 3 件改成了指向另一张
+   * 卡的关联（card_relations 表），编辑面板下方有专门的一块。
+   * 留一个纯文本字段的话，两边会各记一份互相矛盾的关系。
+   */
   character: [
     { key: 'identity', label: '身份定位', placeholder: '如：星舰工程师 / 流亡贵族' },
     { key: 'affiliation', label: '所属阵营', placeholder: '如：星海联邦第七舰队' },
-    { key: 'appearance', label: '外貌特征', placeholder: '如：左眉有一道旧疤' },
-    { key: 'relationship', label: '与主角关系', placeholder: '如：旧友，实为宿敌' }
+    { key: 'appearance', label: '外貌特征', placeholder: '如：左眉有一道旧疤' }
   ],
   item: [
     { key: 'grade', label: '品阶', placeholder: '如：传说级 / 一次性消耗品' },

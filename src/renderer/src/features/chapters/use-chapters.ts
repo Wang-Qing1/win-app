@@ -7,6 +7,10 @@ import type {
   ChapterListQuery,
   ChapterMoveInput,
   ChapterReorderInput,
+  ChapterRestoreInput,
+  ChapterRestoreResult,
+  ChapterRevision,
+  ChapterRevisionSummary,
   ChapterSaveContentInput,
   ChapterSaveResult,
   ChapterUpdateInput
@@ -154,4 +158,111 @@ function patchChapterCounts(client: QueryClient, result: ChapterSaveResult): voi
 
     return touched ? next : current
   })
+}
+
+/* ------------------------------------------------------------------ *
+ * 历史版本（第三期第 4 件）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 某一章的历史版本列表。
+ *
+ * **`staleTime: 0` 是必须的，不能靠全局默认值。**
+ *
+ * 全局默认是 `staleTime: 15_000`（见 lib/query-client.ts）。历史面板是
+ * 「关掉再打开」的用法：作者打开面板发现是空的，写了几秒钟，再关掉、
+ * 重新打开 —— 此时距上一次取数还不到 15 秒，缓存仍被判定为新鲜，
+ * 于是**不再请求**，面板照旧显示那份空列表和「还没有可回退的版本」。
+ * 而库里刚刚明明留下了一版。用户看到的正是他最怕的那句话
+ * 「我的历史没了」，实际上只是缓存没失效。
+ *
+ * 面板的打开动作本身就是「我要看最新的」，每次都该重新取一次；
+ * 它不常开，也不会产生后台轮询。
+ */
+export function useChapterRevisions(chapterId: number | null) {
+  return useQuery<ChapterRevisionSummary[], ApiError>({
+    queryKey: queryKeys.chapters.revisions(chapterId ?? -1),
+    queryFn: () => invoke(() => getBridge().chapters.listRevisions({ chapterId: chapterId as number })),
+    enabled: chapterId !== null && chapterId > 0,
+    staleTime: 0
+  })
+}
+
+/**
+ * 取某一版的完整正文（点开一条版本看差异时用）。
+ *
+ * `staleTime: Infinity`：版本内容是**只读且不可变**的 —— 一版一旦写下来
+ * 就不会再被修改（剪枝只会整条删掉）。因此同一个 id 取一次之后永远有效，
+ * 反复点开同一版不该再发请求。
+ */
+export function useChapterRevision(id: number | null) {
+  return useQuery<ChapterRevision, ApiError>({
+    queryKey: [...queryKeys.chapters.revisions(-1).slice(0, 2), 'revision', id ?? -1] as const,
+    queryFn: () => invoke(() => getBridge().chapters.getRevision({ id: id as number })),
+    enabled: id !== null && id > 0,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false
+  })
+}
+
+/**
+ * 回档到某一版。
+ *
+ * 与「保存正文」的收尾方式刻意不同：这里**必须**同时把详情缓存里的
+ * 正文改掉，因为回档的结果就是「正文变了」，而详情查询是
+ * `staleTime: Infinity`（见 useChapter）—— 不写缓存的话，编辑器会拿着
+ * 回档前的旧 HTML 继续显示，直到重启应用。
+ *
+ * 但同样**不整体 invalidate**：回档时编辑器正开着，让详情与列表全部重取
+ * 会引发一次全文比对、光标跳回开头。就地写回这三处（列表字数、详情正文、
+ * 版本列表失效）是最小的正确集合。
+ *
+ * 版本列表则要失效：回档会在服务端**再留一版**（回档前的正文），
+ * 列表必须重取才能看到那条「撤销点」。
+ */
+export function useRestoreChapterRevision() {
+  const queryClient = useQueryClient()
+
+  return useMutation<ChapterRestoreResult, ApiError, ChapterRestoreInput>({
+    mutationFn: (input) => invoke(() => getBridge().chapters.restoreRevision(input)),
+    onSuccess: (result, input) => {
+      // 复用与保存正文完全相同的就地写回：服务端回传的字数就是权威值
+      patchChapterCounts(queryClient, result)
+
+      queryClient.setQueryData<Chapter>(queryKeys.chapters.detail(result.id), (old) => {
+        if (old === undefined) return old
+        return {
+          ...old,
+          contentHtml: revisionHtmlCache.get(input.revisionId) ?? old.contentHtml,
+          hanziCount: result.hanziCount,
+          charCount: result.charCount,
+          updatedAt: result.updatedAt
+        }
+      })
+
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chapters.revisions(input.chapterId) })
+    }
+  })
+}
+
+/**
+ * 回档时要写进详情缓存的 HTML 来源。
+ *
+ * 回档接口本身只回传字数，不回传正文（正文在版本详情查询里，前端手里
+ * 已经有）。用一个按 version id 索引的临时表把「用户点的那一版的 HTML」
+ * 交给 onSuccess —— 比在 mutation 变量里再塞一份 HTML（那会让类型
+ * 偏离 ChapterRestoreInput 这个共享契约）更干净。
+ *
+ * 只在一次点击的范围内有效，写完即清。
+ */
+const revisionHtmlCache = new Map<number, string>()
+
+/** 记录用户即将回档到的那一版正文，供 useRestoreChapterRevision 写缓存用 */
+export function rememberRevisionHtml(revisionId: number, contentHtml: string): void {
+  revisionHtmlCache.set(revisionId, contentHtml)
+  // 一次点击最多用到一条；上一条留着只会让这个表慢慢长大
+  if (revisionHtmlCache.size > 4) {
+    const oldest = revisionHtmlCache.keys().next().value
+    if (oldest !== undefined) revisionHtmlCache.delete(oldest)
+  }
 }

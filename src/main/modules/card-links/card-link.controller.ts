@@ -4,7 +4,10 @@ import {
   cardLinkChapterSchema,
   cardLinkNodePairSchema,
   cardLinkNodeSchema,
-  cardLinkPairSchema
+  cardLinkPairSchema,
+  cardRelationBookSchema,
+  cardRelationPairSchema,
+  cardRelationUnpairSchema
 } from '@shared/modules/card-links'
 import { registerHandler } from '../../core/ipc-handler'
 import type { CardLinkService } from './card-link.service'
@@ -65,5 +68,35 @@ export function registerCardLinkHandlers(service: CardLinkService): void {
     label: '解除卡片与大纲节点的关联',
     parse: (raw) => cardLinkNodePairSchema.parse(raw),
     handle: (input) => service.unlinkNode(input.cardId, input.nodeId)
+  })
+
+  /* ---- 卡片 ↔ 卡片（第三期第 3 件） ----
+   *
+   * 关系这一组里，写入的两个通道同样返回「操作之后的完整列表」；
+   * `listRelations` 返回的是**被查询那一头**的视角，另一头由前端另失效一次。
+   */
+
+  registerHandler(IpcChannel.CardsListRelations, {
+    label: '查询这张卡与其它卡的关系',
+    parse: (raw) => cardLinkCardSchema.parse(raw),
+    handle: (input) => service.listRelations(input.cardId)
+  })
+
+  registerHandler(IpcChannel.CardsListBookRelations, {
+    label: '查询一本书里的全部关系',
+    parse: (raw) => cardRelationBookSchema.parse(raw),
+    handle: (input) => service.listRelationsByBook(input.bookId)
+  })
+
+  registerHandler(IpcChannel.CardsRelate, {
+    label: '建立两张卡之间的关系',
+    parse: (raw) => cardRelationPairSchema.parse(raw),
+    handle: (input) => service.relate(input.cardId, input.relatedId, input.relation)
+  })
+
+  registerHandler(IpcChannel.CardsUnrelate, {
+    label: '解除两张卡之间的关系',
+    parse: (raw) => cardRelationUnpairSchema.parse(raw),
+    handle: (input) => service.unrelate(input.cardId, input.relatedId)
   })
 }

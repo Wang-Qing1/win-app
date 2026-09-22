@@ -1,8 +1,11 @@
-import type {
-  CardChapterLink,
-  CardOutlineLink,
-  ChapterCardRef,
-  OutlineCardRef
+import {
+  sortRelationPair,
+  type CardChapterLink,
+  type CardOutlineLink,
+  type CardRelation,
+  type CardRelationEdge,
+  type ChapterCardRef,
+  type OutlineCardRef
 } from '@shared/modules/card-links'
 import { runInTransaction } from '../../db/connection'
 import { logger } from '../../core/logger'
@@ -122,6 +125,69 @@ export class CardLinkService {
   }
 
   /* ------------------------------------------------------------------ *
+   * 卡片 ↔ 卡片（第三期第 3 件）
+   *
+   * 关系与上面两类关联共享「两边必须同属一本书」这条规则，但另有两条
+   * 它自己才有的：不能和自己建立关系，以及两边都得真的存在。
+   * ------------------------------------------------------------------ */
+
+  /** 这张卡与哪些卡有关系（一条边的两头都能看到它） */
+  listRelations(cardId: number): CardRelation[] {
+    this.assertCardExists(cardId)
+    return this.links.listRelations(cardId)
+  }
+
+  /** 这本书里所有的关系边，给关系网用 */
+  listRelationsByBook(bookId: number): CardRelationEdge[] {
+    return this.links.listRelationsByBook(bookId)
+  }
+
+  /**
+   * 建立 / 改写一条关系，返回这张卡关系后的完整列表。
+   *
+   * 幂等：同一对卡重复建立不产生第二条边，只把关系名改成最新的
+   * （仓储走 UPSERT）。于是「改关系名」与「建关系」是同一个操作，
+   * 界面上不必先删再建。
+   *
+   * 返回的列表是**被查询那一张卡**的视角：调用方（面板）直接拿它
+   * 替换本地状态即可。另一头看不到这次改动，由前端再失效一次 ——
+   * 一条边两头的列表内容相同但视角不同，没法用同一份返回值顶替。
+   */
+  relate(cardId: number, relatedId: number, relation: string): CardRelation[] {
+    return runInTransaction(() => {
+      const card = this.assertCardExists(cardId)
+      const other = this.assertCardExists(relatedId)
+
+      if (cardId === relatedId) {
+        throw AppError.validation(`不能给「${card.title}」和自己建立关系`)
+      }
+      this.assertSameRelationBook(card.bookId, other.bookId, card.title, other.title)
+
+      // 表上有 CHECK (card_id < related_id)：一条边只有一种写法，
+      // 于是「A 连 B」与「B 连 A」不会存成两条
+      const [left, right] = sortRelationPair(cardId, relatedId)
+      this.links.upsertRelation(left, right, relation, new Date().toISOString())
+      logger.info('卡片关系已建立', { cardId, relatedId, relation })
+
+      return this.links.listRelations(cardId)
+    })
+  }
+
+  /** 解除一条关系，返回这张卡解除后的完整列表 */
+  unrelate(cardId: number, relatedId: number): CardRelation[] {
+    return runInTransaction(() => {
+      this.assertCardExists(cardId)
+      this.assertCardExists(relatedId)
+
+      const [left, right] = sortRelationPair(cardId, relatedId)
+      this.links.deleteRelation(left, right)
+      logger.info('卡片关系已解除', { cardId, relatedId })
+
+      return this.links.listRelations(cardId)
+    })
+  }
+
+  /* ------------------------------------------------------------------ *
    * 内部
    * ------------------------------------------------------------------ */
 
@@ -166,6 +232,33 @@ export class CardLinkService {
     if (cardBookId !== chapterBookId) {
       throw AppError.conflict(
         `「${cardTitle}」不属于《${chapterTitle}》所在的这本书，跨书关联没有意义。`
+      )
+    }
+  }
+
+  /**
+   * 关系两端的同书校验。
+   *
+   * 不复用 `assertSameBook`：那一版的文案是按「卡片 ↔ 章节」写的
+   * （「先把它指定到一本书下」对一张卡没有意义），而关系的两边都是卡片，
+   * 常见错因是「另一张卡建在了别的书里」—— 文案得指向那一边。
+   */
+  private assertSameRelationBook(
+    leftBookId: number | null,
+    rightBookId: number | null,
+    leftTitle: string,
+    rightTitle: string
+  ): void {
+    if (leftBookId === null || rightBookId === null) {
+      throw AppError.conflict(
+        `「${leftBookId === null ? leftTitle : rightTitle}」是通用卡片，` +
+          '不属于任何书，建立关系前先把它指定到一本书下。'
+      )
+    }
+
+    if (leftBookId !== rightBookId) {
+      throw AppError.conflict(
+        `「${leftTitle}」与「${rightTitle}」不属于同一本书，跨书的关系在关系网里没有落点。`
       )
     }
   }

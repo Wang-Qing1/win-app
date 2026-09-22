@@ -31,6 +31,9 @@ export const IpcChannel = {
   ChaptersRemove: 'chapters:remove',
   ChaptersReorder: 'chapters:reorder',
   ChaptersMove: 'chapters:move',
+  ChaptersListRevisions: 'chapters:list-revisions',
+  ChaptersGetRevision: 'chapters:get-revision',
+  ChaptersRestoreRevision: 'chapters:restore-revision',
 
   /* ---------------- 大纲（自由多层情节树） ---------------- */
   OutlineTree: 'outline:tree',
@@ -56,6 +59,10 @@ export const IpcChannel = {
   CardsListLinks: 'cards:list-links',
   CardsListByChapter: 'cards:list-by-chapter',
   CardsSetTimelineOrder: 'cards:set-timeline-order',
+  CardsListRelations: 'cards:list-relations',
+  CardsListBookRelations: 'cards:list-book-relations',
+  CardsRelate: 'cards:relate',
+  CardsUnrelate: 'cards:unrelate',
 
   /* ---------------- 全库检索 ---------------- */
   SearchQuery: 'search:query',

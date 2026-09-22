@@ -2885,8 +2885,285 @@ html[data-theme='dark'] .search-hit__mark {
   width: 100%;
 }
 
+/* ------------------------------------------------------------------ *
+ * 卡片 ↔ 卡片的关系（第三期第 3 件）
+ *
+ * 行的顺序与「用在哪几章」相反：那里章名是重点（「用在哪」是恒定的），
+ * 这里**关系名**是重点 —— 一眼先看到「师徒」，再看到是谁。
+ * ------------------------------------------------------------------ */
+
+.card-relations__label {
+  flex: 0 0 auto;
+  max-width: 104px;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-relations__select {
+  flex: 1 1 180px;
+  min-width: 140px;
+}
+
+.card-relations__input {
+  flex: 0 1 170px;
+  min-width: 120px;
+}
+
+/* 关系网：关系图的文字版，一行的两头都是可以点进去的卡名 */
+.relation-web__edge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--winbook-border);
+  border-radius: 6px;
+}
+
+.relation-web__name {
+  padding: 0;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--winbook-accent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.relation-web__name:hover {
+  text-decoration: underline;
+}
+
+.relation-web__label {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.relation-web__type {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--winbook-text-soft);
+  white-space: nowrap;
+}
+
 @media (max-width: 860px) {
   .app-header__center {
     display: none;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * 章节历史版本与回档（第三期第 4 件）
+ *
+ * 面板占正文区上方一整条：左栏列出各版本，右栏是左右并排的段落差异。
+ * 并排需要真实宽度，这是它没有做成右栏页签的唯一原因 —— 右栏两百多像素
+ * 放到「左右各一栏」里每边只剩四五个字宽，读不出任何东西。
+ * ------------------------------------------------------------------ */
+
+.history {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  /* 给一个高度上限：版本多时不能让面板把正文挤到看不见 ——
+     正文才是这一页的主角，历史是临时展开的旁支 */
+  max-height: 46%;
+  min-height: 0;
+  border-bottom: 1px solid var(--winbook-border);
+  background: var(--winbook-surface-soft);
+}
+
+.history__head {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--winbook-border);
+}
+
+.history__head-icon {
+  color: var(--winbook-text-soft);
+}
+
+.history__title {
+  font-size: 13px;
+}
+
+.history__meta {
+  font-size: 12px;
+}
+
+/* 关闭按钮推到最右：它与面板里其它元素不是一类，靠边才不会被误点 */
+.history__head > button:last-child {
+  margin-left: auto;
+}
+
+.history__center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.history__empty {
+  margin: 12px 0;
+}
+
+.history__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.history__list {
+  flex: 0 0 208px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  overflow-y: auto;
+  border-right: 1px solid var(--winbook-border);
+}
+
+.history__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--winbook-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history__item:hover {
+  background: var(--winbook-surface);
+}
+
+.history__item--active {
+  background: var(--winbook-accent-soft);
+}
+
+.history__item-time {
+  flex: 0 0 auto;
+  color: var(--winbook-text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.history__item-words {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.history__item-tag {
+  margin-inline-end: 0;
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.history__preview {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 6px 10px;
+  gap: 6px;
+}
+
+.history__preview-head {
+  flex: 0 0 auto;
+}
+
+.history__preview-title {
+  font-size: 12px;
+}
+
+/* 回档按钮推到最右，与「关闭」同一个思路：操作件贴边 */
+.history__preview-head > button:last-child {
+  margin-left: auto;
+}
+
+.history__error {
+  flex: 0 0 auto;
+}
+
+/* ---------------- 段落差异 ---------------- */
+
+.diff {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 4px;
+}
+
+.diff__summary {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.diff__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/*
+ * 两栏各自独立滚动会错位 —— 并排对比的前提是「同一行对同一行」。
+ * 所以滚动放在 .diff__grid 上，两栏都随它一起滚。
+ */
+.diff__col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.diff__line {
+  margin: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  /* 长段落在窄栏里折行而不是横向溢出：并排对比容不下横向滚动条 */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff__line--same {
+  color: var(--winbook-text-soft);
+}
+
+/*
+ * 差异用**底色**而不是文字颜色区分：正文本身可能被行内标记染色，
+ * 再用文字色就会被盖住；底色则始终在下面，任何内容都看得见。
+ */
+.diff__line--changed {
+  background: rgba(199, 106, 0, 0.16);
+}
+
+.diff__line--removed {
+  background: rgba(196, 43, 28, 0.16);
+}
+
+.diff__line--added {
+  background: rgba(15, 123, 15, 0.16);
+}
+
+/* 一侧没有对应内容时留一条虚线占位，让两栏行数始终相等 */
+.diff__line--absent {
+  min-height: 1.6em;
+  border: 1px dashed var(--winbook-border);
+  background: transparent;
+}
+

@@ -17,6 +17,12 @@ import type {
   ChapterListQuery,
   ChapterMoveInput,
   ChapterReorderInput,
+  ChapterRestoreInput,
+  ChapterRestoreResult,
+  ChapterRevision,
+  ChapterRevisionIdInput,
+  ChapterRevisionListInput,
+  ChapterRevisionSummary,
   ChapterSaveContentInput,
   ChapterSaveResult,
   ChapterUpdateInput
@@ -39,6 +45,11 @@ import type {
   CardLinkNodePairInput,
   CardLinkPairInput,
   CardOutlineLink,
+  CardRelation,
+  CardRelationBookInput,
+  CardRelationEdge,
+  CardRelationPairInput,
+  CardRelationUnpairInput,
   OutlineCardRef,
   ChapterCardRef
 } from './modules/card-links'
@@ -165,6 +176,16 @@ export interface WinbookApi {
     remove: (input: ChapterIdInput) => Promise<IpcResponse<{ id: number }>>
     reorder: (input: ChapterReorderInput) => Promise<IpcResponse<{ count: number }>>
     move: (input: ChapterMoveInput) => Promise<IpcResponse<ChapterListItem>>
+
+    /*
+     * 历史版本。列表刻意**不带正文** —— 与 chapters:list 同一个理由：
+     * 一章可能留着 50 版，每版都是几十 KB 的 HTML，列表拉全量等于
+     * 开一次历史面板就传几 MB。字数与增减足够让作者认出「哪一版」。
+     */
+    listRevisions: (input: ChapterRevisionListInput) => Promise<IpcResponse<ChapterRevisionSummary[]>>
+    getRevision: (input: ChapterRevisionIdInput) => Promise<IpcResponse<ChapterRevision>>
+    /** 回档。执行前会把当前正文也留一版，因此回档本身可以再回档 */
+    restoreRevision: (input: ChapterRestoreInput) => Promise<IpcResponse<ChapterRestoreResult>>
   }
 
   outline: {
@@ -227,6 +248,20 @@ export interface WinbookApi {
     listNodeLinks: (input: CardLinkCardInput) => Promise<IpcResponse<CardOutlineLink[]>>
     /** 这个节点用到了哪几张卡 */
     listByNode: (input: CardLinkNodeInput) => Promise<IpcResponse<OutlineCardRef[]>>
+
+    /* ---- 卡片 ↔ 卡片（第三期第 3 件）----
+     *
+     * 关系没有方向：一条边的两头看到的是同一条边。
+     * 因此建立 / 解除返回的是**被操作那一头**的列表，另一头由前端另失效一次。
+     */
+
+    /** 这张卡与哪些卡有关系 */
+    listRelations: (input: CardLinkCardInput) => Promise<IpcResponse<CardRelation[]>>
+    /** 这本书里所有的关系边，给关系网用 */
+    listBookRelations: (input: CardRelationBookInput) => Promise<IpcResponse<CardRelationEdge[]>>
+    /** 建立关系；同一对卡再建一次是**改关系名**，不会多出第二条边 */
+    relate: (input: CardRelationPairInput) => Promise<IpcResponse<CardRelation[]>>
+    unrelate: (input: CardRelationUnpairInput) => Promise<IpcResponse<CardRelation[]>>
   }
 
   search: {

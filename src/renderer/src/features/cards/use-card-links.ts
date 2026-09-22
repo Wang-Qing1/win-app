@@ -2,6 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   CardChapterLink,
   CardOutlineLink,
+  CardRelation,
+  CardRelationEdge,
+  CardRelationPairInput,
+  CardRelationUnpairInput,
   ChapterCardRef,
   OutlineCardRef
 } from '@shared/modules/card-links'
@@ -119,5 +123,61 @@ export function useUnlinkCardNode() {
     mutationFn: (input) => invoke(() => getBridge().cards.unlinkNode(input)),
     onSuccess: (links, variables) =>
       syncNodeBothSides(queryClient, variables.cardId, variables.nodeId, links)
+  })
+}
+
+/* ------------------------------------------------------------------ *
+ * 卡片 ↔ 卡片的关系（第三期第 3 件）
+ * ------------------------------------------------------------------ */
+
+/** 这张卡与哪些卡有关系（一条边的两头都能看到它） */
+export function useCardRelations(cardId: number | null) {
+  return useQuery<CardRelation[], ApiError>({
+    queryKey: queryKeys.cardRelations.byCard(cardId),
+    enabled: cardId !== null,
+    queryFn: () => invoke(() => getBridge().cards.listRelations({ cardId: cardId as number }))
+  })
+}
+
+/** 一本书里所有的关系边。关系网用；bookId 为 null（通用卡片范围）时不查 */
+export function useBookRelations(bookId: number | null) {
+  return useQuery<CardRelationEdge[], ApiError>({
+    queryKey: queryKeys.cardRelations.byBook(bookId),
+    enabled: bookId !== null,
+    queryFn: () => invoke(() => getBridge().cards.listBookRelations({ bookId: bookId as number }))
+  })
+}
+
+/**
+ * 关系变更后的缓存同步。
+ *
+ * 本侧（被操作的那一头）写入服务端返回的完整列表；**另一头与关系网**
+ * 只能失效重取 —— 响应里是这一头的视角，那一头看到的虽然是同一条边，
+ * 但列表内容不同（对方那一栏是这张卡），拿它顶替会张冠李戴。
+ */
+function syncRelationSides(
+  client: ReturnType<typeof useQueryClient>,
+  cardId: number,
+  relations: CardRelation[]
+): void {
+  client.setQueryData(queryKeys.cardRelations.byCard(cardId), relations)
+  void client.invalidateQueries({ queryKey: queryKeys.cardRelations.all })
+}
+
+export function useRelateCards() {
+  const queryClient = useQueryClient()
+  return useMutation<CardRelation[], ApiError, CardRelationPairInput>({
+    mutationFn: (input) => invoke(() => getBridge().cards.relate(input)),
+    onSuccess: (relations, variables) =>
+      syncRelationSides(queryClient, variables.cardId, relations)
+  })
+}
+
+export function useUnrelateCards() {
+  const queryClient = useQueryClient()
+  return useMutation<CardRelation[], ApiError, CardRelationUnpairInput>({
+    mutationFn: (input) => invoke(() => getBridge().cards.unrelate(input)),
+    onSuccess: (relations, variables) =>
+      syncRelationSides(queryClient, variables.cardId, relations)
   })
 }

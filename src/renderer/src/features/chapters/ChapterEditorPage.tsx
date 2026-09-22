@@ -8,6 +8,7 @@ import {
   CompressOutlined,
   ExclamationCircleOutlined,
   EyeOutlined,
+  HistoryOutlined,
   PlusOutlined,
   SearchOutlined,
   UserAddOutlined
@@ -36,6 +37,7 @@ import {
 import { ChapterCatalog, type ChapterMenuAction, type ChapterPatch, type VolumeMenuAction } from './ChapterCatalog'
 import { ChapterCreateModal, type ChapterCreateValues } from './ChapterCreateModal'
 import { EditorInspector } from './EditorInspector'
+import { ChapterHistoryPanel } from './ChapterHistoryPanel'
 import { FindReplaceBar } from './FindReplaceBar'
 import { NameDialog } from './NameDialog'
 import { RichTextEditor, type EditorChange } from './RichTextEditor'
@@ -167,6 +169,22 @@ export function ChapterEditorPage() {
   const [findOpen, setFindOpen] = useState(false)
   const [nameOpen, setNameOpen] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
+  /**
+   * 历史版本面板是否展开。展开时它占据正文区上方一整条。
+   *
+   * 单独一个 state 而不是塞进 `InspectorView`：那个类型描述的是**右栏**
+   * 里的视图，而这个面板在右栏之外。混在一起会让「点竖栏切换视图」
+   * 与「开历史面板」互相覆盖对方的显隐。
+   */
+  const [historyOpen, setHistoryOpen] = useState(false)
+  /**
+   * 回档后用来强制重建编辑器的令牌。
+   *
+   * 编辑器自己管正文（`RichTextEditor` 只在 `chapterKey` 变化时重建），
+   * 因此「服务端的正文变了」这件事它感觉不到。页码 +1 即可让它重建，
+   * 用 `${chapterId}:${restoreToken}` 作 key 才不会误伤正常的切章。
+   */
+  const [restoreToken, setRestoreToken] = useState(0)
   const [creating, setCreating] = useState(false)
   /** 分卷弹窗的提交中态（建卷 / 改名共用，弹窗在目录栏里） */
   const [volumeSaving, setVolumeSaving] = useState(false)
@@ -277,6 +295,32 @@ export function ChapterEditorPage() {
 
   const flushRef = useRef(flush)
   flushRef.current = flush
+
+  /**
+   * 回档成功后把编辑器里的正文换成历史那一版。
+   *
+   * 三件事缺一不可：
+   *  1. **清空待保存队列**。回档前的正文已经在服务端留成一版历史了，
+   *     若此时 `pendingRef` 里还压着一段自动保存没发出去，它会在
+   *     两秒后把刚刚回档掉的正文又覆盖回去 —— 表现是「点了回档，
+   *     过一会儿内容自己变回来了」。
+   *  2. `lastSavedRef` 同步成回档后的正文，否则下一次 flush 会认为
+   *     「和上次保存的不一样」而白写一次。
+   *  3. `restoreToken` +1 让编辑器重建并载入新正文。
+   *
+   * 详情缓存由 `useRestoreChapterRevision` 负责写回，这里只管页面状态。
+   */
+  const handleRestored = useCallback((contentHtml: string): void => {
+    pendingRef.current = null
+    lastSavedRef.current = contentHtml
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    setSaveState('saved')
+    setRestoreToken((value) => value + 1)
+    notifySuccess('已回到所选版本')
+  }, [notifySuccess])
 
   const scheduleFlush = useCallback((): void => {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current)
@@ -865,6 +909,14 @@ export function ChapterEditorPage() {
   /** 目录与正文都等这一件事：这本书的章节列表回来了没有 */
   const listReady = chapterList.data !== undefined
 
+  /*
+   * 编辑器的重建键。平时就是章节 id；回档后带上令牌，
+   * 于是「同一章但正文换了一份」也能触发重建（见 handleRestored）。
+   * 用字符串而不是数字 token 单独做 key，是为了让切章与回档共用一个 prop，
+   * 免得 RichTextEditor 要多理解一个概念。
+   */
+  const restoreKey = `${chapterId ?? 0}:${restoreToken}`
+
   return (
     <div className={`editor-page${focusMode ? ' editor-page--focus' : ''}`}>
       {/* ---------------- 顶栏 ---------------- */}
@@ -930,6 +982,21 @@ export function ChapterEditorPage() {
                 data-testid="editor-focus-toggle"
                 onClick={() => setFocusMode((value) => !value)}
               />
+              {/*
+                历史版本：放在顶栏而不是右侧竖栏。理由见 ChapterHistoryPanel
+                顶部那段注释 —— 一句话是「差异对比要整幅宽度」。
+                打开前先落盘，否则面板里列出的「当前正文」与右边一栏
+                比对的还是上一次保存时的内容，会自己跟自己不同。
+              */}
+              <IconButton
+                label="历史版本：查看并回到之前保存的正文"
+                icon={<HistoryOutlined />}
+                data-testid="editor-history"
+                onClick={() => {
+                  void flushRef.current()
+                  setHistoryOpen((value) => !value)
+                }}
+              />
               <IconButton
                 label="发布草稿（把本章导出为 .txt 草稿文件）"
                 tone="primary"
@@ -979,6 +1046,19 @@ export function ChapterEditorPage() {
         )}
 
         <div className="editor-main">
+          {/*
+            历史版本面板占正文区上方一整个宽度。放在这里（editor-main 内、
+            编辑器之上）而不是页面的顶层：它推下去的是正文，不该把左边的
+            目录栏也一起挤动 —— 目录栏与历史无关，跟着跳会让人以为切了页面。
+          */}
+          {historyOpen && hasChapter && chapterId !== null ? (
+            <ChapterHistoryPanel
+              chapterId={chapterId}
+              currentText={doc?.text ?? ''}
+              onRestore={handleRestored}
+              onClose={() => setHistoryOpen(false)}
+            />
+          ) : null}
           {hasChapter ? (
             !ready || meta === null ? (
               <div className="editor-main__loading">
@@ -1018,7 +1098,7 @@ export function ChapterEditorPage() {
                 */}
                 <RichTextEditor
                   initialContent={chapter.data.contentHtml}
-                  chapterKey={chapterId}
+                  chapterKey={restoreKey}
                   prefs={prefs}
                   onPrefsChange={patchPrefs}
                   marks={proofread.marks}

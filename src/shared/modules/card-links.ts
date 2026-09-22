@@ -63,6 +63,67 @@ export interface OutlineCardRef {
   subtitle: string
 }
 
+/* ------------------------------------------------------------------ *
+ * 卡片 ↔ 卡片的关系（第三期第 3 件）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 一张卡与另一张卡之间的关系。
+ *
+ * 与上面两类关联（章节 / 大纲节点）有个根本差别：**关系没有方向**。
+ * 两人之间是「师徒」这件事，不因从哪一头看而改变。所以一对卡之间只存
+ * 一条边，建表时用 `CHECK (card_id < related_id)` 把两种写法收成一种 ——
+ * 否则「A 连 B」与「B 连 A」会存成两条边：关系图上同一个关系画两遍，
+ * 界面上表现为「删掉一条还剩一条」。
+ *
+ * 关系名是**自由文本**而不是枚举：小说里的关系写不完（师徒、宿敌、
+ * 指腹为婚、欠一条命），做成下拉只会让人选不出想要的那个，最后统统
+ * 落到「其它」上 —— 那等于没有分类。
+ *
+ * 关系不只在人物之间发生：人物 ↔ 势力（设定卡）同样常见，
+ * 所以这里没有「两边都必须是人物卡」的限制，只要求同书。
+ */
+export interface CardRelation {
+  /** 被查询的那一张卡。列表里每一项都是「它 ↔ 对方」 */
+  cardId: number
+  /** 对方的卡 */
+  relatedId: number
+  /** 关系名，如「师徒」 */
+  relation: string
+  relatedTitle: string
+  /** 对方的类型：列表上要标出来，否则「星海联邦」看不出是一张设定卡 */
+  relatedType: CardType
+  createdAt: string
+}
+
+/** 关系网里的一条边：两头的信息都带齐，列表与将来的图共用这一份 */
+export interface CardRelationEdge {
+  cardId: number
+  cardTitle: string
+  cardType: CardType
+  relatedId: number
+  relatedTitle: string
+  relatedType: CardType
+  relation: string
+  createdAt: string
+}
+
+export const RELATION_LIMITS = {
+  /** 关系名是一行标签，不是一句话 */
+  label: 24
+} as const
+
+/**
+ * 把一对待建立关系的卡收成「小的在前」的规范写法。
+ *
+ * 放在共享层而不是服务层：它是这张表的**存储约定**（写入必须按它排序），
+ * 属于契约的一部分；放在服务层里的话，仓储就不知道「调用方有没有排好」，
+ * 而 CHECK 约束只在写入那一刻才报错。
+ */
+export function sortRelationPair(a: number, b: number): [number, number] {
+  return a < b ? [a, b] : [b, a]
+}
+
 const idField = z.number().int().positive('ID 非法')
 
 export const cardLinkPairSchema = z.object({
@@ -96,3 +157,30 @@ export const cardLinkNodeSchema = z.object({
 })
 
 export type CardLinkNodeInput = z.infer<typeof cardLinkNodeSchema>
+
+/* ---- 卡片 ↔ 卡片 ---- */
+
+export const cardRelationPairSchema = z.object({
+  cardId: idField,
+  relatedId: idField,
+  relation: z
+    .string()
+    .trim()
+    .min(1, '关系名不能为空')
+    .max(RELATION_LIMITS.label, `关系名最多 ${RELATION_LIMITS.label} 个字符`)
+})
+
+export type CardRelationPairInput = z.infer<typeof cardRelationPairSchema>
+
+export const cardRelationUnpairSchema = z.object({
+  cardId: idField,
+  relatedId: idField
+})
+
+export type CardRelationUnpairInput = z.infer<typeof cardRelationUnpairSchema>
+
+export const cardRelationBookSchema = z.object({
+  bookId: idField
+})
+
+export type CardRelationBookInput = z.infer<typeof cardRelationBookSchema>

@@ -5,6 +5,9 @@ import {
   chapterListQuerySchema,
   chapterMoveSchema,
   chapterReorderSchema,
+  chapterRestoreSchema,
+  chapterRevisionIdSchema,
+  chapterRevisionListSchema,
   chapterSaveContentSchema,
   chapterUpdateSchema,
   normalizeChapterListQuery
@@ -60,5 +63,23 @@ export function registerChapterHandlers(service: ChapterService): void {
     label: '移动章节',
     parse: (raw) => chapterMoveSchema.parse(raw),
     handle: (input) => service.move(input)
+  })
+
+  registerHandler(IpcChannel.ChaptersListRevisions, {
+    label: '查询章节历史版本',
+    parse: (raw) => chapterRevisionListSchema.parse(raw),
+    handle: (input) => service.listRevisions(input.chapterId)
+  })
+
+  registerHandler(IpcChannel.ChaptersGetRevision, {
+    label: '查询历史版本详情',
+    parse: (raw) => chapterRevisionIdSchema.parse(raw),
+    handle: (input) => service.getRevision(input.id)
+  })
+
+  registerHandler(IpcChannel.ChaptersRestoreRevision, {
+    label: '回档到历史版本',
+    parse: (raw) => chapterRestoreSchema.parse(raw),
+    handle: (input) => service.restoreRevision(input)
   })
 }

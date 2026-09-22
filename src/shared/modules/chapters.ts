@@ -186,3 +186,93 @@ export const chapterMoveSchema = z.object({
 })
 
 export type ChapterMoveInput = z.infer<typeof chapterMoveSchema>
+
+/* ------------------------------------------------------------------ *
+ * 历史版本（第三期第 4 件）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 一次快照抓的是被替换掉的那个版本，也就是**改动之前**的正文。
+ *
+ * 为什么抓「旧的」而不是「新的」：作者后悔的时刻永远是「我刚刚那一下
+ * 弄坏了什么」。抓旧的，那么历史列表里的每一条都对应一次「回到这里
+ * 就撤销掉了从那以后的全部改动」，语义单一。若抓新的，最新一版与
+ * 当前正文重复，列表首行永远是没用的「和现在一样」。
+ *
+ * 于是：当前正文永远不在版本列表里，列表全是可回档的过去。
+ */
+export interface ChapterRevisionSummary {
+  id: number
+  chapterId: number
+  /** 该版本的汉字数，列表上直接显示，不必取正文 */
+  hanziCount: number
+  /** 该版本相对其前一版的字数增减，正为增。最早的版本为 null */
+  deltaHanzi: number | null
+  createdAt: string
+}
+
+/** 版本详情，带当时的正文 */
+export interface ChapterRevision extends ChapterRevisionSummary {
+  contentHtml: string
+  contentText: string
+  charCount: number
+}
+
+/** 回档回执：把恢复后的权威字数带回给编辑器，与保存正文同形 */
+export interface ChapterRestoreResult {
+  id: number
+  hanziCount: number
+  charCount: number
+  updatedAt: string
+  /** 回档时是否又为「回档前的正文」留了一份快照，留着就能再退回去 */
+  snapshotKept: boolean
+}
+
+export const CHAPTER_REVISION_LIMITS = {
+  /**
+   * 每章保留多少版。自动保存两秒一次，一次写作会话轻易产生几十上百版，
+   * 无上限的话一本书几万行快照，备份文件会膨胀到没人愿意传。
+   * 50 版足够找回「今天上午那一段」，再久远的改动属于另一类需求。
+   */
+  perChapter: 50,
+  /**
+   * 短于这个长度的正文不留版。空段落、刚建章时打的几个字这类内容
+   * 占掉配额却没人愿意回退到它 —— 配额是最稀缺的资源，留给有意义的版本。
+   */
+  minHanzi: 10,
+  /**
+   * 「与上一版的差异小于这个比例」时不留版。
+   *
+   * 这是整套去重规则里最关键的一条。自动保存的粒度是**两秒**，
+   * 也就是说作者每敲两三个字就会触发一次保存。若每次改动都留一版，
+   * 50 版的配额会在两分钟内被填满 —— 而那 50 版全是「上一版多了一个字」，
+   * 真正想找的「半小时前那一大段」早在剪枝时被挤掉了。
+   *
+   * 取 5%：一章 3000 字时约 150 字，正好是「改了个词、补了半句」的量级；
+   * 而「删掉一整段」（通常几百字）一定超过它，会被如实留下。
+   * 用比例而不是绝对值，是因为同一本书里既有 500 字的短章也有
+   * 8000 字的长章，固定阈值在两头都会失准。
+   */
+  minDeltaRatio: 0.05
+} as const
+
+/** 列某一章的版本，最新在前 */
+export const chapterRevisionListSchema = z.object({
+  chapterId: z.number().int().positive('章节 ID 非法')
+})
+
+export type ChapterRevisionListInput = z.infer<typeof chapterRevisionListSchema>
+
+export const chapterRevisionIdSchema = z.object({
+  id: z.number().int().positive('版本 ID 非法')
+})
+
+export type ChapterRevisionIdInput = z.infer<typeof chapterRevisionIdSchema>
+
+/** 回档到指定版本 */
+export const chapterRestoreSchema = z.object({
+  chapterId: z.number().int().positive('章节 ID 非法'),
+  revisionId: z.number().int().positive('版本 ID 非法')
+})
+
+export type ChapterRestoreInput = z.infer<typeof chapterRestoreSchema>

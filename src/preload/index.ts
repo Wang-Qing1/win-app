@@ -16,8 +16,10 @@ import { IpcChannel } from '@shared/ipc-channels'
  * 8：新增卡片 ↔ 章节关联（cards.linkChapter / unlinkChapter / listLinks / listByChapter）。
  * 9：新增卡片 ↔ 大纲节点关联（cards.linkNode / unlinkNode / listNodeLinks / listByNode）。
  * 10：新增设定卡时间线重排（cards.setTimelineOrder）。
+ * 11：新增卡片 ↔ 卡片的关系（cards.listRelations / listBookRelations / relate / unrelate）。
+ * 12：新增章节历史版本与回档（chapters.listRevisions / getRevision / restoreRevision）。
  */
-const BRIDGE_VERSION = '10'
+const BRIDGE_VERSION = '12'
 
 /**
  * preload 是主进程与渲染进程之间唯一的通道。
@@ -61,7 +63,10 @@ const api: WinbookApi = {
     saveContent: (input) => ipcRenderer.invoke(IpcChannel.ChaptersSaveContent, input),
     remove: (input) => ipcRenderer.invoke(IpcChannel.ChaptersRemove, input),
     reorder: (input) => ipcRenderer.invoke(IpcChannel.ChaptersReorder, input),
-    move: (input) => ipcRenderer.invoke(IpcChannel.ChaptersMove, input)
+    move: (input) => ipcRenderer.invoke(IpcChannel.ChaptersMove, input),
+    listRevisions: (input) => ipcRenderer.invoke(IpcChannel.ChaptersListRevisions, input),
+    getRevision: (input) => ipcRenderer.invoke(IpcChannel.ChaptersGetRevision, input),
+    restoreRevision: (input) => ipcRenderer.invoke(IpcChannel.ChaptersRestoreRevision, input)
   },
 
   outline: {
@@ -88,7 +93,12 @@ const api: WinbookApi = {
     unlinkNode: (input) => ipcRenderer.invoke(IpcChannel.CardsUnlinkNode, input),
     listNodeLinks: (input) => ipcRenderer.invoke(IpcChannel.CardsListNodeLinks, input),
     listByNode: (input) => ipcRenderer.invoke(IpcChannel.CardsListByNode, input),
-    setTimelineOrder: (input) => ipcRenderer.invoke(IpcChannel.CardsSetTimelineOrder, input)
+    setTimelineOrder: (input) => ipcRenderer.invoke(IpcChannel.CardsSetTimelineOrder, input),
+    listRelations: (input) => ipcRenderer.invoke(IpcChannel.CardsListRelations, input),
+    listBookRelations: (input) =>
+      ipcRenderer.invoke(IpcChannel.CardsListBookRelations, input),
+    relate: (input) => ipcRenderer.invoke(IpcChannel.CardsRelate, input),
+    unrelate: (input) => ipcRenderer.invoke(IpcChannel.CardsUnrelate, input)
   },
 
   search: {

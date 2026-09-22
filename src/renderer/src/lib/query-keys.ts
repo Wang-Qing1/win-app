@@ -40,7 +40,16 @@ export const queryKeys = {
      */
     lists: ['chapters', 'list'] as const,
     list: (query: ChapterListQuery) => ['chapters', 'list', query] as const,
-    detail: (id: number) => ['chapters', 'detail', id] as const
+    detail: (id: number) => ['chapters', 'detail', id] as const,
+    /**
+     * 某一章的历史版本列表。
+     *
+     * 与 `detail` 分开：版本列表的变化时机与正文不同 —— 每次自动保存都会
+     * 让列表多一条（也可能因剪枝或去重不变），但详情页的正文是本地文档，
+     * 绝不能因为「多了一版」就重取，那会让光标跳回开头。
+     * 只有回档这一个动作需要同时动两者。
+     */
+    revisions: (chapterId: number) => ['chapters', 'revisions', chapterId] as const
   },
 
   outline: {
@@ -77,6 +86,22 @@ export const queryKeys = {
     byChapter: (chapterId: number | null) => ['card-links', 'chapter', chapterId] as const,
     nodesByCard: (cardId: number | null) => ['card-links', 'nodes-of-card', cardId] as const,
     byNode: (nodeId: number | null) => ['card-links', 'node', nodeId] as const
+  },
+
+  /**
+   * 卡片 ↔ 卡片的关系（第三期）。
+   *
+   * 与 `cardLinks` 分开一组：它们是两张表，建一条关系不该让「这一章用到了
+   * 哪几条设定」那几个查询跟着重取 —— 共用前缀意味着每次建关系都要
+   * 顺带失效四个无关的查询。
+   *
+   * 组里仍然保留 `all`：一条边的**两头与关系网**看到的都是同一条边，
+   * 写操作必须让它们一起失效，否则「这一头加上了、那一头还是空的」。
+   */
+  cardRelations: {
+    all: ['card-relations'] as const,
+    byCard: (cardId: number | null) => ['card-relations', 'card', cardId] as const,
+    byBook: (bookId: number | null) => ['card-relations', 'book', bookId] as const
   },
 
   search: {

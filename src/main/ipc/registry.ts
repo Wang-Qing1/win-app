@@ -8,6 +8,7 @@ import { VolumeRepository } from '../modules/volumes/volume.repository'
 import { VolumeService } from '../modules/volumes/volume.service'
 import { registerVolumeHandlers } from '../modules/volumes/volume.controller'
 import { ChapterRepository } from '../modules/chapters/chapter.repository'
+import { ChapterRevisionRepository } from '../modules/chapters/chapter-revision.repository'
 import { ChapterService } from '../modules/chapters/chapter.service'
 import { registerChapterHandlers } from '../modules/chapters/chapter.controller'
 import { OutlineRepository } from '../modules/outline/outline.repository'
@@ -52,6 +53,9 @@ export function registerAllIpcHandlers(config: AppConfig): void {
   const bookRepository = new BookRepository(db)
   const volumeRepository = new VolumeRepository(db)
   const chapterRepository = new ChapterRepository(db)
+  // 历史版本单独一个仓储：它读写的是另一张表，只有「留快照 / 列版本 / 剪枝」
+  // 三个动作，与章节本身的增删改查没有共用的 SQL
+  const chapterRevisionRepository = new ChapterRevisionRepository(db)
   const sessionRepository = new SessionRepository(db)
   const outlineRepository = new OutlineRepository(db)
   const cardRepository = new CardRepository(db)
@@ -70,7 +74,12 @@ export function registerAllIpcHandlers(config: AppConfig): void {
   /* ---------------- 服务 ---------------- */
   const bookService = new BookService(bookRepository, db)
   const volumeService = new VolumeService(volumeRepository, bookRepository)
-  const chapterService = new ChapterService(chapterRepository, bookRepository, volumeRepository)
+  const chapterService = new ChapterService(
+    chapterRepository,
+    bookRepository,
+    volumeRepository,
+    chapterRevisionRepository
+  )
   const sessionService = new SessionService(sessionRepository, bookRepository, chapterRepository)
   // 大纲复用了章节服务：「落地成章节」走的就是创建章节那条业务路径，
   // 不另写一份 INSERT —— 那会让章节的创建规则出现两个版本

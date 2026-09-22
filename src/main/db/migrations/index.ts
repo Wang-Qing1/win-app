@@ -322,5 +322,126 @@ export const migrations: readonly Migration[] = [
         CREATE INDEX idx_card_outline_node ON card_outline_links (node_id);
       `)
     }
+  },
+  {
+    name: '008_card_relations',
+    up(db) {
+      /*
+       * 卡片 ↔ 卡片的关系（第三期第 3 件）：人物卡的「关系」从一行纯文本
+       * 改成指向另一张卡的关联，于是关系能被点着跳过去、能被反查、
+       * 删掉一张卡时关系随之消失。
+       *
+       * 与 006 / 007 的差别是这一张表**没有方向**：两人之间是「师徒」
+       * 不因从哪一头看而改变。所以加了 `CHECK (card_id < related_id)` ——
+       * 它把「A 连 B」与「B 连 A」收成同一种写法，于是一对卡之间
+       * 只可能存在一条边（重复建立变成改关系名，见仓储的 UPSERT），
+       * 也顺带让「自己连自己」在结构层面就不可能表达。
+       *
+       * 这条 CHECK 属于**结构性不变式**而不是枚举值域（见文件头那条约定）：
+       * 它描述的不是「关系名可以是哪些词」，而是「一条边怎么存」。
+       * 写入前由服务层用共享层的 `sortRelationPair` 排好序。
+       */
+      db.exec(`
+        CREATE TABLE card_relations (
+          card_id    INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+          related_id INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+          relation   TEXT    NOT NULL,
+          created_at TEXT    NOT NULL,
+          PRIMARY KEY (card_id, related_id),
+          CHECK (card_id < related_id)
+        );
+
+        CREATE INDEX idx_card_relations_related ON card_relations (related_id);
+      `)
+
+      /*
+       * 一次性搬迁：人物卡旧的「与主角关系」是一行纯文本（extra.relationship），
+       * 现在这个字段被关系表取代，而 `normalizeExtra` 只保留登记过的键 ——
+       * 也就是说，不动它的话，作者写过的那段关系会在下一次保存这张卡时
+       * **无声消失**。
+       *
+       * 文本里没有指向哪张卡，没法自动转成关联，所以搬到正文末尾：
+       * 让作者在下一次打开这张卡时看见自己记过什么，再手动建成结构化关系。
+       * 正文是卡片的描述区（不进草稿导出，那是章节的事），多这一行是可接受的。
+       *
+       * 上限按 5000 收（与 CARD_LIMITS.content 一致）：正文已经很满的卡
+       * 就只搬能放下的那一段，总好过让这张卡因为超限再也保存不了。
+       */
+      const NOTE_PREFIX = '\n\n【旧的关系记录】'
+      const CONTENT_LIMIT = 5000
+      const legacy = db
+        .prepare(
+          `SELECT id, content, json_extract(extra, '$.relationship') AS text
+             FROM cards
+            WHERE card_type = 'character'
+              AND json_valid(extra)
+              AND COALESCE(json_extract(extra, '$.relationship'), '') <> ''`
+        )
+        .all() as Array<{ id: number; content: string; text: string }>
+
+      const move = db.prepare(
+        `UPDATE cards
+            SET content = @content,
+                extra = json_remove(extra, '$.relationship')
+          WHERE id = @id`
+      )
+
+      for (const row of legacy) {
+        const text = row.text.trim()
+        const room = CONTENT_LIMIT - row.content.length - NOTE_PREFIX.length
+        // 正文已经写满的卡（5000 字上限）放不进这一段，只能放弃这段文本；
+        // 键照删 —— 留着它只会让这张卡多一个界面上看不见、导出时却还在的字段
+        const note =
+          text.length === 0 || room <= 0
+            ? ''
+            : NOTE_PREFIX +
+              (text.length <= room ? text : `${text.slice(0, Math.max(room - 1, 0))}…`)
+        move.run({ id: row.id, content: `${row.content}${note}` })
+      }
+    }
+  },
+  {
+    name: '009_chapter_revisions',
+    up(db) {
+      /*
+       * 章节的历史版本（第三期第 4 件）：解决「误删一大段拿不回来」。
+       *
+       * 现状是自动保存只覆盖不留存 —— 编辑器把每次改动都写回 chapters 那一行，
+       * 前一版正文当场就没了。作者删掉三千字、切走、过一会儿才后悔，就没救了。
+       * 这一张表把每次保存的**前一个**版本留一份，于是「历史版本」能列出、
+       * 能看差异、能回到任何一版。
+       *
+       * 为什么存整份快照而不是存 diff：diff 省空间，但要还原第 N 版必须
+       * 从基线一路重放，任何一版缺失或算法改动都会让老数据算不出来；
+       * 而正文是换行很多的纯文本，gzip 之前一章也就几十 KB，作者一本书
+       * 撑死几百章、每章留几十版，总量仍在几十 MB 量级。用空间换
+       * 「任何一版都能独立读出来」，是这类本地优先应用该做的取舍。
+       *
+       * content_text / hanzi_count / char_count 三个派生值同样存快照：
+       * 回档时若只回正文、不复算这三个，列表上会显示回档前的字数，
+       * 与正文自相矛盾（与 saveContent 同一条 UPDATE 写派生值是同一个道理）。
+       *
+       * chapter_id 是 CASCADE：章节被删（将来是进回收站）时它的历史随之消失，
+       * 留着一堆指向不存在章节的快照没有任何用处，还会被剪枝逻辑反复扫到。
+       *
+       * 索引按 (chapter_id, created_at DESC)：唯一要走的查询就是
+       * 「这一章的版本，最新的在前」，正好是这个顺序。
+       */
+      db.exec(`
+        CREATE TABLE chapter_revisions (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          chapter_id  INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+          content_html TEXT   NOT NULL,
+          content_text TEXT   NOT NULL,
+          hanzi_count  INTEGER NOT NULL,
+          char_count   INTEGER NOT NULL,
+          created_at   TEXT    NOT NULL,
+          CHECK (hanzi_count >= 0),
+          CHECK (char_count >= 0)
+        );
+
+        CREATE INDEX idx_chapter_revisions_chapter ON chapter_revisions (chapter_id, created_at DESC);
+      `)
+    }
   }
 ]

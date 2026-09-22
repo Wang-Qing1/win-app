@@ -6,9 +6,12 @@ import { OUTLINE_LIMITS, type OutlineTreeNode } from '@shared/modules/outline'
 import {
   CARD_LIMITS,
   DEFAULT_CARD_QUERY,
+  isCardType,
+  normalizeExtra,
   type CardListQuery,
   type CardListResult
 } from '@shared/modules/cards'
+import { RELATION_LIMITS } from '@shared/modules/card-links'
 import {
   SEARCH_LIMITS,
   SEARCH_SOURCE_LABELS,
@@ -27,9 +30,11 @@ import { migrations } from './db/migrations'
 import { BookRepository } from './modules/books/book.repository'
 import { BookService } from './modules/books/book.service'
 import { bookCreateSchema, DEFAULT_CHAPTER_WORDS } from '@shared/modules/books'
+import { CHAPTER_REVISION_LIMITS } from '@shared/modules/chapters'
 import { VolumeRepository } from './modules/volumes/volume.repository'
 import { VolumeService } from './modules/volumes/volume.service'
 import { ChapterRepository } from './modules/chapters/chapter.repository'
+import { ChapterRevisionRepository } from './modules/chapters/chapter-revision.repository'
 import { ChapterService } from './modules/chapters/chapter.service'
 import { SessionRepository } from './modules/sessions/session.repository'
 import { SessionService } from './modules/sessions/session.service'
@@ -325,6 +330,16 @@ export interface ShowcaseTargets {
    * 不是「界面能不能把字打进输入框」。
    */
   seedSettingCard: (title: string, category: string, timePoint?: string) => number
+  /**
+   * 造一张用于验证的卡片（任意类型），返回它的 id。
+   *
+   * 关系那一项要的是两张同书的人物卡，而 `seedSettingCard` 只造设定卡 ——
+   * 单独开一个而不是给它加参数：设定卡的 extra 有时点与类别要填，
+   * 混在一个函数里会变成一堆「这两个参数只有某一种类型才用得上」。
+   */
+  seedCard: (title: string, cardType: string) => number
+  /** 这张卡与哪些卡有关系。关系是主进程的一张表，界面说了不算 */
+  relationsOfCard: (cardId: number) => Array<{ relatedId: number; relation: string }>
   /** 这张卡关联到哪几章（章节 id）。关联是主进程的一张表，界面说了不算 */
   linksOfCard: (cardId: number) => number[]
   /** 这一章关联到哪几张卡（卡片 id） */
@@ -342,6 +357,24 @@ export interface ShowcaseTargets {
   nodesOfCard: (cardId: number) => number[]
   /** 这个节点关联到哪几张卡（卡片 id） */
   cardsOfNode: (nodeId: number) => number[]
+  /**
+   * 这一章的历史版本（第三期第 4 件）。
+   *
+   * 只回 id 与字数：历史正文动辄几万字，把整份 HTML 拉进断言里既慢
+   * 又没必要 —— 断言要回答的是「留了几版、最新那版是不是我预期的那一版」，
+   * 这两个问题用字数就能答（每段的字数都被刻意造成互不相同）。
+   */
+  revisionsOf: (chapterId: number) => Array<{ id: number; hanziCount: number }>
+  /**
+   * 这一章**库里**的汉字数。
+   *
+   * 渲染检查里要等「自动保存真的落库了」。底栏的「已保存」不能当判据 ——
+   * 进入某个检查时它往往**已经是**「已保存」（上一条检查打完字留下的），
+   * 于是等待瞬间返回，断言跑在了保存前面（这个坑真踩过，表现为
+   * 「打完字历史版本却没长」）。而字数由主进程从正文现算，只有真的
+   * 写进去了才会变，是唯一不会骗人的信号。
+   */
+  chapterHanzi: (chapterId: number) => number
 }
 
 export interface BackendSmokeRun {
@@ -360,13 +393,19 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
   const bookRepository = new BookRepository(db)
   const volumeRepository = new VolumeRepository(db)
   const chapterRepository = new ChapterRepository(db)
+  const chapterRevisionRepository = new ChapterRevisionRepository(db)
   const sessionRepository = new SessionRepository(db)
   const outlineRepository = new OutlineRepository(db)
   const cardRepository = new CardRepository(db)
 
   const bookService = new BookService(bookRepository, db)
   const volumeService = new VolumeService(volumeRepository, bookRepository)
-  const chapterService = new ChapterService(chapterRepository, bookRepository, volumeRepository)
+  const chapterService = new ChapterService(
+    chapterRepository,
+    bookRepository,
+    volumeRepository,
+    chapterRevisionRepository
+  )
   const sessionService = new SessionService(sessionRepository, bookRepository, chapterRepository)
   const outlineService = new OutlineService(
     outlineRepository,
@@ -1189,11 +1228,15 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
       content: '第一次跃迁失败后，是他把船带回来的。',
       // 故意带上空白与重复项：规范化前端的标签输入是同一个函数的事
       tags: ['主角团', '  领航员 ', '', '主角团', '   '],
+      /*
+       * 第三期第 3 件起人物卡**没有**「与主角关系」这个字段了：关系改成
+       * 指向另一张卡的关联（card_relations），留着纯文本字段的话两边会
+       * 各记一份互相矛盾的关系。旧的文本由迁移 008 搬进正文。
+       */
       extra: {
         identity: '星舰领航员',
         affiliation: '星海联邦第七舰队',
-        appearance: '左手有一道旧伤',
-        relationship: '与主角亦师亦友'
+        appearance: '左手有一道旧伤'
       }
     })
 
@@ -1276,7 +1319,7 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
         subtitle: '',
         content: '',
         tags: [],
-        extra: { identity: '', affiliation: '', appearance: '', relationship: '' }
+        extra: { identity: '', affiliation: '', appearance: '' }
       })
     } catch (error) {
       cardSameBookDuplicateBlocked = error instanceof AppError && error.code === 'CONFLICT'
@@ -1323,7 +1366,7 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
       subtitle: '',
       content: '',
       tags: [],
-      extra: { identity: '另一本书里的同名角色', affiliation: '', appearance: '', relationship: '' }
+      extra: { identity: '另一本书里的同名角色', affiliation: '', appearance: '' }
     })
 
     /*
@@ -1507,7 +1550,7 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
     /* ---- 专属字段要走完「写进 JSON 列 → 读回来」整圈 ---- */
     const extraRoundTripOk =
       cardCharacter.extra.identity === '星舰领航员' &&
-      cardCharacter.extra.relationship === '与主角亦师亦友' &&
+      cardCharacter.extra.appearance === '左手有一道旧伤' &&
       cardItem.extra.grade === '传说级' &&
       cardItem.extra.origin === '遗迹出土' &&
       cardGlobal.bookId === null &&
@@ -1518,8 +1561,8 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
         '卡片专属字段落库',
         extraRoundTripOk,
         extraRoundTripOk
-          ? `人物卡（身份「${cardCharacter.extra.identity}」/ 关系「${cardCharacter.extra.relationship}」）、物品卡（品阶「${cardItem.extra.grade}」）、通用灵感卡（bookId=null）的专属字段写读一致`
-          : `人物卡 identity=${cardCharacter.extra.identity}，物品卡 grade=${cardItem.extra.grade}，通用卡 bookId=${cardGlobal.bookId}`
+          ? `人物卡（身份「${cardCharacter.extra.identity}」/ 外貌「${cardCharacter.extra.appearance}」）、物品卡（品阶「${cardItem.extra.grade}」）、通用灵感卡（bookId=null）的专属字段写读一致`
+          : `人物卡 identity=${cardCharacter.extra.identity}、appearance=${cardCharacter.extra.appearance}，物品卡 grade=${cardItem.extra.grade}，通用卡 bookId=${cardGlobal.bookId}`
       ],
       [
         '卡片标签规范化',
@@ -1658,6 +1701,543 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
 
     for (const [name, ok, detail] of cardChecks) {
       push(name, ok, detail)
+    }
+
+    /* ------------------------------------------------------------------ *
+     * 卡片 ↔ 卡片的关系（第三期第 3 件）
+     *
+     * 关系与「关联到章节」最大的不同是**没有方向**，所以这里押的是三条
+     * 最容易写错的地方：
+     *   1. 一条边两头都要看得到 —— 只查 `card_id = ?` 的话，从 id 大的
+     *      那头看过去是一片空白，而空白跟「还没有关系」长得一模一样；
+     *   2. 同一对只能有一条边 —— 「A 连 B」与「B 连 A」若存成两条，
+     *      界面上表现为「删掉一条还剩一条」；
+     *   3. 同书约束 —— 跨书的关系在关系网里没有落点。
+     * ------------------------------------------------------------------ */
+
+    const relationA = cardService.create({
+      bookId: showcase.id,
+      cardType: 'character',
+      title: `冒烟-关系甲-${STAMP}`,
+      subtitle: '',
+      content: '',
+      tags: [],
+      extra: {}
+    })
+    const relationB = cardService.create({
+      bookId: showcase.id,
+      cardType: 'character',
+      title: `冒烟-关系乙-${STAMP}`,
+      subtitle: '',
+      content: '',
+      tags: [],
+      extra: {}
+    })
+
+    /* ---- ① 建立：两头都要看得到同一条边 ---- */
+    const relationsOfA = cardLinkService.relate(relationA.id, relationB.id, '师徒')
+    const relationsOfB = cardLinkService.listRelations(relationB.id)
+    const relationBothSidesOk =
+      relationsOfA.length === 1 &&
+      relationsOfA[0]?.relatedId === relationB.id &&
+      relationsOfA[0]?.relation === '师徒' &&
+      relationsOfB.length === 1 &&
+      relationsOfB[0]?.relatedId === relationA.id &&
+      relationsOfB[0]?.relation === '师徒'
+
+    /*
+     * ---- ② 反向再建一次：是**改关系名**，不是多一条边 ----
+     *
+     * 这一次刻意从另一头发起（参数顺序反过来），顺带验证服务层把两个 id
+     * 收成规范顺序（小的在前）—— 表上有 CHECK (card_id < related_id)，
+     * 没收好的话这一步会在 SQL 层炸掉，而不是安静地多出一条边。
+     */
+    const relationsAfterRename = cardLinkService.relate(relationB.id, relationA.id, '师徒，后反目')
+    const relationsOfAAfterRename = cardLinkService.listRelations(relationA.id)
+    const relationRenameOk =
+      relationsAfterRename.length === 1 &&
+      relationsAfterRename[0]?.relation === '师徒，后反目' &&
+      relationsOfAAfterRename.length === 1 &&
+      relationsOfAAfterRename[0]?.relation === '师徒，后反目'
+
+    /* ---- ③ 自己、跨书、通用卡片：三条都要被拒 ---- */
+    let relationSelfBlocked = false
+    try {
+      cardLinkService.relate(relationA.id, relationA.id, '自己')
+    } catch (error) {
+      relationSelfBlocked = error instanceof AppError && error.code === 'VALIDATION_ERROR'
+    }
+
+    const relationOtherBook = bookService.create({
+      title: `冒烟-关系跨书-${STAMP}`,
+      penName: '',
+      genre: '',
+      status: 'idea',
+      summary: '',
+      targetWords: 0,
+      chapterWords: 2000,
+      accentColor: '#0f6cbd'
+    })
+    const relationOtherCard = cardService.create({
+      bookId: relationOtherBook.id,
+      cardType: 'character',
+      title: `冒烟-关系丙-${STAMP}`,
+      subtitle: '',
+      content: '',
+      tags: [],
+      extra: {}
+    })
+
+    let relationCrossBookBlocked = false
+    try {
+      cardLinkService.relate(relationA.id, relationOtherCard.id, '同名')
+    } catch (error) {
+      relationCrossBookBlocked = error instanceof AppError && error.code === 'CONFLICT'
+    }
+
+    // 通用卡片（bookId 为 null）：它不属于任何书，也就没有「同书的另一张卡」
+    let relationGlobalBlocked = false
+    try {
+      cardLinkService.relate(relationA.id, cardGlobal.id, '出现在同一个梦里')
+    } catch (error) {
+      relationGlobalBlocked = error instanceof AppError && error.code === 'CONFLICT'
+    }
+
+    /* ---- ④ 关系网：整本书的边里要有这一条 ---- */
+    const bookEdges = cardLinkService.listRelationsByBook(showcase.id)
+    const bookEdgeOk = bookEdges.some(
+      (edge) =>
+        edge.relation === '师徒，后反目' &&
+        ((edge.cardId === relationA.id && edge.relatedId === relationB.id) ||
+          (edge.cardId === relationB.id && edge.relatedId === relationA.id))
+    )
+
+    /* ---- ⑤ 删掉一头，关系随之消失（双向 CASCADE） ---- */
+    cardService.remove(relationB.id)
+    const relationsAfterRemove = cardLinkService.listRelations(relationA.id)
+    const relationCascadeOk = relationsAfterRemove.length === 0
+
+    /* ---- 边界：关系名不能为空、不能超长 ---- */
+    const relationParser = getChannelParser(IpcChannel.CardsRelate)
+    let relationTooLongBlocked = false
+    let relationBlankBlocked = false
+    if (relationParser) {
+      try {
+        relationParser({
+          cardId: relationA.id,
+          relatedId: relationOtherCard.id,
+          relation: '关'.repeat(RELATION_LIMITS.label + 1)
+        })
+      } catch {
+        relationTooLongBlocked = true
+      }
+      // 全是空白的关系名：不拦的话会存进一条「名字看不见」的边
+      try {
+        relationParser({ cardId: relationA.id, relatedId: relationOtherCard.id, relation: '   ' })
+      } catch {
+        relationBlankBlocked = true
+      }
+    }
+
+    // 清理：这几张卡只是探针，不该留在展示数据里
+    cardService.remove(relationA.id)
+    bookService.remove(relationOtherBook.id)
+
+    const relationChecks: Array<[string, boolean, string]> = [
+      [
+        '卡片关系两头可见',
+        relationBothSidesOk,
+        relationBothSidesOk
+          ? `一条「师徒」从两头查都是 1 条边（A 看到对方 #${relationB.id}，B 看到对方 #${relationA.id}）`
+          : `A 侧 ${relationsOfA.length} 条（${relationsOfA.map((item) => `${item.relatedId}:${item.relation}`).join('/') || '空'}），B 侧 ${relationsOfB.length} 条（${relationsOfB.map((item) => `${item.relatedId}:${item.relation}`).join('/') || '空'}）`
+      ],
+      [
+        '卡片关系重复建立即改名',
+        relationRenameOk,
+        relationRenameOk
+          ? '从另一头再建一次（参数顺序相反）没有多出第二条边，关系名改成「师徒，后反目」'
+          : `改名后 A 侧 ${relationsOfAAfterRename.length} 条、关系名「${relationsOfAAfterRename[0]?.relation ?? ''}」（应为 1 条「师徒，后反目」）`
+      ],
+      [
+        '卡片关系自身拦截',
+        relationSelfBlocked,
+        relationSelfBlocked ? '给自己建立关系被拒绝' : '一张卡可以与自己建立关系'
+      ],
+      [
+        '卡片关系跨书拦截',
+        relationCrossBookBlocked,
+        relationCrossBookBlocked ? '跨书的两张卡建立关系被拒绝' : '跨书的关系未被拦截'
+      ],
+      [
+        '卡片关系通用卡拦截',
+        relationGlobalBlocked,
+        relationGlobalBlocked ? '通用卡片（不归属任何书）不能建立关系' : '通用卡片也能建关系 —— 关系网里会多出一条没有落点的边'
+      ],
+      [
+        '卡片关系网按书聚合',
+        bookEdgeOk,
+        bookEdgeOk
+          ? `这本书的 ${bookEdges.length} 条边里有 #${relationA.id} ↔ #${relationB.id} 这一条`
+          : `关系网里没有这一条边（实得 ${bookEdges.map((edge) => `${edge.cardId}-${edge.relatedId}:${edge.relation}`).join('、') || '空'}）`
+      ],
+      [
+        '删卡带走关系',
+        relationCascadeOk,
+        relationCascadeOk
+          ? '删掉一头之后，另一头的关系列表随之清空（外键 CASCADE）'
+          : `删掉一头之后还剩 ${relationsAfterRemove.length} 条关系`
+      ],
+      [
+        '卡片关系名边界拦截',
+        relationTooLongBlocked && relationBlankBlocked,
+        relationTooLongBlocked && relationBlankBlocked
+          ? `关系名超过 ${RELATION_LIMITS.label} 个字符（超长=${relationTooLongBlocked}）、或全是空白（=${relationBlankBlocked}）时都被边界拒绝`
+          : `超长被拒=${relationTooLongBlocked}、空白被拒=${relationBlankBlocked}`
+      ]
+    ]
+
+    for (const [name, ok, detail] of relationChecks) {
+      push(name, ok, detail)
+    }
+
+    /* ------------------------------------------------------------------ *
+     * 章节历史版本与回档（第三期第 4 件）
+     *
+     * 这一项押的四个地方都是「不测就看不出来」的：
+     *   1. 快照抓的是**改动之前**的正文。抓反了的话，历史列表里最新一版
+     *      永远与当前正文相同，而「回到这一版」会变成一个什么都不做的按钮；
+     *   2. 短改动不留版。自动保存两秒一次，一次写作会话能产生上百版，
+     *      不留剪枝的话配额几小时就被消耗完；
+     *   3. 剪枝只留最新 N 版，且留的是**最新的**那几版。删错一头的话，
+     *      作者只能退回很久以前的版本，最近的那一版反而没了；
+     *   4. 回档本身可以再回档 —— 这是整个功能里唯一「会丢数据」的按钮，
+     *      少了这一步，误点一次就真的回不去了。
+     *
+     * 用的是专造一本书 + 一章，不碰 showcase 里的那一章：
+     * 后面「正文自动保存往返」与「正文字数与预期一致」都按 showcase 的
+     * 那一章对账，在这里改它会连带把那些断言打红。
+     * ------------------------------------------------------------------ */
+
+    const revBook = bookService.create({
+      title: `冒烟-版本-${STAMP}`,
+      penName: '',
+      genre: '',
+      status: 'idea',
+      summary: '',
+      targetWords: 0,
+      chapterWords: DEFAULT_CHAPTER_WORDS,
+      accentColor: '#0f6cbd'
+    })
+    const revChapter = chapterService.create({
+      bookId: revBook.id,
+      volumeId: null,
+      title: '版本测试章',
+      targetWords: 0
+    })
+
+    /**
+     * 这一段整体包在 try / finally 里，**清理放在 finally**。
+     *
+     * 末尾那句 `bookService.remove(revBook.id)` 是必须执行的收尾（理由见
+     * 那里的注释），而它原本排在断言之后：只要断言之前任何一步抛异常，
+     * 临时书就会留在库里，成为书籍列表里最新的一本 —— 于是后面大纲页与
+     * 卡片页在没有 `?bookId` 时全部回落到这本空书上，报出「情节树未渲染」
+     * 这种与本次改动毫无关系的红。真实发生过一次（版本不存在拦截那一项
+     * 抛了 NOT_FOUND），排查方向被完全带偏。放进 finally 之后，无论断言
+     * 是否通过都保证清干净，失败现场只剩真正属于本次改动的那几条。
+     */
+    try {
+
+    /**
+     * 造一段**字数互不相同**的正文。
+     *
+     * 字数各不相同是为了让「最新那版是哪一版」能被断言表述出来：
+     * 只报 id 的话断言得先去查详情才知道对不对，而 id 本身
+     * 在剪枝前后并不能说明「留下的是不是最新的」。
+     *
+     * 每段 7 个汉字（`第N段的正文内容` 里汉字是 第/段/的/正/文/内/容），
+     * 因此段数 × 7 就是这一版的汉字数 —— 与 countHanzi 的口径一致。
+     */
+    const HANZI_PER_PARAGRAPH = 7
+    const paragraphs = (count: number): string =>
+      Array.from({ length: count }, (_, index) => `第${index + 1}段的正文内容`).join('<p></p>')
+    const htmlOf = (count: number): string => `<p>${paragraphs(count)}</p>`
+    const hanziOf = (count: number): number => count * HANZI_PER_PARAGRAPH
+    /**
+     * 恰好 `total` 个汉字的正文（前 20 段固定，余数补在末尾一段里）。
+     *
+     * 「微改动累积」那一段要按**逐字**推进，而 `htmlOf` 的步长是 7 个字，
+     * 跨不过 5% 阈值附近的细节（140 字的 5% 刚好是 7 字，正好卡在边界上，
+     * 多一字少一字结论就反了）。这里给出逐字可控的正文，断言才能钉死。
+     */
+    const hanziBody = (total: number): string => {
+      const rest = total - hanziOf(20)
+      return rest <= 0 ? htmlOf(20) : `${htmlOf(20)}<p>${'字'.repeat(rest)}</p>`
+    }
+
+    /* ---- ① 第一次保存：不能留版（改动前是空正文） ---- */
+    chapterService.saveContent({ id: revChapter.id, contentHtml: htmlOf(20) })
+    const afterFirst = chapterService.listRevisions(revChapter.id)
+
+    /*
+     * ---- ② 再存一次同一份正文：这一版应当被留下 ----
+     *
+     * 改动前的正文是 20 段（140 字），而内存里还没有这一章的基准
+     * （进程刚起来，这是第一次见到它有正文）。此时**无条件留底**：
+     * 没有可比的过去就跳过的话，会导致「重启应用后覆盖一篇旧正文，
+     * 原文永久消失」—— 那正是本功能要解决的问题本身。
+     *
+     * 所以这一版留的不是「差异够大」而是「此前从未存过」，
+     * 断言也据此写：留下的是被替换掉的那 140 字。
+     */
+    chapterService.saveContent({ id: revChapter.id, contentHtml: htmlOf(20) })
+    const afterSecond = chapterService.listRevisions(revChapter.id)
+
+    /*
+     * ---- ③ 提交与基准完全相同的正文：不留版 ----
+     *
+     * 此刻基准就是刚才留底的那 140 字，再提交同一份正文命中的是
+     * 「与基准逐字符相同」这一支 —— 手动保存撞上自动保存时连续两次
+     * 提交同一份正文，正是这种形态。不留这一条，列表会被重复项撑满。
+     */
+    chapterService.saveContent({ id: revChapter.id, contentHtml: htmlOf(20) })
+    const afterIdentical = chapterService.listRevisions(revChapter.id)
+
+    /*
+     * ---- ④ 微改动**累积**：连着 7 次各加 1 个字，一次都不该留版 ----
+     *
+     * 这是 minDeltaRatio 存在的全部理由。自动保存两秒一次，作者敲的
+     * 就是「一个字、一个标点」，每次都留版的话 50 个槽位两分钟就被
+     * 「多了一个字」填满，真正想找的「半小时前那一大段」早在剪枝时
+     * 被挤掉了。
+     *
+     * 判据按**累积量**：基准停在 140 字。写入第 k 次时，改动前的正文
+     * 比基准多 k−1 个字 —— 7 次写完，最大也只到 6/140 ≈ 4.29%，仍然
+     * 低于 5%，所以一版都不留。下面第 ⑤ 步紧接着验越线那一下。
+     */
+    for (let extra = 1; extra <= 7; extra += 1) {
+      chapterService.saveContent({ id: revChapter.id, contentHtml: hanziBody(hanziOf(20) + extra) })
+    }
+    const afterTiny = chapterService.listRevisions(revChapter.id)
+
+    /*
+     * ---- ⑤ 第 8 次写：改动前的正文刚好比基准多 7 个字（5.0%），越线留版 ----
+     *
+     * 这一次写入前的正文是 147 字（上一轮的结果），基准仍是 140 字，
+     * 7/140 恰好等于门槛 —— 判据是 `< minDeltaRatio` 才跳过，取等号
+     * 算越线，所以这里留下的是**写入前那一份 147 字**，而不是写入后的
+     * 148 字。这既是「累积到阈值才留版」，也是「快照抓改动前的正文」
+     * 在累积场景下的形态，两条性质在这一步同时被钉住。
+     */
+    chapterService.saveContent({ id: revChapter.id, contentHtml: hanziBody(hanziOf(20) + 8) })
+    const afterCross = chapterService.listRevisions(revChapter.id)
+
+    /*
+     * ---- ⑤ 连续写 60 次，把配额顶穿 ----
+     *
+     * 步长必须**跟着当前字数一起涨**：去重阈值是百分比（5%），
+     * 而正文每写一次就变长一点，固定步长算出的比例会越来越小 ——
+     * 写到最后 8000 多字时，140 字的改动只占 1.6%，会被如实拒掉，
+     * 于是「连写 61 次」只留下三十几版，剪枝那条断言就测不到了。
+     * 取 10%（阈值 5% 的两倍）留出余量，保证每一次都被认定为明显改动。
+     */
+    let revParagraphs = 60
+    /** 每轮写入**之前**的段数 —— 也就是这一轮会被留成快照的那份正文 */
+    let replacedParagraphs = revParagraphs
+    for (let step = 1; step <= 60; step += 1) {
+      replacedParagraphs = revParagraphs
+      revParagraphs = Math.ceil(revParagraphs * 1.1)
+      chapterService.saveContent({ id: revChapter.id, contentHtml: htmlOf(revParagraphs) })
+    }
+    const finalParagraphs = revParagraphs
+    const afterPrune = chapterService.listRevisions(revChapter.id)
+
+    /* ---- ⑥ 回档到最早的那一版（此刻列表里字数最小的那个） ---- */
+    /*
+     * 注意：`oldest` 取自 `afterPrune`（⑤ 之后立刻取的快照），而不是
+     * 「现在再查一次」。⑥ 之后没有任何写操作，两者等价，但用这一份
+     * 可以直接证明「回档的目标确实来自界面会显示的那个列表」。
+     *
+     * 反过来要小心：**任何在 ⑤ 与 ⑥ 之间插入的写操作都会让这个引用失效**。
+     * 剪枝的判据是「保留最新 50 版」，此处列表正好卡在上限，再来一次
+     * 留版就会把 `afterPrune` 里最旧的那条挤出去，`getRevision` 随即
+     * 报 NOT_FOUND —— 断言会以「版本不存在」这种与本题无关的形态炸开。
+     */
+    const oldest = afterPrune[afterPrune.length - 1]
+    const restoreTarget = oldest
+      ? chapterService.getRevision(oldest.id)
+      : null
+    const currentBeforeRestore = chapterService.getById(revChapter.id)
+
+    let restoredToOldest = false
+    if (oldest) {
+      chapterService.restoreRevision({ chapterId: revChapter.id, revisionId: oldest.id })
+      restoredToOldest = true
+    }
+    const afterRestore = chapterService.getById(revChapter.id)
+    // 回档会把「回档前的那一版」也留一份，所以列表应当多出/换掉一条
+    const afterRestoreList = chapterService.listRevisions(revChapter.id)
+
+    /* ---- ⑦ 回档之后还能再回退（回到回档之前） ---- */
+    const undoPoint = afterRestoreList[0]
+    let backAgainOk = false
+    let backAgainHanzi = 0
+    if (undoPoint) {
+      chapterService.restoreRevision({ chapterId: revChapter.id, revisionId: undoPoint.id })
+      const backAgain = chapterService.getById(revChapter.id)
+      backAgainHanzi = backAgain.hanziCount
+      backAgainOk = backAgain.contentHtml === currentBeforeRestore.contentHtml
+    }
+
+    /* ---- 边界：不存在的版本、跨章节的版本 ---- */
+    let missingRevisionBlocked = false
+    try {
+      chapterService.getRevision(99_999_999)
+    } catch (error) {
+      missingRevisionBlocked = error instanceof AppError && error.code === 'NOT_FOUND'
+    }
+
+    // 另建一章，拿它的版本去回档第一章：不做归属校验就会静默串章
+    const otherChapter = chapterService.create({
+      bookId: revBook.id,
+      volumeId: null,
+      title: '另一章',
+      targetWords: 0
+    })
+    chapterService.saveContent({ id: otherChapter.id, contentHtml: htmlOf(12) })
+    chapterService.saveContent({ id: otherChapter.id, contentHtml: htmlOf(24) })
+    const otherRevision = chapterService.listRevisions(otherChapter.id)[0]
+
+    let crossChapterBlocked = false
+    if (otherRevision) {
+      try {
+        chapterService.restoreRevision({
+          chapterId: revChapter.id,
+          revisionId: otherRevision.id
+        })
+      } catch (error) {
+        crossChapterBlocked = error instanceof AppError && error.code === 'VALIDATION_ERROR'
+      }
+    }
+
+    const revisionChecks: Array<[string, boolean, string]> = [
+      [
+        '首次见到正文就留底',
+        afterFirst.length === 0 &&
+          afterSecond.length === 1 &&
+          afterSecond[0]?.hanziCount === hanziOf(20),
+        afterFirst.length === 0 && afterSecond.length === 1
+          ? `第一次保存不留版（改动前是空正文），第二次留下一版 ${afterSecond[0]?.hanziCount} 字 —— 正是被替换掉的那 ${hanziOf(20)} 字`
+          : `第一次保存后 ${afterFirst.length} 版、第二次后 ${afterSecond.length} 版（应为 0 / 1，且字数为 ${hanziOf(20)}）`
+      ],
+      [
+        '重复提交同一份正文不占版本配额',
+        afterIdentical.length === afterSecond.length,
+        afterIdentical.length === afterSecond.length
+          ? `与基准逐字符相同的提交不留版，仍是 ${afterIdentical.length} 版（手动保存撞上自动保存时的常态）`
+          : `重复提交后变成 ${afterIdentical.length} 版（应为 ${afterSecond.length}）`
+      ],
+      [
+        '微改动累积期间不占版本配额',
+        afterTiny.length === afterSecond.length,
+        afterTiny.length === afterSecond.length
+          ? `连着 7 次各加 1 个字（${hanziOf(20)} → ${hanziOf(20) + 7} 字），每次改动前的正文最多只比基准多 6 字（${(6 / hanziOf(20) * 100).toFixed(2)}%，低于 ${Math.round(CHAPTER_REVISION_LIMITS.minDeltaRatio * 100)}% 门槛），一版都没留，仍是 ${afterTiny.length} 版`
+          : `加了 7 个字之后变成 ${afterTiny.length} 版（应为 ${afterSecond.length}）—— 自动保存每两秒一次，这一条不成立配额会被瞬间填满`
+      ],
+      [
+        '累积越线才留版，且留的是越线前那一份',
+        afterCross.length === afterSecond.length + 1 &&
+          afterCross[0]?.hanziCount === hanziOf(20) + 7,
+        afterCross.length === afterSecond.length + 1 &&
+          afterCross[0]?.hanziCount === hanziOf(20) + 7
+          ? `写到 ${hanziOf(20) + 8} 字时，改动前的正文（${hanziOf(20) + 7} 字）刚好比基准多 7 字＝${(7 / hanziOf(20) * 100).toFixed(2)}%，第一次越线 → 留版，留下的正是写入前那 ${afterCross[0]?.hanziCount} 字`
+          : `越线后留下 ${afterCross.length} 版、最新一版 ${afterCross[0]?.hanziCount} 字（应为 ${afterSecond.length + 1} 版 / ${hanziOf(20) + 7} 字）`
+      ],
+      [
+        '每章保留最近的上限版数',
+        afterPrune.length === CHAPTER_REVISION_LIMITS.perChapter,
+        `连写 60 次后留 ${afterPrune.length} 版（上限 ${CHAPTER_REVISION_LIMITS.perChapter}）`
+      ],
+      [
+        '剪枝留下的是最新的那几版',
+        /*
+         * 最新一版是**最后一次写入之前**的那份正文，而不是写入之后
+         * 的当前正文 —— 快照抓的是「被替换掉的那一份」（见
+         * `keepSnapshot`）。因此期望值取 `replacedParagraphs`
+         * （循环里每轮写入前记下的段数），而不是 `finalParagraphs`。
+         *
+         * 写成 `finalParagraphs` 会红，而且红得很有迷惑性：读到的
+         * 数字确实「不是最新写入的那一版」，看着像剪枝删错了头，
+         * 其实当前正文本来就不该在历史列表里 —— 它还没被替换过。
+         */
+        afterPrune[0]?.hanziCount === hanziOf(replacedParagraphs),
+        afterPrune[0]?.hanziCount === hanziOf(replacedParagraphs)
+          ? `最新一版 ${afterPrune[0]?.hanziCount} 字，正是最后一次写入替换掉的那一版（当前正文 ${hanziOf(finalParagraphs)} 字尚未成为历史）`
+          : `最新一版 ${afterPrune[0]?.hanziCount} 字（应为 ${hanziOf(replacedParagraphs)} —— 最后一次写入替换掉的那一版）`
+      ],
+      [
+        '回档把正文换成所选那一版',
+        restoredToOldest &&
+          restoreTarget !== null &&
+          afterRestore.contentHtml === restoreTarget.contentHtml &&
+          afterRestore.hanziCount === restoreTarget.hanziCount,
+        restoreTarget === null
+          ? '列表里找不到可回档的版本'
+          : `回到 ${restoreTarget.hanziCount} 字那一版后，库里的正文与汉字数都变成该版的 ${afterRestore.hanziCount} 字`
+      ],
+      [
+        '回档本身可以再回档',
+        backAgainOk,
+        backAgainOk
+          ? `回档前的正文（${currentBeforeRestore.hanziCount} 字）被留成一版，再回一次即恢复到 ${backAgainHanzi} 字`
+          : `再回一次后得到 ${backAgainHanzi} 字（应为回档前的 ${currentBeforeRestore.hanziCount} 字）`
+      ],
+      [
+        '版本不存在时拦截',
+        missingRevisionBlocked,
+        missingRevisionBlocked ? '取不存在的版本被拒（NOT_FOUND）' : '不存在的版本没有被拦截'
+      ],
+      [
+        '跨章节回档拦截',
+        crossChapterBlocked,
+        crossChapterBlocked
+          ? '拿另一章的版本回档本章被拒（VALIDATION）—— A 章的正文不会被灌进 B 章'
+          : '另一章的版本能回档到本章 —— 跨章节的静默污染'
+      ]
+    ]
+
+    for (const [name, ok, detail] of revisionChecks) {
+      push(name, ok, detail)
+    }
+    } catch (error) {
+      /*
+       * 这一步的 catch 不是摆设。
+       *
+       * 没有它的话，本段任何一处抛异常都会穿过整个播种函数、被最外层
+       * 那个 `push('业务规则', false, ...)` 接住 —— 于是失败现场变成
+       * 一条名叫「业务规则」的红，真正的错因（当时是 NOT_FOUND：
+       * 回档目标被剪枝挤掉了）藏在详情里，而排在它后面的几十条断言
+       * （含全部渲染检查）**一条都不会执行**。断言总数会静默缩水，
+       * 排查方向被彻底带偏。
+       *
+       * 就地接住之后：错因归到本该验它的那一条上，后面的断言照常跑。
+       */
+      push('章节历史版本（后端）', false, messageOf(error))
+    } finally {
+      /*
+       * 删掉这本临时书。**放在 finally 里**，理由见 try 的注释 ——
+       * 任何一步抛异常都不能让这本空书留在库里，否则它会成为书籍列表里
+       * 最新的一本，把后面大纲页 / 卡片页的默认落点整体挪走，报出
+       * 「情节树未渲染」这种与本次改动毫无关系的红。
+       *
+       * 不删的话：大纲页与卡片页在没有 `?bookId` 时都回落到「列表里的
+       * 第一本书」。这与既有那段「结构校验用的一本书，测完删掉」
+       * 是同一个理由，只是那一段删得比较早、没暴露这个问题。
+       *
+       * 章节与历史版本随书级联删除（`chapter_revisions.chapter_id` 上
+       * 挂着 ON DELETE CASCADE），不必单独清。
+       */
+      bookService.remove(revBook.id)
     }
 
     /* ------------------------------------------------------------------ *
@@ -2056,6 +2636,22 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
               }).id,
             // 两个方向都直接从服务层读：界面上的行数对不对是一回事，
             // 库里到底有没有这条关联是另一回事，只有后者能证明功能真的做了
+            seedCard: (title, cardType) =>
+              cardService.create({
+                bookId: showcaseBookId as number,
+                cardType: isCardType(cardType) ? cardType : 'character',
+                title,
+                subtitle: '',
+                content: '',
+                tags: [],
+                // 专属字段留空：前端传空对象时由 schema 补齐，
+                // 这里直接调服务层，因此要自己给一份完整的 extra
+                extra: normalizeExtra(isCardType(cardType) ? cardType : 'character', {})
+              }).id,
+            relationsOfCard: (cardId) =>
+              cardLinkService
+                .listRelations(cardId)
+                .map((item) => ({ relatedId: item.relatedId, relation: item.relation })),
             linksOfCard: (cardId) =>
               cardLinkService.listByCard(cardId).map((item) => item.chapterId),
             cardsOfChapter: (chapterId) =>
@@ -2072,7 +2668,12 @@ export async function runBackendSmokeChecks(): Promise<BackendSmokeRun> {
                 }),
             nodesOfCard: (cardId) =>
               cardLinkService.listNodesByCard(cardId).map((item) => item.nodeId),
-            cardsOfNode: (nodeId) => cardLinkService.listByNode(nodeId).map((item) => item.cardId)
+            cardsOfNode: (nodeId) => cardLinkService.listByNode(nodeId).map((item) => item.cardId),
+            revisionsOf: (chapterId) =>
+              chapterService
+                .listRevisions(chapterId)
+                .map((item) => ({ id: item.id, hanziCount: item.hanziCount })),
+            chapterHanzi: (chapterId) => chapterService.getById(chapterId).hanziCount
           }
         : null
   }
@@ -2202,6 +2803,11 @@ export async function runRendererSmokeChecks(
      * 多出三张会把它打成红的。
      */
     results.push(await checkSettingTimeline(window, showcase))
+    /*
+     * 关系这一项排在时间线之后：它同样要造卡片（两张人物卡），
+     * 而前几步的断言里有按总数对账的；造完立刻删掉，放在最后面最省事。
+     */
+    results.push(await checkCardRelation(window, showcase))
     results.push(await checkCardChapterLink(window, showcase))
     /*
      * 「正文自动保存往返」同样排最后：它往正文里真的打进一段字，
@@ -2209,6 +2815,11 @@ export async function runRendererSmokeChecks(
      * 那条断言打红。冒烟库是一次性的，跑完即弃，不需要清理。
      */
     results.push(await checkEditorRoundTrip(window, showcase))
+    /*
+     * 「章节历史版本」同样排最后：它也要往正文里打一长段字，
+     * 会改动 showcase 那一章的内容 —— 与上一条同样的理由。
+     */
+    results.push(await checkChapterRevisions(window, showcase))
   }
 
   results.push(checkNoSilentIpcFailure())
@@ -7172,6 +7783,237 @@ async function checkCardNodeLink(
   }
 }
 
+/**
+ * 卡片 ↔ 卡片的关系（第三期第 3 件）。
+ *
+ * 押的是三个「界面长得像通过、其实没做」的失败点：
+ *
+ *   1. **面板里长出一行，库里却没有那条边。** 本地 state 自己加一行是最容易
+ *      写出来的 bug，而它看起来完全正常 —— 所以每一步都回库对账。
+ *   2. **只有一头看得到。** 关系没有方向，但从 id 小的那头与 id 大的那头
+ *      查是两条 SQL 分支（WHERE 里两个条件），只扫一个方向就会「这一头有、
+ *      那一头空」，而空列表跟「还没有关系」一模一样。所以最后从关系网点到
+ *      另一头，直接看它那一侧的列表。
+ *   3. **关系网里没有这条边。** 它是按书聚合的另一条查询，漏了它界面上
+ *      表现为「卡片上的关系都在，关系网却一直是空的」。
+ */
+async function checkCardRelation(window: BrowserWindow, ctx: ShowcaseTargets): Promise<StepResult> {
+  const name = '人物关系'
+  const problems: string[] = []
+  const titleA = `冒烟-关系甲-${STAMP}`
+  const titleB = `冒烟-关系乙-${STAMP}`
+  const ids: number[] = []
+
+  /** 面板里当前的关系行 */
+  const readRows = async (): Promise<Array<{ relatedId: number; relation: string }>> => {
+    const raw = (await window.webContents.executeJavaScript(
+      `JSON.stringify(Array.prototype.map.call(
+        document.querySelectorAll('[data-testid="relation-row"]'),
+        (el) => ({
+          relatedId: Number(el.getAttribute('data-related-id')),
+          relation: el.getAttribute('data-relation') || ''
+        })
+      ))`
+    )) as string
+    return JSON.parse(raw) as Array<{ relatedId: number; relation: string }>
+  }
+
+  /** 关系网里的边 */
+  const readEdges = async (): Promise<
+    Array<{ cardId: number; relatedId: number; relation: string }>
+  > => {
+    const raw = (await window.webContents.executeJavaScript(
+      `JSON.stringify(Array.prototype.map.call(
+        document.querySelectorAll('[data-testid="relation-edge"]'),
+        (el) => ({
+          cardId: Number(el.getAttribute('data-card-id')),
+          relatedId: Number(el.getAttribute('data-related-id')),
+          relation: el.getAttribute('data-relation') || ''
+        })
+      ))`
+    )) as string
+    return JSON.parse(raw) as Array<{ cardId: number; relatedId: number; relation: string }>
+  }
+
+  /** 点某一条边内部的第二个卡名（按边定位，不能只按 testid 点第一个） */
+  const clickOtherEnd = async (cardId: number, relatedId: number): Promise<boolean> =>
+    (await window.webContents.executeJavaScript(
+      `(() => {
+        const edges = Array.prototype.slice.call(document.querySelectorAll('[data-testid="relation-edge"]'))
+        const edge = edges.find((el) => Number(el.getAttribute('data-card-id')) === ${cardId} && Number(el.getAttribute('data-related-id')) === ${relatedId})
+          || edges.find((el) => Number(el.getAttribute('data-card-id')) === ${relatedId} && Number(el.getAttribute('data-related-id')) === ${cardId})
+        if (!edge) return false
+        const el = edge.querySelector('[data-testid="relation-edge-open-other"]')
+        if (el === null || el.disabled === true) return false
+        el.click()
+        return true
+      })()`
+    )) as boolean
+
+  const panelCardId = async (): Promise<string> =>
+    (await window.webContents.executeJavaScript(
+      `(() => {
+        const panel = document.querySelector('[data-testid="card-editor"]')
+        return panel ? String(panel.getAttribute('data-card-id')) : 'no-panel'
+      })()`
+    )) as string
+
+  try {
+    ids.push(ctx.seedCard(titleA, 'character'))
+    ids.push(ctx.seedCard(titleB, 'character'))
+
+    /* ---------- ① 在 A 上建立与 B 的关系 ---------- */
+    await reloadAt(window, `#/cards?cardId=${ids[0]}`)
+    if (!(await waitForTestId(window, 'card-relations', 8000))) {
+      return {
+        name,
+        ok: false,
+        detail: `卡片面板里没有「关系」这一块（目标卡片 #${ids[0]}）`
+      }
+    }
+
+    if (!(await waitForSelectReady(window, 'relation-select'))) {
+      problems.push('「选择另一张卡」的下拉一直不可用（这本书的卡片没加载出来？）')
+    } else if (!(await pickSelectOption(window, 'relation-select', `${titleB}（人物）`))) {
+      problems.push(`下拉里选不到「${titleB}（人物）」`)
+    } else if (!(await typeIntoTestId(window, 'relation-label-input', '师徒'))) {
+      problems.push('填不进关系名')
+    } else if (!(await clickTestId(window, 'relation-add'))) {
+      problems.push('点不到「建立关系」')
+    } else {
+      const grown = await waitForCount(window, 'relation-row', 1, 5000)
+      if (grown !== 1) {
+        problems.push(`建立之后关系列表里没有长出这一行（实得 ${grown} 行）`)
+      }
+
+      const rows = await readRows()
+      const row = rows.find((item) => item.relatedId === ids[1])
+      if (row === undefined) {
+        problems.push(`关系行里没有 #${ids[1]}（实测 ${rows.map((item) => item.relatedId).join(',') || '空'}）`)
+      } else if (row.relation !== '师徒') {
+        problems.push(`关系行上显示的不是「师徒」（实测「${row.relation}」）`)
+      }
+
+      // 界面绿不算数：库里必须真有这一条，而且**另一头也要看得到**
+      const inDb = ctx.relationsOfCard(ids[0] as number)
+      if (!inDb.some((item) => item.relatedId === ids[1] && item.relation === '师徒')) {
+        problems.push(
+          `库里查不到 #${ids[0]} 与 #${ids[1]} 的「师徒」关系（实得 ${inDb.map((item) => `${item.relatedId}:${item.relation}`).join('、') || '空'}）`
+        )
+      }
+      const otherSide = ctx.relationsOfCard(ids[1] as number)
+      if (!otherSide.some((item) => item.relatedId === ids[0])) {
+        problems.push(
+          `另一头（#${ids[1]}）看不到这条关系（实得 ${otherSide.map((item) => item.relatedId).join(',') || '空'}）—— 只扫了一个方向`
+        )
+      }
+    }
+
+    /* ---------- ② 关系网：整本书的边里要有这一条，点另一头要跳过去 ---------- */
+    await gotoHash(window, `#/cards?type=character&book=${ctx.bookId}`)
+    if (!(await waitForTestId(window, 'cards-relations-open', 8000))) {
+      problems.push('看着某一本书时，卡片库里没有「关系网」入口')
+    } else if (!(await clickTestId(window, 'cards-relations-open'))) {
+      problems.push('点不到「关系网」')
+    } else if (!(await waitForTestId(window, 'relation-web', 5000))) {
+      problems.push('关系网浮层没有打开')
+    } else {
+      const edges = await readEdges()
+      const hit = edges.find(
+        (edge) =>
+          (edge.cardId === ids[0] && edge.relatedId === ids[1]) ||
+          (edge.cardId === ids[1] && edge.relatedId === ids[0])
+      )
+      if (hit === undefined) {
+        problems.push(
+          `关系网里没有 #${ids[0]} ↔ #${ids[1]} 这条边（实得 ${edges.map((edge) => `${edge.cardId}-${edge.relatedId}`).join('、') || '空'}）`
+        )
+      } else if (hit.relation !== '师徒') {
+        problems.push(`关系网里这条边的关系名是「${hit.relation}」，应为「师徒」`)
+      }
+
+      /*
+       * 点**另一头**的名字：跳过去之后那一侧的面板里应当有同一条边 ——
+       * 这是「关系没有方向」在界面上唯一看得见的证据。
+       */
+      if (!(await clickOtherEnd(ids[0] as number, ids[1] as number))) {
+        problems.push('点不到关系网里另一头的卡名')
+      } else {
+        const deadline = Date.now() + 6000
+        let arrived = await panelCardId()
+        while (Date.now() < deadline && arrived !== String(ids[1])) {
+          await delay(120)
+          arrived = await panelCardId()
+        }
+        if (arrived !== String(ids[1])) {
+          problems.push(`点关系网里的另一头之后，面板停在 #${arrived}，应当切到 #${ids[1]}`)
+        }
+
+        const rowsDeadline = Date.now() + 6000
+        let rowsB = await readRows()
+        while (
+          Date.now() < rowsDeadline &&
+          !rowsB.some((item) => item.relatedId === ids[0])
+        ) {
+          await delay(120)
+          rowsB = await readRows()
+        }
+        if (!rowsB.some((item) => item.relatedId === ids[0])) {
+          problems.push(
+            `跳到「${titleB}」之后，它那一侧没有与「${titleA}」的关系（实测 ${rowsB.map((item) => item.relatedId).join(',') || '空'}）`
+          )
+        }
+
+        /* ---------- ③ 解除：界面与库两头都要空 ---------- */
+        if (!(await clickTestId(window, 'relation-unlink'))) {
+          problems.push('点不到「解除关系」')
+        } else {
+          const dbDeadline = Date.now() + 5000
+          let leftInDb = ctx.relationsOfCard(ids[1] as number)
+          while (Date.now() < dbDeadline && leftInDb.length > 0) {
+            await delay(120)
+            leftInDb = ctx.relationsOfCard(ids[1] as number)
+          }
+          if (leftInDb.length > 0) {
+            problems.push(
+              `解除之后库里还剩 ${leftInDb.length} 条关系（${leftInDb.map((item) => item.relatedId).join(',')}）`
+            )
+          }
+          if (ctx.relationsOfCard(ids[0] as number).length > 0) {
+            problems.push('解除之后另一头的库里还剩关系 —— 一条边被拆成了两条')
+          }
+
+          const left = await waitForCount(window, 'relation-row', 0, 5000)
+          if (left !== 0) {
+            problems.push(`库里已解除，界面上却还留着 ${left} 行`)
+          }
+        }
+      }
+    }
+
+    /* ---- 清理放在构建结果之前：卡还在时删，删完再整页重载清缓存 ---- */
+    for (const id of ids) {
+      const issue = await leaveAndRemoveCard(window, ctx, id)
+      if (issue.length > 0) problems.push(issue)
+    }
+    await reloadAt(window, '#/')
+
+    return {
+      name,
+      ok: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? `人物卡「${titleA}」下拉选「${titleB}（人物）」+ 填「师徒」→ 长出 1 行，回库两头都查得到同一条边；` +
+            `卡片库「关系网」里列出这条边，点另一头的名字 → 面板切到「${titleB}」且它那一侧同样看得到；` +
+            `点解除 → 界面与库同时清空`
+          : problems.join('；')
+    }
+  } catch (error) {
+    for (const id of ids) await leaveAndRemoveCard(window, ctx, id)
+    return { name, ok: false, detail: messageOf(error) }
+  }
+}
+
 async function checkCardChapterLink(
   window: BrowserWindow,
   ctx: ShowcaseTargets
@@ -8832,9 +9674,7 @@ export function reportSmokeResults(results: StepResult[], reportPath?: string): 
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function messageOf(error: unknown): string {
+}function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
@@ -8850,3 +9690,451 @@ function visualWidth(text: string): number {
 function pad(text: string, target: number): string {
   return text + ' '.repeat(Math.max(0, target - visualWidth(text)))
 }
+
+/**
+ * 章节历史版本与回档（第三期第 4 件）的渲染检查。
+ *
+ * 后端那一组已经把「留几版、剪谁、回档对不对」押住了；这一条押的是
+ * **另外三件在库里看不出来的事**：
+ *
+ *   1. **面板真的打开在正文上方，且能关掉。** 锚点存在不等于它可见 ——
+ *      历史面板是条件渲染的，一个恒为 false 的条件会让「面板在的」
+ *      那种断言照样绿。
+ *   2. **左右两栏的差异行数相等。** 并排对比的前提是两栏一一对应；
+ *      行数不等时浏览器不会报错，只是从某一行开始整体错位，
+ *      读者对不上「我是把哪一段改成了哪一段」。这是布局性质的缺陷，
+ *      只能量几何。
+ *   3. **点了「回到这一版」之后，编辑器里的正文真的变回那一版。**
+ *      这是整条链路的终点：服务端存了、面板列了、按钮点了，
+ *      但编辑器自己管正文（只在 key 变化时重建），少一个重建令牌
+ *      就表现为「点了没反应」—— 而库里此时已经回档成功了。
+ *
+ * 用 showcase 的那一章（`ctx.chapterId`）。这一条排在
+ * 「正文自动保存往返」之后，两者都往同一章里打字，互不影响：
+ * 往返那一条验证的是「打了字还在」，这一条验证的是「回档能换掉它」。
+ */
+async function checkChapterRevisions(
+  window: BrowserWindow,
+  ctx: ShowcaseTargets
+): Promise<StepResult> {
+  const name = '章节历史版本'
+  const problems: string[] = []
+  const stampA = `冒烟回档甲${STAMP}`
+  const stampB = `冒烟回档乙${STAMP}`
+  /*
+   * 打进去的两段字要**足够长**：去重阈值是「改动量 / 上一版字数 ≥ 5%」，
+   * 而 showcase 那一章只有二十几个汉字，短句很容易落进阈值里，
+   * 于是「打了一段字却没有历史」看起来像功能坏了，其实是被去重挡掉的。
+   * 重复两遍让每段都在 20 字以上，稳稳越过 5%。
+   */
+  const chunkA = `${stampA}${stampA}${stampA}`
+  const chunkB = `${stampB}${stampB}${stampB}`
+
+  /** 往正文末尾打一段字，返回是否打进去了 */
+  const typeIntoEditor = async (text: string): Promise<boolean> =>
+    (await window.webContents.executeJavaScript(
+      `(() => {
+        const content = document.querySelector('.winbook-editor__content')
+        if (!content) return false
+        content.focus()
+        const selection = window.getSelection()
+        if (!selection) return false
+        const range = document.createRange()
+        range.selectNodeContents(content)
+        range.collapse(false)
+        selection.removeAllRanges()
+        selection.addRange(range)
+        document.execCommand('insertText', false, ${JSON.stringify(text)})
+        return content.textContent.includes(${JSON.stringify(text)})
+      })()`
+    )) as boolean
+
+  /** 编辑器里当前的纯文本 */
+  const readEditorText = async (): Promise<string> =>
+    (await window.webContents.executeJavaScript(
+      `(document.querySelector('.winbook-editor__content')?.textContent || '')`
+    )) as string
+
+  /** 面板里当前列出的版本（只读锚点上的属性，不读文案） */
+  const readItems = async (): Promise<Array<{ id: number; hanzi: number }>> => {
+    const raw = (await window.webContents.executeJavaScript(
+      `JSON.stringify(Array.prototype.map.call(
+        document.querySelectorAll('[data-testid="history-item"]'),
+        (el) => ({
+          id: Number(el.getAttribute('data-revision-id')),
+          hanzi: Number(el.getAttribute('data-hanzi'))
+        })
+      ))`
+    )) as string
+    return JSON.parse(raw) as Array<{ id: number; hanzi: number }>
+  }
+
+  /** 差异两栏各自的行数。**必须在同一帧里同时读** —— 分两次读会因为
+   *  中间发生重渲染而量到两份不同状态下的数字，得出假的「相等」或「不等」 */
+  const readDiffLineCounts = async (): Promise<{ old: number; next: number }> =>
+    (await window.webContents.executeJavaScript(
+      `(() => ({
+        old: document.querySelectorAll('[data-testid="history-diff-old-line"]').length,
+        next: document.querySelectorAll('[data-testid="history-diff-new-line"]').length
+      }))()`
+    )) as { old: number; next: number }
+
+  try {
+    const chapterRoute = `#/books/${ctx.bookId}/chapters/${ctx.chapterId}`
+    await reloadAt(window, chapterRoute)
+
+    const editor = await waitForEditor(window)
+    if (!editor.mounted) {
+      return { name, ok: false, detail: `进不了编辑器（hash=${editor.hash}），无法验证历史版本` }
+    }
+
+    /* ---------- ① 打开面板：先确认它在，再量几何 ---------- */
+    if (!(await clickTestId(window, 'editor-history'))) {
+      return { name, ok: false, detail: '顶栏里点不到「历史版本」这枚圆钮' }
+    }
+    if (!(await waitForTestId(window, 'chapter-history-panel', 5000))) {
+      return { name, ok: false, detail: '点了「历史版本」之后面板没有出现' }
+    }
+
+    /*
+     * 面板必须真的占到了高度。只判锚点存在的话，「面板渲染了但高度被
+     * 压成 0」这种缺陷会被判通过 —— 而它恰恰是这个功能最容易犯的错：
+     * 面板挂在 flex 列里，少一个 flex-shrink 设置就会被内容顶掉。
+     */
+    const panelBox = (await window.webContents.executeJavaScript(
+      `(() => {
+        const el = document.querySelector('[data-testid="chapter-history-panel"]')
+        if (!el) return null
+        const rect = el.getBoundingClientRect()
+        return { height: Math.round(rect.height), width: Math.round(rect.width) }
+      })()`
+    )) as { height: number; width: number } | null
+
+    if (panelBox === null || panelBox.height < 60) {
+      problems.push(`历史面板没有占到应有的高度（实测 ${panelBox?.height ?? 0}px）—— 它被压扁了`)
+    }
+    if (panelBox !== null && panelBox.width < 400) {
+      problems.push(`历史面板太窄（实测 ${panelBox.width}px），左右并排的差异读不出来`)
+    }
+
+    /* ---------- ② 空状态：这一章还没有历史，必须说清楚，而不是空白 ---------- */
+    const emptyItems = await readItems()
+    if (emptyItems.length === 0) {
+      const hasEmptyText = (await window.webContents.executeJavaScript(
+        `(document.querySelector('[data-testid="chapter-history-panel"]')?.textContent || '').includes('还没有可回退的版本')`
+      )) as boolean
+      if (!hasEmptyText) {
+        problems.push('这一章还没有历史版本时，面板里既没有版本也没有说明文字')
+      }
+    }
+
+    /* ---------- ③④ 打字两次 → 改动前的正文应当被留成一版 ---------- */
+    /*
+     * 等待的判据全部取自**主进程现读**（`ctx.chapterHanzi` /
+     * `ctx.revisionsOf`），不是底栏文案。
+     *
+     * 这里踩过一次坑：原先等的是 `waitForSaveState(window, 'saved')`，
+     * 而底栏的状态在进入本函数时**已经是「已保存」**（上一条渲染检查
+     * 打完字就停在这个状态），于是这个等待瞬间返回 —— 自动保存还有
+     * 两秒防抖没走完，我们就已经断言「打完字应该有历史版本」了。
+     * 结果报的是「历史版本列表里仍然一版都没有」，看着像功能坏了，
+     * 其实是断言跑在了保存前面。
+     *
+     * 另外，两段字**必须分批等**，不能打完一起等。自动保存的防抖是
+     * 两秒：连着打完两段，它们会落进同一个窗口、合并成一次保存，
+     * 而那一次的「改动前正文」恰好已经是被留过底的那一份，于是
+     * 按规则**不该**再留一版 —— 断言就会以「打完字却没长版本」的样子
+     * 变红，而功能其实完全正确。打完第一段先等它落库，第二段才是
+     * 一次「改动前的正文尚未被保存过」的写入。
+     */
+    const revisionsBefore = ctx.revisionsOf(ctx.chapterId).length
+    const hanziBefore = ctx.chapterHanzi(ctx.chapterId)
+
+    await window.webContents.executeJavaScript(
+      `(document.querySelector('.winbook-editor__content')?.focus(), true)`
+    )
+    if (!(await typeIntoEditor(chunkA))) {
+      return { name, ok: false, detail: '往正文里插不进文字，无法验证历史版本' }
+    }
+
+    // 等第一段字真的落库（防抖 2 秒 + 一次 IPC）
+    const hanziAfterA = await waitForChapterHanziChange(ctx, ctx.chapterId, hanziBefore, 10_000)
+    if (hanziAfterA === hanziBefore) {
+      problems.push(
+        `打完第一段字之后 10 秒内库里字数没变（一直是 ${hanziBefore}）—— 自动保存没有落库`
+      )
+    }
+
+    await window.webContents.executeJavaScript(
+      `(document.querySelector('.winbook-editor__content')?.focus(), true)`
+    )
+    if (!(await typeIntoEditor(chunkB))) {
+      problems.push('第二次往正文里插不进文字')
+    }
+
+    const revisionsAfter = await waitForRevisionCount(ctx, ctx.chapterId, revisionsBefore + 1, 15_000)
+    if (revisionsAfter < revisionsBefore + 1) {
+      problems.push(
+        `打完两段字之后 15 秒内库里没有新增历史版本（${revisionsBefore} → ${revisionsAfter}）—— ` +
+          `正文从 ${hanziBefore} 字被改写成了 ${hanziAfterA} 字以上，改动前的那一份却没有被留底`
+      )
+    }
+
+    /*
+     * 关掉再打开，等价于用户主动刷新一次列表。
+     *
+     * 这一步同时是「列表会重取」的验收：`useChapterRevisions` 的
+     * `staleTime` 必须是 0。若它退回全局默认的 15 秒，这里读到的会是
+     * ① 那一次留下的**空列表缓存**（距上次取数还不到 15 秒），面板
+     * 照旧显示「还没有可回退的版本」—— 也就是用户最怕的那句话。
+     */
+    await clickTestId(window, 'history-close')
+    await waitForTestIdGone(window, 'chapter-history-panel', 3000)
+    await clickTestId(window, 'editor-history')
+    if (!(await waitForTestId(window, 'chapter-history-panel', 5000))) {
+      return { name, ok: false, detail: '关闭历史面板之后打不开了' }
+    }
+
+    const items = await waitForItemCount(window, 1, 5000)
+    if (items.length === 0) {
+      problems.push(
+        `库里已经有 ${revisionsAfter} 版历史，但关掉面板再打开之后列表里一版都没有 —— ` +
+          '列表读的是过期缓存'
+      )
+    } else {
+      // 库里对账：界面列出的每一条都必须真在 chapter_revisions 里
+      const inDb = ctx.revisionsOf(ctx.chapterId)
+      const dbIds = new Set(inDb.map((item) => item.id))
+      const uiIds = items.map((item) => item.id)
+      const missing = uiIds.filter((id) => !dbIds.has(id))
+      if (missing.length > 0) {
+        problems.push(`界面上列着 #${missing.join('、')}，但库里查不到这些版本`)
+      }
+      // 界面上显示的字数必须就是库里存的那个（不是前端另算的）
+      const mismatched = items.filter((item) => {
+        const row = inDb.find((candidate) => candidate.id === item.id)
+        return row !== undefined && row.hanziCount !== item.hanzi
+      })
+      if (mismatched.length > 0) {
+        problems.push(
+          `版本字数与库里对不上：界面 ${mismatched.map((item) => `${item.id}=${item.hanzi}`).join('、')}`
+        )
+      }
+    }
+
+    /* ---------- ⑤ 差异两栏行数必须相等（并排不错位的硬条件） ---------- */
+    if (!(await waitForTestId(window, 'history-diff', 5000))) {
+      problems.push('选中一版之后差异区没有渲染出来')
+    } else {
+      // 等两栏都真的有行，而不是读一次就走
+      const deadline = Date.now() + 4000
+      let counts = await readDiffLineCounts()
+      while (Date.now() < deadline && (counts.old === 0 || counts.next === 0)) {
+        await delay(120)
+        counts = await readDiffLineCounts()
+      }
+      if (counts.old === 0 || counts.next === 0) {
+        problems.push(`差异区两栏没有内容（左 ${counts.old} 行、右 ${counts.next} 行）`)
+      } else if (counts.old !== counts.next) {
+        problems.push(
+          `差异区左右两栏行数不等（左 ${counts.old} 行、右 ${counts.next} 行）—— 并排对比会整体错位`
+        )
+      }
+    }
+
+    /* ---------- ⑥ 回档：编辑器里的正文必须真的换掉 ---------- */
+    const beforeRestore = await readEditorText()
+    if (!beforeRestore.includes(chunkB)) {
+      problems.push(`回档前编辑器里找不到刚打的「${chunkB}」，后续断言无意义`)
+    }
+
+    /*
+     * **显式选中列表里最旧的一版**再回档，不用「默认选中最新的那版」。
+     *
+     * 默认选中的那一版内容取决于自动保存与打字落在哪个两秒窗口里：
+     * 若它们凑巧被合并成一次保存、紧接着又发生一次内容有微小差异的
+     * 保存，最新一版也可能已经含有刚打的那段字 —— 那时「回档后还看得
+     * 见 chunkB」就是**正确**行为，却会被判成失败。
+     *
+     * 最旧的一版永远不含刚刚才打进去的字（它是这一章被改动最早的那份
+     * 正文），因此「回档后 chunkB 必须消失」这条断言在任何时序下都成立。
+     * 顺带也把「点列表里的某一版能切换选中」这一交互验掉了 —— 只验
+     * 默认选中的话，`onClick={() => setSelectedId(...)}` 整个坏掉都测不出来。
+     */
+    if (!(await clickLastHistoryItem(window))) {
+      problems.push('点不到历史列表里最旧的那一版，无法验证回档')
+    } else if (!(await waitForTestId(window, 'history-diff', 5000))) {
+      problems.push('切换到最旧的一版之后差异区没有渲染出来')
+    }
+
+    if (!(await clickTestId(window, 'history-restore'))) {
+      problems.push('点不到「回到这一版」')
+    } else if (!(await waitForTestId(window, 'history-restore-confirm', 3000))) {
+      /*
+       * Popconfirm 的确认按钮由 antd 渲染到 body 上的浮层里，
+       * 我们是靠 `okButtonProps` 给它挂的 testid。找不到就说明
+       * 「点了按钮但没弹确认框」—— 那一步是回档的最后一道闸。
+       */
+      problems.push('点「回到这一版」之后没有弹出确认框')
+    } else if (!(await clickTestId(window, 'history-restore-confirm'))) {
+      problems.push('点不到确认框里的「回档」')
+    } else {
+      /*
+       * 等编辑器里的正文真的变掉。回档要经过 IPC + 事务 + 缓存写回 +
+       * 编辑器重建，不是同步的；读一次就走会读到重建前的旧内容。
+       */
+      const restoreDeadline = Date.now() + 8000
+      let restoredText = await readEditorText()
+      while (Date.now() < restoreDeadline && restoredText.includes(chunkB)) {
+        await delay(150)
+        restoredText = await readEditorText()
+      }
+
+      if (restoredText.includes(chunkB)) {
+        problems.push(
+          `点了回档之后编辑器里仍然能看到「${chunkB}」—— 库里回档成功了，但编辑器没有被重建，` +
+            '画面还是回档前那一版'
+        )
+      }
+      if (restoredText.length === 0) {
+        problems.push('回档之后编辑器里的正文变成空的')
+      }
+
+      // 库里对账：正文里确实不再有那段新打的字
+      const inDb = ctx.revisionsOf(ctx.chapterId)
+      if (inDb.length === 0) {
+        problems.push('回档之后历史版本列表空了 —— 回档本身应当也留下一版，否则误点就回不去了')
+      }
+    }
+
+    /* ---------- ⑦ 关闭面板：正文要回到原来的高度 ---------- */
+    await clickTestId(window, 'history-close')
+    const gone = await waitForTestIdGone(window, 'chapter-history-panel', 3000)
+    if (!gone) {
+      problems.push('点「关闭」之后历史面板没有收起来')
+    }
+
+    return {
+      name,
+      ok: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? `打开面板（高 ${panelBox?.height ?? 0}px）→ 打字两次、库里的版本数从 ${revisionsBefore} 涨到 ${revisionsAfter} 且界面逐条与库对账一致 → ` +
+            `差异两栏行数相等 → 切到最旧一版并点「回到这一版」后编辑器正文真的换回该版、且回档本身又留了一版 → 关闭即收起`
+          : problems.join('；')
+    }
+  } catch (error) {
+    return { name, ok: false, detail: messageOf(error) }
+  }
+}
+
+/** 等某个 testid 的元素数量达到期望值（版本列表是异步来的） */
+async function waitForItemCount(
+  window: BrowserWindow,
+  expected: number,
+  timeoutMs: number
+): Promise<Array<{ id: number; hanzi: number }>> {
+  const deadline = Date.now() + timeoutMs
+  const read = async (): Promise<Array<{ id: number; hanzi: number }>> => {
+    const raw = (await window.webContents.executeJavaScript(
+      `JSON.stringify(Array.prototype.map.call(
+        document.querySelectorAll('[data-testid="history-item"]'),
+        (el) => ({
+          id: Number(el.getAttribute('data-revision-id')),
+          hanzi: Number(el.getAttribute('data-hanzi'))
+        })
+      ))`
+    )) as string
+    return JSON.parse(raw) as Array<{ id: number; hanzi: number }>
+  }
+
+  let last = await read()
+  while (Date.now() < deadline && last.length < expected) {
+    await delay(120)
+    last = await read()
+  }
+  return last
+}
+
+/**
+ * 点历史列表里**最旧的一版**（列表按时间倒序，所以是最后一项）。
+ *
+ * `clickTestId` 只能点第一个匹配项，而所有版本行共用同一个 `data-testid`
+ * ——想选特定的某一版就得按下标取。用 `el.click()` 而不是模拟鼠标坐标：
+ * 列表是可滚动的，最旧的那一版可能在可视区之外，按坐标点会落空。
+ */
+async function clickLastHistoryItem(window: BrowserWindow): Promise<boolean> {
+  return (await window.webContents.executeJavaScript(
+    `(() => {
+      const items = document.querySelectorAll('[data-testid="history-item"]')
+      if (items.length === 0) return false
+      const oldest = items[items.length - 1]
+      if (oldest.disabled) return false
+      oldest.click()
+      return true
+    })()`
+  )) as boolean
+}
+
+/**
+ * 等主进程里某一章的历史版本数涨到期望值，返回最终的版本数。
+ *
+ * 判据取自**主进程现读**（`ctx.revisionsOf`），而不是界面。这样等待的
+ * 是「真的写库了」这件事本身，不受底栏文案、React 重渲染、缓存新鲜度
+ * 这些前端时序的影响 —— 用它替代「等底栏报已保存」之后，自动保存那
+ * 两秒防抖不再需要靠 sleep 猜。
+ */
+async function waitForRevisionCount(
+  ctx: ShowcaseTargets,
+  chapterId: number,
+  expected: number,
+  timeoutMs: number
+): Promise<number> {
+  const deadline = Date.now() + timeoutMs
+  let last = ctx.revisionsOf(chapterId).length
+  while (Date.now() < deadline && last < expected) {
+    await delay(150)
+    last = ctx.revisionsOf(chapterId).length
+  }
+  return last
+}
+
+/**
+ * 等某一章的库内汉字数不再是 `previous`，返回最终读到的值。
+ *
+ * 用来等「自动保存真的落库」。判据只能是主进程现读的字数：底栏的
+ * 「已保存」是**状态**而不是事件，进入检查时它通常已经是「已保存」，
+ * 等它等于「已保存」会瞬间返回（详见调用处的注释）。
+ */
+async function waitForChapterHanziChange(
+  ctx: ShowcaseTargets,
+  chapterId: number,
+  previous: number,
+  timeoutMs: number
+): Promise<number> {
+  const deadline = Date.now() + timeoutMs
+  let last = ctx.chapterHanzi(chapterId)
+  while (Date.now() < deadline && last === previous) {
+    await delay(150)
+    last = ctx.chapterHanzi(chapterId)
+  }
+  return last
+}
+
+/** 等锚点消失。返回是否真的消失了（用于「关掉面板」这类断言） */
+async function waitForTestIdGone(
+  window: BrowserWindow,
+  testId: string,
+  timeoutMs: number
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const present = (await window.webContents.executeJavaScript(
+      `document.querySelector('[data-testid="${testId}"]') !== null`
+    )) as boolean
+    if (!present) return true
+    await delay(120)
+  }
+  return false
+}
+

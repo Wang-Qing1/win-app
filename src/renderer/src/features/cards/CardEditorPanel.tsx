@@ -29,6 +29,7 @@ import { IconButton } from '../../components/IconButton'
 import { formatDateTime } from '../../lib/format'
 import { CardChapterLinks } from './CardChapterLinks'
 import { CardOutlineLinks } from './CardOutlineLinks'
+import { CardRelations } from './CardRelations'
 import { CARD_TYPE_COLORS, CARD_TYPE_ICONS } from './card-meta'
 
 const { Text, Paragraph } = Typography
@@ -387,6 +388,13 @@ export function CardEditorPanel({
              * 改了归属却还没保存就去关联章节，会按一本它还不属于的书
              * 去列章节。
              */}
+            {/*
+             * 关系排在章节 / 节点关联之前：前两块连的是「这条资料出现在
+             * 故事的哪个位置」，关系连的是「它与另一条资料之间是什么」——
+             * 后者更贴近这张卡本身，也是打开一张人物卡最常要看的东西。
+             */}
+            <CardRelations cardId={card.id} bookId={card.bookId} />
+
             <CardChapterLinks cardId={card.id} bookId={card.bookId} />
 
             {/* 节点侧与章节侧并列：一个是「写过的地方」，一个是「打算写的地方」 */}
