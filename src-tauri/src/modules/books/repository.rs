@@ -345,14 +345,6 @@ pub fn sum_target_words_by_status(conn: &Connection, status: &str) -> AppResult<
     )?))
 }
 
-/// 最近编辑过的前 N 本，供首页「在写书籍」列表。
-pub fn list_recent(conn: &Connection, limit: i64) -> AppResult<Vec<Book>> {
-    let mut statement =
-        conn.prepare("SELECT * FROM books ORDER BY updated_at DESC LIMIT ?")?;
-    let rows = statement.query_map([limit], read_book)?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
-}
-
 /// 删书前数一遍「会连带删掉多少章」。
 ///
 /// 抽成仓储方法而不是让服务层自己写 SQL：`deleted_at IS NULL` 这条口径

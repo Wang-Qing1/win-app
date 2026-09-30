@@ -120,8 +120,6 @@ pub struct BookStats {
  * 排序：白名单在服务端，客户端值先归一化再映射为列名，绝不拼进 SQL
  * ------------------------------------------------------------------ */
 
-pub const SORT_FIELDS: [&str; 4] = ["title", "createdAt", "updatedAt", "hanziCount"];
-
 pub fn normalize_sort_field(value: &str) -> &'static str {
     match value {
         "title" => "title",

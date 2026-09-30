@@ -22,7 +22,7 @@ use crate::core::text::is_js_whitespace;
 use crate::modules::books::repository as book_repository;
 use crate::modules::chapters::models::{ChapterListQuery, ChapterListItem};
 use crate::modules::chapters::repository as chapter_repository;
-use crate::modules::volumes::repository as volume_repository;
+use crate::modules::volumes::service as volume_service;
 
 use super::models::{
     ExportBookInput, ExportChapterInput, ExportVolumeInput, EXPORT_FILENAME_MAX,
@@ -114,13 +114,7 @@ pub fn prepare_book(conn: &Connection, input: &ExportBookInput) -> AppResult<Bat
 
 /// 整卷导出：只拼接该卷下的章节，不包含未分卷或其他卷的内容。
 pub fn prepare_volume(conn: &Connection, input: &ExportVolumeInput) -> AppResult<BatchDraft> {
-    let volume = volume_repository::find_by_id(conn, input.volume_id)?;
-    let Some(volume) = volume else {
-        return Err(AppError::not_found(format!(
-            "分卷不存在（ID: {}）",
-            input.volume_id
-        )));
-    };
+    let volume = volume_service::get_by_id(conn, input.volume_id)?;
 
     let book_title = book_repository::find_by_id(conn, volume.book_id)?
         .map(|book| book.title)

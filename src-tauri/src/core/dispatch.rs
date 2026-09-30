@@ -116,10 +116,17 @@ fn report_rejection(
 /// 存在的理由：渲染层拿到失败信封后往往降级成空列表 / 骨架屏，
 /// 页面上看不出任何异常，检查也就跟着绿。只有把「有没有调用被拒」
 /// 单独拎出来断言，这类静默失败才会浮出水面。
+///
+/// **尚无消费方**：Rust 壳里的 smoke 钩子还没做。先显式放行，免得它被
+/// 当成死代码清掉 —— 那会把唯一的静默失败观测点一起删掉。
+/// smoke 钩子接上后，这个 `allow` 应当移除。
+#[allow(dead_code)]
 pub fn get_rejections() -> Vec<IpcRejection> {
     REJECTIONS.lock().map(|items| items.clone()).unwrap_or_default()
 }
 
+/// 清空登记表（仅冒烟检查使用）。保留理由同上。
+#[allow(dead_code)]
 pub fn clear_rejections() {
     if let Ok(mut tracked) = REJECTIONS.lock() {
         tracked.clear();

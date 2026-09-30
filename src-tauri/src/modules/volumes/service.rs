@@ -66,8 +66,7 @@ pub fn create(conn: &Connection, input: &VolumeCreateInput) -> AppResult<VolumeL
 
 pub fn update(conn: &Connection, input: &VolumeUpdateInput) -> AppResult<VolumeListItem> {
     in_transaction(conn, |conn| {
-        let existing = repository::find_by_id(conn, input.id)?
-            .ok_or_else(|| AppError::not_found(format!("分卷不存在（ID: {}）", input.id)))?;
+        let existing = get_by_id(conn, input.id)?;
 
         if repository::find_by_title(conn, existing.book_id, &input.title, Some(input.id))?.is_some() {
             return Err(AppError::conflict(format!(
@@ -90,9 +89,8 @@ pub fn update(conn: &Connection, input: &VolumeUpdateInput) -> AppResult<VolumeL
 
 pub fn remove(conn: &Connection, id: i64) -> AppResult<VolumeRemovalResult> {
     in_transaction(conn, |conn| {
-        if repository::find_by_id(conn, id)?.is_none() {
-            return Err(AppError::not_found(format!("分卷不存在（ID: {id}）")));
-        }
+        // 只为校验存在性；文案与「不存在」错误由 get_by_id 统一给出
+        get_by_id(conn, id)?;
 
         let detached_chapters = repository::count_chapters(conn, id)?;
         if !repository::delete_by_id(conn, id)? {

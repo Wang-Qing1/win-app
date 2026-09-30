@@ -18,7 +18,6 @@
 //! 这一点很容易写错 —— 把具体文案塞进 `message` 会让表单上方的红色提示条
 //! 显示「书名不能为空」，而输入框下方空空如也。
 
-use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::core::errors::{AppError, AppResult};
@@ -26,23 +25,6 @@ use crate::core::response::FieldIssue;
 
 /// zod 校验失败时对用户说的话（逐字沿用，前端已有基于它的提示逻辑）
 pub const VALIDATION_MESSAGE: &str = "提交的数据未通过校验，请检查后重试";
-
-/// 把原样 JSON 解析成契约类型。
-///
-/// 解析失败归到 `VALIDATION_ERROR` 而不是 `INTERNAL_ERROR`：这是调用方
-/// 传错了结构，不是后端故障，前端也不该重试。
-pub fn parse<T: DeserializeOwned>(raw: Option<Value>, type_label: &str) -> AppResult<T> {
-    let value = payload(raw);
-
-    serde_json::from_value(value).map_err(|error| {
-        AppError::validation_issues(
-            VALIDATION_MESSAGE,
-            vec![FieldIssue::new("_root", format!("{type_label} 结构不合法"))],
-        )
-        // 真正的解析细节只进日志：里面会带 JSON 片段，不该出现在界面上
-        .with_detail(error.to_string())
-    })
-}
 
 /// 把命令收到的原始入参归一成对象。缺失 / null 一律当空对象 ——
 /// 于是「这条命令没有入参」只有一种处理方式，不必在每处 `unwrap_or_default`。
@@ -363,19 +345,6 @@ impl<'a> Validator<'a> {
         }
     }
 
-    /// 宽松枚举：非法值**静默回落**而不是报错。
-    ///
-    /// 用于列表查询的排序与状态筛选：URL 里带来的旧值不该让整个页面打不开，
-    /// 这是 TS 版 `normalizeBookListQuery` 的既有取舍，必须保住。
-    pub fn lenient_enum(&self, key: &str, allowed: &[&str], default: &str) -> String {
-        self.source
-            .get(key)
-            .and_then(|value| value.as_str())
-            .filter(|text| allowed.contains(text))
-            .unwrap_or(default)
-            .to_string()
-    }
-
     /* ---------------- 颜色 / 布尔 / 数组 ---------------- */
 
     /// 十六进制颜色。只接受 #RGB / #RRGGBB —— 这个值会被写进内联样式，
@@ -387,30 +356,6 @@ impl<'a> Validator<'a> {
         } else {
             self.record(key, invalid_message);
             default.to_string()
-        }
-    }
-
-    /// 必填十六进制颜色（更新接口用：整体替换语义下缺字段是真错）。
-    pub fn required_hex_color(&mut self, key: &str, invalid_message: &str) -> String {
-        let value = self.required_string(key, 7, invalid_message, invalid_message);
-        if is_hex_color(&value) {
-            value
-        } else {
-            self.record(key, invalid_message);
-            String::new()
-        }
-    }
-
-    pub fn boolean(&mut self, key: &str, default: bool, invalid_message: &str) -> bool {
-        let Some(raw) = self.raw(key) else {
-            return default;
-        };
-        match raw.as_bool() {
-            Some(value) => value,
-            None => {
-                self.record(key, invalid_message);
-                default
-            }
         }
     }
 
@@ -444,51 +389,11 @@ impl<'a> Validator<'a> {
         result
     }
 
-    /// 字符串数组（标签等）。逐项 trim、丢弃空项、逐项限长。
-    pub fn string_array(
-        &mut self,
-        key: &str,
-        max_items: usize,
-        max_length: usize,
-        too_many_message: &str,
-        too_long_message: &str,
-    ) -> Vec<String> {
-        let Some(raw) = self.raw(key) else {
-            return Vec::new();
-        };
-        let Some(items) = raw.as_array() else {
-            self.record(key, "必须是文本数组");
-            return Vec::new();
-        };
-        if items.len() > max_items {
-            self.record(key, too_many_message);
-        }
-
-        let mut result = Vec::new();
-        for item in items {
-            let Some(text) = item.as_str() else {
-                self.record(key, "必须是文本数组");
-                return Vec::new();
-            };
-            let trimmed = text.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            if trimmed.chars().count() > max_length {
-                self.record(key, too_long_message);
-                continue;
-            }
-            result.push(trimmed.to_string());
-        }
-        result
-    }
-
-    /// 字符串数组，但**空项算校验失败**（对应 zod 的 `z.string().trim().min(1)`）。
+    /// 字符串数组，**空项算校验失败**（对应 zod 的 `z.string().trim().min(1)`）。
     ///
-    /// 与 `string_array` 的差别只有这一处：那边丢空项，这边记一条问题。
-    /// 两者都要有 —— 卡片的标签属于「用户根本不会输入空标签，传了就是调用方
-    /// 有 bug」的字段，静默丢掉会让边界校验形同虚设；而按长度截断之类的
-    /// 宽容处理在别处仍然是想要的。
+    /// 卡片的标签属于「用户根本不会输入空标签，传了就是调用方有 bug」的字段，
+    /// 静默丢掉会让边界校验形同虚设 —— 所以这里记一条问题而不是跳过。
+    /// 路径带上下标，前端才能把错误落到具体那一个标签上。
     pub fn string_array_strict(
         &mut self,
         key: &str,
@@ -545,12 +450,6 @@ impl<'a> Validator<'a> {
         }
     }
 
-    /// 直接带上「字段名 → 取值」的装配：省掉调用方一次 `finish()?`。
-    pub fn build<T>(self, assemble: impl FnOnce(&Self) -> T) -> AppResult<T> {
-        let value = assemble(&self);
-        self.finish()?;
-        Ok(value)
-    }
 }
 
 /// 十六进制颜色。只接受 #RGB / #RRGGBB。

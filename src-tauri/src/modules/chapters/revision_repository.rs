@@ -112,14 +112,6 @@ pub fn insert_snapshot(
     Ok(conn.last_insert_rowid())
 }
 
-pub fn count_by_chapter(conn: &Connection, chapter_id: i64) -> AppResult<i64> {
-    Ok(to_number(conn.query_row(
-        "SELECT COUNT(*) AS n FROM chapter_revisions WHERE chapter_id = ?",
-        [chapter_id],
-        |row| row.get::<_, Option<i64>>(0),
-    )?))
-}
-
 /// 剪枝：只留最新 `keep` 版。
 ///
 /// 用 `id NOT IN (最新的 keep 个)` 而不是「按 created_at 排序删旧的」——
@@ -139,21 +131,4 @@ pub fn prune(conn: &Connection, chapter_id: i64, keep: i64) -> AppResult<i64> {
         rusqlite::params![chapter_id, chapter_id, keep],
     )?;
     Ok(changed as i64)
-}
-
-/// 删掉某章的全部版本。章节本身被删时由外键 CASCADE 负责，这里是显式入口。
-pub fn delete_by_chapter(conn: &Connection, chapter_id: i64) -> AppResult<i64> {
-    Ok(conn.execute(
-        "DELETE FROM chapter_revisions WHERE chapter_id = ?",
-        [chapter_id],
-    )? as i64)
-}
-
-/// 版本总数，冒烟与备份体积估算用。
-pub fn count_all(conn: &Connection) -> AppResult<i64> {
-    Ok(to_number(conn.query_row(
-        "SELECT COUNT(*) AS n FROM chapter_revisions",
-        [],
-        |row| row.get::<_, Option<i64>>(0),
-    )?))
 }

@@ -61,6 +61,18 @@ once_cell = "1"
 # （或者有人打开了这个特性）就可以删掉这一行。
 indexmap = { version = "1.9", features = ["std"] }
 
+[features]
+# 透传给 tauri 的同名特性。
+#
+# 为什么必须显式声明：`WebviewWindow::open_devtools` 在 tauri 里的门控条件是
+#     #[cfg(any(debug_assertions, feature = "devtools"))]
+# 我们为了与它逐字对齐，在 lib.rs 里也写了同样的条件。但本 crate 若没有在这里
+# 声明该特性，rustc 会把它当成**未知的 cfg 值**并报警：
+#     warning: unexpected `cfg` condition value: `devtools`
+# 声明之后既消掉告警，也让「release 版要不要保留开发者工具」变成显式可选项：
+#     cargo build --release --features devtools
+devtools = ["tauri/devtools"]
+
 [profile.release]
 # 体积优化的四项：一次性的 codegen-unit、全量 LTO、按体积而非速度优化、
 # 剥掉符号。代价是编译慢（本项目可接受，发布才跑）。

@@ -246,15 +246,6 @@ pub fn count_in_container(
     )?))
 }
 
-/// 全库**活着的**章节数，供健康检查展示。
-pub fn count_all(conn: &Connection) -> AppResult<i64> {
-    Ok(to_number(conn.query_row(
-        "SELECT COUNT(*) AS n FROM chapters WHERE deleted_at IS NULL",
-        [],
-        |row| row.get::<_, Option<i64>>(0),
-    )?))
-}
-
 /// 容器内的章节 id，按当前顺序。重排与移动都以它为基准。
 pub fn list_ids_in_container(
     conn: &Connection,
@@ -517,32 +508,6 @@ pub fn apply_move(
     }
 
     Ok(())
-}
-
-/// 供统计：全书最近编辑的章节（用于首页「继续写作」）。
-///
-/// 只看活着的章节：「继续写作」不该把用户送到一章已经躺在回收站里的正文上
-/// —— 那一章打开就是空的（或直接报不存在），而用户会以为自己的稿子丢了。
-pub fn find_latest_by_book(
-    conn: &Connection,
-    book_id: i64,
-) -> AppResult<Option<(i64, String, String)>> {
-    let mut statement = conn.prepare(
-        "SELECT id, title, updated_at FROM chapters
-          WHERE book_id = ? AND deleted_at IS NULL
-          ORDER BY updated_at DESC LIMIT 1",
-    )?;
-    let mut rows = statement.query_map([book_id], |row| {
-        Ok((
-            row.get::<_, i64>("id")?,
-            row.get::<_, String>("title")?,
-            row.get::<_, String>("updated_at")?,
-        ))
-    })?;
-    match rows.next() {
-        Some(row) => Ok(Some(row?)),
-        None => Ok(None),
-    }
 }
 
 /// 一段时间内被编辑过的章节数，供统计页展示。

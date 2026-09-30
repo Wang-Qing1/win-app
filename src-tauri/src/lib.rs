@@ -198,10 +198,48 @@ fn bootstrap(app: &mut tauri::App) {
     );
 
     if config.open_dev_tools {
-        if let Some(window) = app.get_webview_window("main") {
-            window.open_devtools();
-        }
+        open_devtools(app);
     }
+}
+
+/// 打开开发者工具。
+///
+/// **这个函数的 cfg 条件必须和 tauri 自己的逐字一致**：`WebviewWindow::open_devtools`
+/// 在 tauri 里的定义是
+/// `#[cfg(any(debug_assertions, feature = "devtools"))]`
+/// —— 也就是说 **release 构建默认根本没有这个方法**。
+///
+/// 踩过的坑：`cargo check` 跑的是 debug profile（`debug_assertions` 开着），
+/// 所以这里不门控的话**编译检查永远发现不了**，只有 `tauri build` 才会炸：
+///
+/// ```text
+/// error[E0599]: no method named `open_devtools` found for struct
+///               `tauri::WebviewWindow<R>` in the current scope
+/// ```
+///
+/// 纪律：**改完 Rust 代码至少要跑一次 `cargo check --release`**，
+/// 否则「全绿」只是 debug 的全绿，release 编不编得过完全没被验证。
+#[cfg(any(debug_assertions, feature = "devtools"))]
+fn open_devtools(app: &tauri::App) {
+    if let Some(window) = app.get_webview_window("main") {
+        window.open_devtools();
+    }
+}
+
+/// release 且未启用 `devtools` 特性时的替身：记一条日志，而不是静默忽略。
+///
+/// 静默会让「我明明设了 `WINBOOK_DEVTOOLS=true` 却没反应」变成查不出来的问题。
+#[cfg(not(any(debug_assertions, feature = "devtools")))]
+fn open_devtools(_app: &tauri::App) {
+    core::logger::warn(
+        "配置要求打开开发者工具，但当前构建不含 devtools 支持，已忽略",
+        core::logger::fields(vec![(
+            "hint",
+            serde_json::json!(
+                "release 版若要保留该能力，需给 Cargo.toml 的 tauri 启用 devtools feature"
+            ),
+        )]),
+    );
 }
 
 /// 启动阶段致命错误：弹一个原生对话框讲清楚原因再退出。

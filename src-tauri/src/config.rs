@@ -7,7 +7,6 @@
 //! 任何一项非法立即快速失败，而不是等到运行时某个功能静默失效。
 //! 业务代码永远不直接读环境变量。
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::core::logger::LogLevel;
@@ -303,19 +302,4 @@ fn resolve_user_data_dir() -> PathBuf {
         }
     }
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-}
-
-/// 供诊断输出：把本次生效的配置打成一张表。
-pub fn describe(config: &AppConfig) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    map.insert("env".into(), config.env.clone());
-    map.insert("userDataDir".into(), config.user_data_dir.display().to_string());
-    map.insert("logDir".into(), config.log_dir.display().to_string());
-    map.insert("dbFileName".into(), config.db_file_name.clone());
-    map.insert(
-        "window".into(),
-        format!("{}×{}", config.window.width, config.window.height),
-    );
-    map.insert("disableGpu".into(), config.disable_gpu.to_string());
-    map
 }

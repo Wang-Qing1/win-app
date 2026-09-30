@@ -135,7 +135,6 @@ pub struct SessionTotals {
     pub words_written: i64,
     pub words_net: i64,
     pub duration_seconds: i64,
-    pub session_count: i64,
 }
 
 /// 按**本地日期**聚合。
@@ -187,8 +186,7 @@ pub fn totals(
         &format!(
             "SELECT COALESCE(SUM(max(peak_words - start_words, 0)), 0) AS words_written,
                     COALESCE(SUM(end_words - start_words), 0)          AS words_net,
-                    COALESCE(SUM(duration_seconds), 0)                 AS duration,
-                    COUNT(*)                                           AS session_count
+                    COALESCE(SUM(duration_seconds), 0)                 AS duration
                FROM writing_sessions
                {filter_sql}"
         ),
@@ -198,7 +196,6 @@ pub fn totals(
                 words_written: to_number(row.get::<_, Option<i64>>("words_written")?),
                 words_net: to_number(row.get::<_, Option<i64>>("words_net")?),
                 duration_seconds: to_number(row.get::<_, Option<i64>>("duration")?),
-                session_count: to_number(row.get::<_, Option<i64>>("session_count")?),
             })
         },
     )
@@ -259,12 +256,4 @@ pub fn earliest_started_at(conn: &Connection) -> AppResult<Option<String>> {
         |row| row.get::<_, Option<String>>("earliest"),
     )
     .map_err(Into::into)
-}
-
-pub fn count_all(conn: &Connection) -> AppResult<i64> {
-    Ok(to_number(conn.query_row(
-        "SELECT COUNT(*) AS n FROM writing_sessions",
-        [],
-        |row| row.get::<_, Option<i64>>(0),
-    )?))
 }

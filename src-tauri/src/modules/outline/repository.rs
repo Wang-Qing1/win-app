@@ -2,8 +2,7 @@
 //!
 //! 只做平铺的取与写，不做树形组装 —— 理由见 `models::OutlineNodeRow` 的注释。
 
-use rusqlite::types::Value;
-use rusqlite::{params_from_iter, Connection, Row};
+use rusqlite::{Connection, Row};
 
 use crate::core::errors::AppResult;
 use crate::db::sql_utils::to_number;
@@ -332,28 +331,4 @@ pub fn delete_by_id(conn: &Connection, id: i64) -> AppResult<bool> {
     // chapters.chapter_id 则是 ON DELETE SET NULL，删章节不会带走大纲节点。
     let changed = conn.execute("DELETE FROM outline_nodes WHERE id = ?", [id])?;
     Ok(changed > 0)
-}
-
-/// 校验一批 id 是否都属于同一本书。
-///
-/// 移动的目标父节点必须与节点同书，否则会把 A 书的大纲挂到 B 书的树里，
-/// 而 B 书的树查询永远查不到它 —— 数据还在，界面里却消失了。
-pub fn count_matching(conn: &Connection, book_id: i64, ids: &[i64]) -> AppResult<i64> {
-    if ids.is_empty() {
-        return Ok(0);
-    }
-    let placeholders = vec!["?"; ids.len()].join(", ");
-    let sql = format!(
-        "SELECT COUNT(*) AS n FROM outline_nodes WHERE book_id = ? AND id IN ({placeholders})"
-    );
-
-    let mut params: Vec<Value> = Vec::with_capacity(ids.len() + 1);
-    params.push(Value::Integer(book_id));
-    params.extend(ids.iter().map(|id| Value::Integer(*id)));
-
-    Ok(to_number(conn.query_row(
-        &sql,
-        params_from_iter(params.iter()),
-        |row| row.get::<_, Option<i64>>(0),
-    )?))
 }

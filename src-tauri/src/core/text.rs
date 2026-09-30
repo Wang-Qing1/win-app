@@ -180,11 +180,6 @@ pub fn html_to_text(html: &str) -> String {
     normalized.trim().to_string()
 }
 
-/// 从 HTML 直接算出两个字数，省掉调用方自己转文本的一步。
-pub fn measure_html(html: &str) -> TextMetrics {
-    measure_text(&html_to_text(html))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
