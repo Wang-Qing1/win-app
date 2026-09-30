@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "winbook",
+  "version": "0.1.0",
+  "identifier": "com.winbook.desktop",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../out/renderer",
+    "beforeDevCommand": "npm run dev:web",
+    "beforeBuildCommand": "npm run typecheck:web && npm run build:web"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "winbook",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32.png",
+      "icons/128.png",
+      "icons/256.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  }
+}

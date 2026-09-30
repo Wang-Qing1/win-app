@@ -11,6 +11,10 @@ electron.vite.config.*.mjs
 smoke-report.txt
 *.log
 npm-debug.log*
+
+# Rust / Tauri：target 目录几 GB，gen/schemas 是 tauri-build 每次生成的
+src-tauri/target/
+src-tauri/gen/schemas/
 .DS_Store
 Thumbs.db
 .vscode/
