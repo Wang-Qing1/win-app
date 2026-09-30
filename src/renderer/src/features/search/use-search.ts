@@ -8,7 +8,7 @@ const GC_MS = 30_000
 
 export interface SearchState {
   data: SearchResult
-  /** 切好的关键词（与后端同一份实现），界面据此显示实际生效的词条 */
+  /** 切好的关键词（与后端同名同语义的两份实现），界面据此显示实际生效的词条 */
   keywords: string[]
   loading: boolean
   error: ApiError | null

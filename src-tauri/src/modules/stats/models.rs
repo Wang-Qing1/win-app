@@ -1,4 +1,4 @@
-//! 统计模块的契约（对应 TS 侧 `src/shared/modules/stats.ts`）。
+//! 统计模块的契约（前端对应 `src/shared/modules/stats.ts`）。
 //!
 //! 这个模块**只有读，没有自己的表**。所有数字都从 books / chapters /
 //! writing_sessions 聚合而来，口径的唯一来源也就不会出现第二份副本。

@@ -1,4 +1,4 @@
-//! 回收站服务（对应 TS 侧 `trash.service.ts`）—— 一台**纯粹的编排器**，
+//! 回收站服务—— 一台**纯粹的编排器**，
 //! 自己一行 SQL 也没有。
 //!
 //! 之所以能这么薄，是因为「哪些卡片在回收站里」「恢复一章要落到哪个位置」
@@ -71,9 +71,10 @@ pub fn list(conn: &Connection, kind: Option<&str>) -> AppResult<TrashListResult>
     // 按删除时间倒序。
     //
     // 二级键必须存在：两张表的 id 是各自独立的自增序列，而删除时间只精确到
-    // 毫秒 —— 在同一个毫秒里删掉一张卡与一章（冒烟测试里就是连着调两次），
-    // 仅按时间排会让顺序取决于 SQLite 的返回顺序，那个顺序是没有保证的，
-    // 断言因此会时红时绿。用 (kind, id) 兜底：它没有任何业务含义，但**确定**。
+    // 毫秒 —— 连续删掉一张卡与一章就可能落在同一毫秒里，
+    // 仅按时间排会让顺序取决于 SQLite 的返回顺序，而那个顺序是没有保证的，
+    // 刷新两次列表可能就不是一个样子。用 (kind, id) 兜底：
+    // 它没有任何业务含义，但**确定**。
     items.sort_by(|left, right| {
         if left.entry.deleted_at != right.entry.deleted_at {
             return if left.entry.deleted_at < right.entry.deleted_at {

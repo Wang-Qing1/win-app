@@ -1,4 +1,4 @@
-//! SQL 小工具（对应 TS 侧的 `src/main/db/sql-utils.ts`）。
+//! SQL 小工具。
 
 /// 把用户输入包成 LIKE 的「包含」模式，并转义通配符。
 ///
@@ -29,12 +29,12 @@ pub fn to_number(value: Option<i64>) -> i64 {
 
 /// JSON 列的解析：内容坏掉时回 `None`，调用方按「这一列没有值」处理。
 ///
-/// 对应 TS 侧 `parseJsonObject` 的目的：一行脏数据不该把整个列表打挂。
+/// 对应 前端 `parseJsonObject` 的目的：一行脏数据不该把整个列表打挂。
 pub fn parse_json(raw: &str) -> Option<serde_json::Value> {
     serde_json::from_str::<serde_json::Value>(raw).ok()
 }
 
-/// JSON 数组列的安全解析（对应 TS 侧 `parseJsonArray`）。
+/// JSON 数组列的安全解析。
 ///
 /// **非字符串项被丢掉而不是转成字符串**：`tags` 这一列理论上只装字符串，
 /// 出现数字说明这行数据是别处写坏的 —— 把它变成一个看起来正常的标签，
@@ -55,7 +55,7 @@ pub fn parse_string_array(raw: &str) -> Vec<String> {
 /* ------------------------------------------------------------------ *
  * 这里刻意**不放**分页归一化。
  *
- * 分页参数（page ≥ 1、1 ≤ pageSize ≤ 200）在 TS 侧是 zod schema 的
+ * 分页参数（page ≥ 1、1 ≤ pageSize ≤ 200）在 前端是 zod schema 的
  * `.min/.max` —— 越界是**拒绝**并回一条 VALIDATION_ERROR，不是悄悄夹到
  * 边界值。若这里再放一个 clamp，就会出现两套口径：命令边界拒绝了，
  * 而别处调用又把它夹回来了，排查时看到的现象是「有时报错、有时不报」。

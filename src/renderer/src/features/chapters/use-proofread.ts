@@ -25,15 +25,6 @@ export interface ProofreadState {
   pending: boolean
 }
 
-const EMPTY_RESULT: ProofreadResult = {
-  issues: [],
-  categoryCounts: { punctuation: 0, duplicate: 0, mixedScript: 0, pairing: 0, spacing: 0 },
-  fillers: [],
-  errorCount: 0,
-  suggestionCount: 0,
-  truncated: false
-}
-
 const IDLE_STATE: ProofreadState = { result: null, marks: [], pending: false }
 
 export function useProofread(docText: DocText | null, revision: number): ProofreadState {
@@ -71,5 +62,3 @@ export function useProofread(docText: DocText | null, revision: number): Proofre
 
   return state
 }
-
-export const EMPTY_PROOFREAD_RESULT = EMPTY_RESULT

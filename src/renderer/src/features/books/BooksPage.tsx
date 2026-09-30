@@ -91,7 +91,7 @@ export function BooksPage() {
    *
    * 「书架真的是空的」与「筛出来是空的」是两种情形，空状态的文案与出口都不同：
    * 前者给「新建第一本书」，后者该让人去清条件而不是新建。
-   * 抽成一个变量，是因为它现在有三处用途（文案、按钮、给冒烟探针的区块标记），
+   * 抽成一个变量，是因为它现在有三处用途（文案、按钮、给端到端测试探针的区块标记），
    * 三处各写一遍 `debouncedKeyword.length === 0 && status === null`
    * 早晚会有一处漏改 —— 而「探针标记漏改」的后果是**断言静默失效**。
    */
@@ -148,7 +148,7 @@ export function BooksPage() {
 
   return (
     <Flex vertical gap={16} className="page">
-      {/* 页面标题仍由 PageHeader 提供（视觉隐藏，供读屏与冒烟测试使用） */}
+      {/* 页面标题仍由 PageHeader 提供（视觉隐藏，供读屏与端到端测试使用） */}
       <PageHeader title="书籍管理" />
 
       <Flex className="books-toolbar" align="center" justify="space-between" gap={12} wrap>

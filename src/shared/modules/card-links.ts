@@ -113,17 +113,6 @@ export const RELATION_LIMITS = {
   label: 24
 } as const
 
-/**
- * 把一对待建立关系的卡收成「小的在前」的规范写法。
- *
- * 放在共享层而不是服务层：它是这张表的**存储约定**（写入必须按它排序），
- * 属于契约的一部分；放在服务层里的话，仓储就不知道「调用方有没有排好」，
- * 而 CHECK 约束只在写入那一刻才报错。
- */
-export function sortRelationPair(a: number, b: number): [number, number] {
-  return a < b ? [a, b] : [b, a]
-}
-
 const idField = z.number().int().positive('ID 非法')
 
 export const cardLinkPairSchema = z.object({

@@ -4,7 +4,7 @@ import { ApiError, getBridge, invoke } from '../../lib/api-client'
 
 /**
  * 启动自检。
- * 前端挂载后立刻问一次主进程「你还好吗」：能拿到响应就说明
+ * 前端挂载后立刻问一次后端「你还好吗」：能拿到响应就说明
  * IPC 通道、数据库、迁移都正常，比等用户点了按钮才发现问题强得多。
  */
 export function useHealth() {

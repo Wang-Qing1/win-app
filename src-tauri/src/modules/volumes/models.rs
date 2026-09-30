@@ -1,4 +1,4 @@
-//! 分卷模块的领域契约（对应 TS 侧 `src/shared/modules/volumes.ts`）。
+//! 分卷模块的领域契约（前端对应 `src/shared/modules/volumes.ts`）。
 //!
 //! 分卷是书籍下的一级容器，用于把章节分组（第一卷、第二卷…）。
 //! 章节的 `volume_id` 是 `ON DELETE SET NULL`：删一个容器不该毁掉里面的内容。

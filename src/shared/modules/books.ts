@@ -3,8 +3,13 @@ import { z } from 'zod'
 /**
  * 书籍模块的领域契约。
  *
- * 与联系人模块同样的约定：这里是主进程与渲染进程唯一的字段定义来源，
- * 主进程用它做 IPC 边界校验，渲染进程用同一份 schema 做表单校验。
+ * 字段清单与类型都从这里出：类型统一由 schema 推导（`z.infer`），
+ * 避免「接口改了、类型没跟上」这类漂移。
+ *
+ * 注意这里的 schema **不承担前端校验** —— 表单校验是各页面用 antd 的
+ * `rules` 手写的，而真正的边界校验在 Rust 侧（`src-tauri/src/core/input.rs`）
+ * 另有一份手写实现。保留 schema 是为了「字段清单只有一个来源」；两侧的规则
+ * 本身要靠人肉对齐，改一侧要记得改另一侧。
  */
 
 /* ------------------------------------------------------------------ *
@@ -247,19 +252,6 @@ export interface BookListQuery {
   pageSize: number
   sortBy: BookSortField
   sortOrder: BookSortOrder
-}
-
-export function normalizeBookListQuery(input: BookListQueryInput): BookListQuery {
-  return {
-    keyword: input.keyword,
-    // 非法状态值静默降级为「不筛选」而不是报错：URL 里带过来的旧值
-    // 不该让整个书架页面打不开
-    status: isBookStatus(input.status) ? input.status : null,
-    page: input.page,
-    pageSize: input.pageSize,
-    sortBy: normalizeBookSortField(input.sortBy),
-    sortOrder: normalizeBookSortOrder(input.sortOrder)
-  }
 }
 
 export const DEFAULT_BOOK_QUERY: BookListQuery = {

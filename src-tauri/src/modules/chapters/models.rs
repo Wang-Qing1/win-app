@@ -1,4 +1,4 @@
-//! 章节模块的领域类型（对应 TS 侧 `src/shared/modules/chapters.ts`）。
+//! 章节模块的领域类型（前端对应 `src/shared/modules/chapters.ts`）。
 //!
 //! 一条重要的接口约定：**列表接口不返回正文**。
 //! 一本书的正文可能有几十上百万字，若列表顺手把它一起拉过 IPC，

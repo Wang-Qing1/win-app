@@ -1,9 +1,8 @@
 //! 数据层：连接、pragma、事务、迁移。
 //!
-//! 替换对象是 Electron 版的 `better-sqlite3`。选它的原因不是「Rust 的库更多」，
-//! 而是 `rusqlite` 的 `bundled` feature 把 SQLite 的 C 源码一起编进产物 ——
-//! 用户机器上不需要任何外部 DLL，也不需要按 ABI 重编译（那正是
-//! better-sqlite3 在打包时最麻烦的一环）。
+//! 用 `rusqlite` 而不是某个 ORM：驱动本身够用，SQL 全写在仓储层，一眼能看完。
+//! 开的是 `bundled` feature —— SQLite 的 C 源码一起编进产物，
+//! 用户机器上不需要任何外部 DLL，也不必操心 ABI 与预编译产物。
 
 pub mod migrations;
 pub mod migrator;
@@ -20,7 +19,7 @@ use crate::core::logger;
 
 /// 打开 SQLite 连接。
 ///
-/// 几个 pragma 不是可选项（与 Electron 版逐条一致）：
+/// 几个 pragma 不是可选项，逐条都是必需的：
 ///   - journal_mode = WAL   读写并发不互相阻塞，自动保存与列表查询会同时发生
 ///   - synchronous = NORMAL WAL 下的安全档位，兼顾性能与掉电安全
 ///   - foreign_keys = ON    SQLite 默认**关闭**外键约束，必须显式打开，
@@ -90,8 +89,8 @@ pub fn database_file(config: &AppConfig) -> PathBuf {
 ///     需要 `&mut Connection`，在被外层持有的情况下根本拿不到。
 ///     用 SQL 层的 SAVEPOINT 就不需要 `&mut`，嵌套时内层回滚只影响内层。
 ///
-/// 这与 Electron 版是一致的：那边 better-sqlite3 的 `db.transaction()` 在
-/// 嵌套调用时同样是退化成 SAVEPOINT，而不是报「已在事务中」。
+/// 这也是唯一能让「事务里再开事务」成立的做法：`BEGIN` 会报
+/// 「已经在事务中」，而 SAVEPOINT 允许嵌套，内层回滚不会把外层一起带走。
 ///
 /// 代价是 `&Connection` 而不是 `&Transaction` 交给闭包 —— 但这正好也是我们
 /// 想要的：仓储与服务一律只认 `&Connection`，签名只有一种。

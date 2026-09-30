@@ -1,12 +1,17 @@
 //! winbook 后端装配（Tauri 2）。
 //!
-//! 对应 TS 侧 `src/main/index.ts` 的启动编排，次序刻意保持一致：
-//!   配置与日志 → GPU 开关 → 打开数据库 → 跑迁移 → 注册命令 → 建窗口。
+//! 启动次序：配置与日志 → 打开数据库 → 跑迁移 → 装配状态。
 //!
 //! 次序是有原因的：
-//!   1. `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 必须在 WebView 创建**之前**
-//!      进环境变量，而配置窗口是在 setup 之后才建的，所以 setup 是最后时机；
-//!   2. 配置非法时可以立刻弹窗退出，不用白等一次窗口创建。
+//!   1. 配置非法时立刻弹窗退出，不必先白等一次数据库打开；
+//!   2. 迁移必须在任何命令可能被调用**之前**跑完，否则第一个请求会打在旧 schema 上。
+//!
+//! 一条容易踩的时序：窗口**不是**在这里创建的。`tauri.conf.json` 的 `windows`
+//! 由 Tauri 在用户 setup 钩子**之前**就建好了（tauri 2.12 `src/app.rs::setup()`：
+//! 先 `WebviewWindowBuilder::from_config(..).build()` 把配置窗口建完，**再**调钩子）。
+//! 所以「必须赶在建窗之前定下来的东西」不能写在 `bootstrap()` 里 ——
+//! WebView2 的启动参数就是一例：它在 `run()` 里、`Builder::build()` 之前
+//! 通过 `config_mut()` 写进窗口配置（见 `config::SOFTWARE_RENDERING_ARGS`）。
 
 mod config;
 mod core;
@@ -20,10 +25,22 @@ use tauri_plugin_dialog::DialogExt;
 pub use state::AppState;
 
 pub fn run() {
+    // 关硬件加速必须在 `build()` 之前定下来 —— 理由见文件头那段时序说明。
+    // 走 `additionalBrowserArgs` 而不是环境变量：wry 建 WebView2 环境时**总是**
+    // 显式传 AdditionalBrowserArguments，那个环境变量根本不会被读到。
+    let mut context = tauri::generate_context!();
+    if config::disable_gpu_requested() {
+        for window in context.config_mut().app.windows.iter_mut() {
+            window.additional_browser_args = Some(config::SOFTWARE_RENDERING_ARGS.to_string());
+        }
+    }
+
     let app = tauri::Builder::default()
+        // 只注册真正用到的插件。dialog 由导出与备份从 **Rust 侧**调用
+        // （见 `modules/exporter/service.rs`、`modules/backup/service.rs`）。
+        // fs 与 opener 曾一并注册，但全项目零调用，已移除 ——
+        // 少一个插件就少一组要维护的权限、少一份进入产物的代码。
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             modules::health::commands::health_ping,
             modules::health::commands::health_ready,
@@ -94,7 +111,7 @@ pub fn run() {
             bootstrap(app);
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("winbook 启动失败：无法构建应用实例");
 
     app.run(|app_handle, event| {
@@ -138,16 +155,10 @@ fn bootstrap(app: &mut tauri::App) {
         ]),
     );
 
-    // 无显卡环境下 Chromium 内核的 GPU 进程会反复崩溃并带走整个应用
-    // （Electron 版日志里表现为 "GPU process isn't usable. Goodbye."，退出码 3）。
-    // WebView2 是同一个内核，所以同样需要关掉 GPU 路径 —— 只是开关的传法不同：
-    // Tauri 没有 app.disableHardwareAcceleration() 这种 API，改由 WebView2 自己
-    // 读环境变量。必须在 WebView 创建之前设置，否则不生效。
+    // 软件渲染的开关早在 `run()` 里就写进窗口配置了（见那里与文件头的说明）。
+    // 这里只留一条日志，好让「到底有没有生效」在启动日志里看得见 ——
+    // 这个开关失效过一次，而且失效时界面看起来一切正常。
     if config.disable_gpu {
-        std::env::set_var(
-            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-            "--disable-gpu --disable-gpu-compositing --disable-software-rasterizer",
-        );
         core::logger::warn(
             "已关闭硬件加速，改用软件渲染",
             core::logger::fields(vec![("reason", serde_json::json!("WINBOOK_DISABLE_GPU=true"))]),
@@ -244,12 +255,12 @@ fn open_devtools(_app: &tauri::App) {
 
 /// 启动阶段致命错误：弹一个原生对话框讲清楚原因再退出。
 ///
-/// 与 Electron 版的 `dialog.showErrorBox` 对齐。这里刻意**不用** `logger`
+/// 这里刻意**不用** `logger`
 /// ——此刻日志可能还没初始化（配置非法时甚至连日志目录都不知道在哪），
 /// 而「弹窗没出来、控制台也没有」是最难排查的一种启动失败。
 ///
 /// 用非阻塞的 `show` 而不是 `blocking_show`：后者在**没有可见窗口**的场合
-/// （冒烟自检、CI、远程会话）会一直等用户点确定，表现为进程静默挂死 ——
+/// （自检脚本、CI、远程会话）会一直等用户点确定，表现为进程静默挂死 ——
 /// 比「弹窗没看清」难查得多。代价是需要给对话框留一点显示时间再退出。
 fn fail_fast(app: &tauri::AppHandle, detail: &str) {
     eprintln!("[winbook] {detail}");

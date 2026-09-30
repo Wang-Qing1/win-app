@@ -22,7 +22,7 @@ export interface IconButtonProps
   tone?: IconButtonTone
   /** 40px（顶栏与悬浮按钮的规格）。页面 / 面板头部默认 32px，见下方说明 */
   large?: boolean
-  /** 提示浮层里的锚点，供冒烟测试读到「浮层真的弹出来了」 */
+  /** 提示浮层里的锚点，供端到端测试读到「浮层真的弹出来了」 */
   tipTestId?: string
   ref?: Ref<HTMLAnchorElement | HTMLButtonElement>
 }

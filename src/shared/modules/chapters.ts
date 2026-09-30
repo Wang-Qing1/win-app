@@ -157,14 +157,10 @@ export const chapterListQuerySchema = z.object({
 
 export type ChapterListQueryInput = z.infer<typeof chapterListQuerySchema>
 
-/** 归一化后的查询条件，主进程内部使用 */
+/** 归一化后的查询条件，后端内部使用 */
 export interface ChapterListQuery {
   bookId: number
   volumeId: number | null | undefined
-}
-
-export function normalizeChapterListQuery(input: ChapterListQueryInput): ChapterListQuery {
-  return { bookId: input.bookId, volumeId: input.volumeId }
 }
 
 export const chapterReorderSchema = z.object({

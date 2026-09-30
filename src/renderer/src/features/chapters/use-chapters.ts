@@ -5,7 +5,6 @@ import type {
   ChapterIdInput,
   ChapterListItem,
   ChapterListQuery,
-  ChapterMoveInput,
   ChapterReorderInput,
   ChapterRestoreInput,
   ChapterRestoreResult,
@@ -71,14 +70,6 @@ export function useReorderChapters() {
   const queryClient = useQueryClient()
   return useMutation<{ count: number }, ApiError, ChapterReorderInput>({
     mutationFn: (input) => invoke(() => getBridge().chapters.reorder(input)),
-    onSuccess: () => invalidateLibrary(queryClient)
-  })
-}
-
-export function useMoveChapter() {
-  const queryClient = useQueryClient()
-  return useMutation<ChapterListItem, ApiError, ChapterMoveInput>({
-    mutationFn: (input) => invoke(() => getBridge().chapters.move(input)),
     onSuccess: () => invalidateLibrary(queryClient)
   })
 }

@@ -51,7 +51,9 @@ const TREND_QUERY: StatsTrendQuery = { days: 30, bookId: null }
  * 导航职责，不是「顺带一提的入口」。垫在下面意味着每次切模块都要先滚过
  * 一屏数据，而且会随数据条数变化位置，肌肉记忆建立不起来。
  *
- * 测试锚点说明（冒烟测试依赖，改动前请先看 smoke-test.ts）：
+ * 测试锚点说明（这些名字原本由端到端测试依赖；**那份测试现在已经不存在**，
+ * 见 README「待办 / 已知欠账」第 1 条。重建测试时应沿用这些名字，
+ * 改动前先确认没有别处引用）：
  *   module-entry       功能模块卡片，data-module-key 标明是哪个模块
  *   dashboard-metrics  容器，data-loading 表示数据是否还在路上
  *   metric-*           指标卡，data-value 是未格式化的原始数值
@@ -74,7 +76,7 @@ export function DashboardPage() {
     <Flex vertical gap={16} className="page">
       {/*
        * 首页的标题只是隐藏锚点（全应用的页标题都已不显示），
-       * `data-testid="page-title"` 仍渲染着 —— 它是冒烟测试判断
+       * `data-testid="page-title"` 仍渲染着 —— 它是端到端测试判断
        * 「当前在哪个页面」的锚点，不能删。
        */}
       <PageHeader title="首页" />
@@ -87,7 +89,7 @@ export function DashboardPage() {
              * `flex="1 1 0"` 而不是 24 栅格的固定跨度：模块从四个变成五个之后，
              * 24 除不尽 5（4.8/行），用 `xl={6}` 会排成 4 + 1 —— 第 5 张单独
              * 占一行，既难看又把首页往下顶。等分弹性列让五张**永远**在同一行，
-             * 且仍然等宽（冒烟测试量的是实测几何，这条要求照旧成立）。
+             * 且仍然等宽（端到端测试量的是实测几何，这条要求照旧成立）。
              */
             <Col flex="1 1 0" key={module.key}>
               {/*
@@ -201,7 +203,7 @@ export function DashboardPage() {
 
       {/* ---------------- 趋势 + 今日 ---------------- */}
       {/*
-       * 卡片类名 .dashboard-trend / .dashboard-today 供冒烟的几何断言使用；
+       * 卡片类名 .dashboard-trend / .dashboard-today 供端到端测试的几何断言使用；
        * 等高由 `.card-fill` 统一负责（见 styles.css 的「并排卡片等高」）。
        */}
       <Row gutter={[16, 16]} data-card-row="趋势与今日">
@@ -284,7 +286,7 @@ export function DashboardPage() {
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             /*
-             * `data-empty-zone` / `data-empty-create` 是给冒烟探针用的锚点：
+             * `data-empty-zone` / `data-empty-create` 是给端到端测试探针用的锚点：
              * 空状态是**唯一一种「页面上没有内容、只有一个动作」**的样子，
              * 而它的失败方式恰好是「动作没了」或「动作又变回带文字的长条」——
              * 两者都不会让任何「卡片在不在」的断言变红。探针按这两个属性采，
@@ -384,7 +386,7 @@ export function DashboardPage() {
  * ------------------------------------------------------------------ */
 
 interface MetricCardProps {
-  /** 冒烟测试锚点，同时也作为 React key 之外的稳定标识 */
+  /** 端到端测试锚点，同时也作为 React key 之外的稳定标识 */
   testId: string
   label: string
   /** 原始数值，写进 data-value 供测试断言 */
@@ -401,7 +403,7 @@ interface MetricCardProps {
  *
  * data-testid 与 data-value 挂在外层纯 div 上，而不是传给 antd 的 Card：
  * 虽然 Card 通常会把多余的 props 透传到根元素，但那属于实现细节，
- * 组件库升级时可能不再透传 —— 一旦失效，冒烟测试会读到 null 而拿到 -1，
+ * 组件库升级时可能不再透传 —— 一旦失效，端到端测试会读到 null 而拿到 -1，
  * 报出来的却是「书籍数没有渲染出真实数据」，排查方向完全被带偏。
  */
 function MetricCard({ testId, label, value, display, icon, loading, footer }: MetricCardProps) {
@@ -411,7 +413,7 @@ function MetricCard({ testId, label, value, display, icon, loading, footer }: Me
        * 外层 div 是「只为了挂锚点」的壳（透明、无边距），真正的卡片是里面这张。
        * 壳也吃满列高，并且这张 Card 同样吃满壳高 —— 只给壳写 100% 的话，
        * 壳被拉高了而白卡片还是按内容收缩，界面上依旧是参差的，
-       * 而「壳等高」的断言会全绿（冒烟因此量到穿透壳之后的那个盒子）。
+       * 而「壳等高」的断言会全绿（端到端测试因此量到穿透壳之后的那个盒子）。
        */}
       <Card className="metric-card__card card-fill">
         <Flex vertical gap={4}>

@@ -32,7 +32,7 @@ const HEATMAP_DAYS = 365
  *   2. 我保持住了吗？（热力日历 + 连续天数）
  *   3. 哪本书在推进、哪本停了？（分书对比）
  *
- * 所有数字都来自主进程的同一次聚合，前端不做二次计算 ——
+ * 所有数字都来自后端的同一次聚合，前端不做二次计算 ——
  * 唯一例外是「日均」，它由区间写作量除以活跃天数得到，而这个除法
  * 如果放在前端，就必须保证分母与后端口径一致，成本高于收益。
  * 因此日均也由后端算好（averageWordsPerActiveDay）。
@@ -226,7 +226,7 @@ function MetricCard({ label, value, icon, footer, loading }: MetricCardProps) {
     // card-fill：四张指标卡并排，必须等高（见 styles.css「并排卡片等高」）。
     // 注意这里是**本页自己的一份 MetricCard**（没有外壳 div），首页那份外面
     // 套了一层挂着 data-testid 的透明壳 —— 两处都要 card-fill，
-    // 冒烟量的时候会穿过透明壳看里面那张真卡片。
+    // 端到端测试量的时候会穿过透明壳看里面那张真卡片。
     <Card className="metric-card__card card-fill">
       <Flex vertical gap={4}>
         <Flex align="center" justify="space-between" gap={8}>

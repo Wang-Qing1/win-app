@@ -5,9 +5,9 @@
   "identifier": "com.winbook.desktop",
   "build": {
     "devUrl": "http://localhost:5173",
-    "frontendDist": "../out/renderer",
+    "frontendDist": "../dist",
     "beforeDevCommand": "npm run dev:web",
-    "beforeBuildCommand": "npm run typecheck:web && npm run build:web"
+    "beforeBuildCommand": "npm run typecheck && npm run build:web"
   },
   "app": {
     "withGlobalTauri": true,
@@ -19,7 +19,6 @@
         "height": 820,
         "minWidth": 960,
         "minHeight": 640,
-        "resizable": true,
         "center": true
       }
     ],

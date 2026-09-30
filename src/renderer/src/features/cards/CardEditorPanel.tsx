@@ -167,10 +167,11 @@ export function CardEditorPanel({
   /**
    * 切换类型时立刻按新类型投影 extra。
    *
-   * 用的是共享层的 `normalizeExtra` —— 与主进程写入前跑的是同一个函数。
+   * 用的是共享层的 `normalizeExtra` —— 后端写入前会跑**同名同语义的那一份**
+   * （`src-tauri/src/modules/cards/models.rs::normalize_extra`），两份要对齐。
    * 前端先跑一遍有两个好处：表单当场换成新类型的字段（旧字段的值不再
    * 留在面板里误导人），以及「界面显示什么」与「库里存什么」不可能不一致。
-   * 主进程那边仍会再跑一次：界面可以被绕过，服务层才是唯一防线。
+   * 后端那边仍会再跑一次：界面可以被绕过，服务层才是唯一防线。
    */
   const changeType = (cardType: CardType): void => {
     setDraft({ ...draft, cardType, extra: normalizeExtra(cardType, draft.extra) })
@@ -278,7 +279,7 @@ export function CardEditorPanel({
             placeholder="回车添加，或用逗号分隔"
             tokenSeparators={[',', '，']}
             maxCount={CARD_LIMITS.tagCount}
-            // 与主进程用同一个规范化函数：否则会出现「输入时 3 个标签、
+            // 与后端用同一个规范化函数：否则会出现「输入时 3 个标签、
             // 保存后变 2 个」这种前后端规则不一致的现象
             onChange={(value: string[]) => setDraft({ ...draft, tags: normalizeTags(value) })}
           />

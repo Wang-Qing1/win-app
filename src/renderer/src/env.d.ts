@@ -4,7 +4,7 @@ import type { WinbookApi } from '@shared/api'
 
 declare global {
   interface Window {
-    /** 由 preload 通过 contextBridge 注入 */
+    /** 由 `lib/tauri-bridge.ts` 在 React 挂载前装到 window 上 */
     readonly winbook: WinbookApi
   }
 }

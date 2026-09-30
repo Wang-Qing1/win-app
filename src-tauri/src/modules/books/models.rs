@@ -1,6 +1,6 @@
-//! 书籍模块的领域类型（对应 TS 侧 `src/shared/modules/books.ts`）。
+//! 书籍模块的领域类型（前端对应 `src/shared/modules/books.ts`）。
 //!
-//! 序列化一律 camelCase：字段名要与渲染层的 TS 接口**逐字一致**，
+//! 序列化一律 camelCase：字段名要与前端的 TS 接口**逐字一致**，
 //! 错了不会编译报错，只会让界面上某几个格子空着 —— 这类错配最难查。
 
 use std::collections::BTreeMap;
@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 /// 书本状态值域。刻意用字符串数组而不是 Rust enum：
-/// 与 TS 侧 `BOOK_STATUSES` 一一对应，也让「读库时把脏数据降级为 idea」
+/// 与 前端 `BOOK_STATUSES` 一一对应，也让「读库时把脏数据降级为 idea」
 /// 这类归一化只写一遍。
 pub const BOOK_STATUSES: [&str; 4] = ["idea", "serializing", "paused", "completed"];
 
@@ -18,7 +18,7 @@ pub const DEFAULT_CHAPTER_WORDS: i64 = 2000;
 
 pub const DEFAULT_ACCENT_COLOR: &str = "#0f6cbd";
 
-/* 字段上限，与 TS 侧 `BOOK_LIMITS` 逐条一致 */
+/* 字段上限，与前端 `BOOK_LIMITS` 逐条一致 */
 pub const LIMIT_TITLE: usize = 80;
 pub const LIMIT_PEN_NAME: usize = 40;
 pub const LIMIT_GENRE: usize = 24;
@@ -151,7 +151,7 @@ pub struct BookListQuery {
 }
 
 /* ------------------------------------------------------------------ *
- * 写入入参（对应 TS 侧由 zod 推导出的 `BookCreateInput` / `BookUpdateInput`）
+ * 写入入参（对应 前端由 zod 推导出的 `BookCreateInput` / `BookUpdateInput`）
  *
  * 这些结构体**只由命令层的解析函数产出**，字段已经是 trim 过、长度合法、
  * 值域内的结果。服务层因此可以直接落库，不必再校验一次 ——

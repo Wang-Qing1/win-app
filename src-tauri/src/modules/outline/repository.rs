@@ -1,4 +1,4 @@
-//! 大纲仓储（对应 TS 侧 `outline.repository.ts`）。
+//! 大纲仓储。
 //!
 //! 只做平铺的取与写，不做树形组装 —— 理由见 `models::OutlineNodeRow` 的注释。
 

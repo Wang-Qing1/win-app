@@ -34,13 +34,6 @@ export function useBook(id: number | null) {
   })
 }
 
-export function useBookStats() {
-  return useQuery({
-    queryKey: queryKeys.books.stats(),
-    queryFn: () => invoke(() => getBridge().books.stats())
-  })
-}
-
 export function useCreateBook() {
   const queryClient = useQueryClient()
   return useMutation<Book, ApiError, BookCreateInput>({

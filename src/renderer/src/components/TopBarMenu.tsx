@@ -33,15 +33,15 @@ import { useToast } from './Toast'
  * 视觉噪音从「三个不同颜色的圆 + 一行状态文字」降到 1。
  *
  * 三件事的落点（对原来那三个组件的行为都做了保留，没有丢功能）：
- *   - **主进程健康**：菜单项里是状态点（绿 / 蓝闪 / 红）+ 摘要，点击弹一条
- *     摘要提示；详细字段（版本 / Electron / Node / Schema / 运行时长）在副标题里。
+ *   - **后端健康**：菜单项里是状态点（绿 / 蓝闪 / 红）+ 摘要，点击弹一条
+ *     摘要提示；详细字段（Schema / 数据库大小 / 运行时长）在副标题里。
  *     它以前常驻显示「运行正常 · SQLite wal」那行字，现在这行字在菜单项里。
  *   - **备份数据库**：菜单项点击即执行，成功后照旧提示备份体积。
  *   - **主题**：三档（跟随系统 / 浅色 / 深色），点一次前进一档，图标随档位变。
  *
  * 健康状态另有一份**机器可读副本**挂在 `…` 按钮上（`data-health-state` /
  * `data-health-text`）：状态事实不该只存在于「菜单展开后」才有的 DOM 里，
- * 否则冒烟与读屏都得先把菜单点开才能知道主进程是否正常。按钮不显示这两项，
+ * 否则读屏用户得先把菜单点开才能知道后端是否正常。按钮不显示这两项，
  * 它们只是数据，不占画面。
  */
 
@@ -61,18 +61,18 @@ interface HealthSummary {
   hint: string
 }
 
-/** 主进程健康状态 → 菜单项要显示的两行字。三态都给出，避免某一态显示成空白 */
+/** 后端健康状态 → 菜单项要显示的两行字。三态都给出，避免某一态显示成空白 */
 function useHealthSummary(): HealthSummary {
   const { data, isPending, isError } = useHealth()
 
   if (isPending) {
-    return { state: 'pending', summary: '正在自检…', hint: '正在与主进程握手，检查数据库与迁移状态' }
+    return { state: 'pending', summary: '正在自检…', hint: '正在与后端握手，检查数据库与迁移状态' }
   }
 
   if (isError || !data) {
     return {
       state: 'error',
-      summary: '主进程异常',
+      summary: '后端异常',
       hint: '部分功能可能不可用，可尝试重启 winbook'
     }
   }
@@ -120,14 +120,14 @@ export function TopBarMenu() {
           testId="topbar-menu-health"
           statusIcon
           icon={<span className={`health-dot health-dot--${health.state}`} />}
-          title={`主进程：${health.summary}`}
+          title={`后端：${health.summary}`}
           hint={health.hint}
         />
       ),
       onClick: () =>
         health.state === 'error'
-          ? notifyError(`主进程：${health.summary}`)
-          : notifySuccess(`主进程：${health.summary}`)
+          ? notifyError(`后端：${health.summary}`)
+          : notifySuccess(`后端：${health.summary}`)
     },
     { type: 'divider' },
     {
@@ -161,11 +161,11 @@ export function TopBarMenu() {
       <Button
         data-testid="topbar-more-button"
         /*
-         * 状态事实的机器可读副本：主进程健康 + 主题档位。
+         * 状态事实的机器可读副本：后端健康 + 主题档位。
          *
          * 按钮画面上只有「…」，这两项一个都不显示 —— 但它们不能因此只存在于
-         * 「菜单展开之后」的 DOM 里：那样想知道主进程是否正常、或想断言主题
-         * 循环有没有前进一档，都得先把菜单点开。挂在常驻按钮上，读屏与冒烟
+         * 「菜单展开之后」的 DOM 里：那样想知道后端是否正常、或想断言主题
+         * 循环有没有前进一档，都得先把菜单点开。挂在常驻按钮上，读屏与端到端测试
          * 都能随时读到。
          */
         data-health-state={health.state}
@@ -174,7 +174,7 @@ export function TopBarMenu() {
         className="app-icon-button"
         type="text"
         /* 读屏念的是这句话，而不是「…」——省略号本身说明不了它装的是什么 */
-        aria-label={`更多功能（主进程：${health.summary}）`}
+        aria-label={`更多功能（后端：${health.summary}）`}
         icon={<MoreOutlined />}
       />
     </Dropdown>

@@ -93,14 +93,6 @@ export interface TrashListResult {
   kindCounts: Record<TrashKind, number>
 }
 
-/**
- * 单个实体的模块（卡片 / 章节）对外能给出的一条回收站记录。
- *
- * 少了 `kind`：那是「回收站」这一层才知道的概念，卡片服务不该知道
- * 自己这行将来会被摆在哪种列表里。装配由 TrashService 负责。
- */
-export type TrashEntry = Omit<TrashItem, 'kind'>
-
 /** 列回收站。kind 为 null 表示两种都列 */
 export const trashListSchema = z.object({
   kind: z.union([z.string().trim(), z.null()]).default('')
@@ -110,14 +102,6 @@ export type TrashListRawInput = z.infer<typeof trashListSchema>
 
 export interface TrashListInput {
   kind: TrashKind | null
-}
-
-/**
- * 非法 kind 静默降级为「全部」，与卡片列表对 cardType 的处理一致。
- * 这里是只读操作，降级只会让列表多几行，不会造成损害。
- */
-export function normalizeTrashList(input: TrashListRawInput): TrashListInput {
-  return { kind: isTrashKind(input.kind) ? input.kind : null }
 }
 
 /**

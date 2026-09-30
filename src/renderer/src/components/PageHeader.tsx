@@ -4,7 +4,7 @@ import { Flex, Typography } from 'antd'
 const { Title } = Typography
 
 interface PageHeaderProps {
-  /** 页面标识。**不显示在画面上**，只给读屏与冒烟测试当锚点 */
+  /** 页面标识。**不显示在画面上**，只给读屏与端到端测试当锚点 */
   title: string
   /** 右侧操作区，通常是主按钮 */
   extra?: ReactNode
@@ -27,7 +27,7 @@ interface PageHeaderProps {
  * 猜它什么时候该是 true。
  *
  * 隐藏状态下保留 `data-testid="page-title"` 但**视觉隐藏**：
- *   - 冒烟测试靠它判断「当前在哪个路由」（断言的是文案对不对，不是看不看得见）
+ *   - 端到端测试靠它判断「当前在哪个路由」（断言的是文案对不对，不是看不看得见）
  *   - 读屏软件仍然能读到页面名，无障碍不能跟着视觉一起砍掉
  *
  * `extra`（各页的按钮 / 筛选器）不受影响，照常显示：它们是操作，不是标题。

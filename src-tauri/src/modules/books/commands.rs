@@ -1,4 +1,4 @@
-//! 书籍模块的命令层（对应 TS 侧 `book.controller.ts`）。
+//! 书籍模块的命令层。
 //!
 //! 只做「解析请求 → 调用服务 → 返回结果」：不含业务判断，也不吞异常 ——
 //! 异常交给 `dispatch` 统一收敛成信封。
@@ -72,7 +72,7 @@ fn parse_list_query(input: Option<Value>) -> AppResult<BookListQuery> {
     Ok(BookListQuery {
         keyword,
         // 非法状态值**静默降级为「不筛选」**而不是报错：URL 里带过来的旧值
-        // 不该让整个书架页面打不开（TS 侧 normalizeBookListQuery 的既有取舍）
+        // 不该让整个书架页面打不开（前端 normalizeBookListQuery 的既有取舍）
         status: is_valid_status(&raw_status).then_some(raw_status),
         page,
         page_size,

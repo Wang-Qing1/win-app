@@ -1,17 +1,17 @@
 //! 跨进程统一响应信封。
 //!
-//! 对应 TS 侧的 `src/shared/result.ts`，**字段名必须逐字一致**：
-//! 渲染层的 `api-client.ts` 会拆这个信封，字段名错了就会退化成
-//! 「未知错误」而不是编译期报错 —— 这类错配在旧壳新前端时最难查。
+//! 形状必须与 `src/shared/result.ts` 的 `IpcResponse<T>` 逐字一致：
+//! 渲染层的 `api-client.ts` 会拆这个信封，字段名错了不会编译报错，
+//! 只会静默退化成「未知错误」—— 这是跨语言边界上最难查的一类错配。
 //!
-//! 设计要点（与 Electron 版同源）：后端永远不把异常直接抛给前端，
+//! 设计要点：后端永远不把异常直接抛给前端，
 //! 所有命令的返回值都被包成 `IpcResponse`，失败时只回传规范化错误码
 //! 与用户可读文案，堆栈与内部细节仅进后端日志。
 
 use serde::Serialize;
 
 /// 规范化错误码。序列化成 `VALIDATION_ERROR` 这种大写下划线形式，
-/// 与 TS 侧的 `AppErrorCode` 联合类型一一对应。
+/// 与 前端的 `AppErrorCode` 联合类型一一对应。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AppErrorCode {
@@ -69,7 +69,7 @@ pub struct AppErrorPayload {
 /// 统一响应信封。
 ///
 /// 用 `untagged`：序列化后就是 `{"ok":true,"data":...}` 或
-/// `{"ok":false,"error":{...}}`，与 TS 的 `IpcResponse<T>` 形状完全相同，
+/// `{"ok":false,"error":{...}}`，与前端的 `IpcResponse<T>` 形状完全相同，
 /// 而不是 Rust 默认的 `{"Success":{"ok":true,...}}` 那种带变体名的包法。
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
@@ -87,6 +87,6 @@ pub fn fail<T>(error: AppErrorPayload) -> IpcResponse<T> {
 }
 
 /* ------------------------------------------------------------------ *
- * 下面这些纯函数在 TS 侧是 `shared/result.ts` 里的类型守卫。
+ * 下面这些纯函数在 前端是 `shared/result.ts` 里的类型守卫。
  * Rust 侧有类型系统兜底，不再需要运行时守卫，保留文档语义即可。
  * ------------------------------------------------------------------ */

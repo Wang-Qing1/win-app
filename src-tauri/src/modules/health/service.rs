@@ -6,16 +6,9 @@
 //! 这条通道是诊断用途，因此允许回传数据库路径与文件大小；
 //! 业务接口一律不返回这类内部信息。
 //!
-//! **与 Electron 版的字段差异（重要）**：`RuntimeInfo` 里那几个
-//! `electronVersion` / `nodeVersion` / `v8Version` 是旧壳的产物，
-//! 换到 Tauri 后并不存在对应物。契约字段**一个都不删**（渲染层与共享类型
-//! 都按它定义），但语义改成「宿主外壳版本 / WebView 内核版本」：
-//!   - `electronVersion` → Tauri 版本（宿主外壳）
-//!   - `chromeVersion`   → WebView2 的 Chromium 版本（同义，仍是浏览器内核）
-//!   - `v8Version`       → WebView2 的 V8 版本
-//!   - `nodeVersion`     → 空串（Tauri 没有 Node 运行时，不编一个假的）
-//! 顺带多回两个新字段（`tauriVersion` / `webviewVersion`），
-//! TS 侧接口不认识它们也无害 —— 多字段不会破坏结构类型。
+//! `RuntimeInfo` 只描述「宿主外壳 + WebView 内核」，不带任何为 Node 运行时
+//! 准备的字段 —— 这个应用里根本没有 Node，留着就会变成「名字叫 nodeVersion、
+//! 装的却是别的东西」这种必须靠注释才能解释的字段。
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -31,17 +24,14 @@ use crate::db::migrator::get_schema_version;
 pub struct RuntimeInfo {
     pub app_name: String,
     pub app_version: String,
-    pub electron_version: String,
-    pub chrome_version: String,
-    pub node_version: String,
-    pub v8_version: String,
+    /// 宿主外壳版本（Tauri）
+    pub tauri_version: String,
+    /// WebView 内核版本（Windows 上即 WebView2 / Chromium）
+    pub webview_version: String,
     pub platform: String,
     pub arch: String,
     pub is_packaged: bool,
     pub locale: String,
-    /// 契约外的补充字段：换壳后真正能用的版本号
-    pub tauri_version: String,
-    pub webview_version: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -155,18 +145,12 @@ impl HealthService {
         RuntimeInfo {
             app_name: "winbook".into(),
             app_version: env!("CARGO_PKG_VERSION").into(),
-            electron_version: tauri::VERSION.into(),
-            // WebView2 就是 Chromium 内核，这个字段在新壳下依然名副其实
-            chrome_version: webview.clone(),
-            // Tauri 没有 Node 运行时 —— 宁可留空，也不编一个看起来像真的版本号
-            node_version: String::new(),
-            v8_version: webview.clone(),
+            tauri_version: tauri::VERSION.into(),
+            webview_version: webview,
             platform: "win32".into(),
             arch: std::env::consts::ARCH.into(),
             is_packaged: !cfg!(debug_assertions),
             locale: system_locale(),
-            tauri_version: tauri::VERSION.into(),
-            webview_version: webview,
         }
     }
 

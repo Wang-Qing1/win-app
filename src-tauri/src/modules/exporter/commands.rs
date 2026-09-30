@@ -1,4 +1,4 @@
-//! 导出的命令层（对应 TS 侧 `exporter.controller.ts`）。
+//! 导出的命令层。
 //!
 //! 三个命令都跑在**独立线程**上（`#[tauri::command(async)]`），这
 //! 不是为了并发，而是为了离开主线程：`service::save_draft` 里的

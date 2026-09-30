@@ -1,8 +1,8 @@
 //! 配置：全部来自环境变量，启动时一次性校验。
 //!
-//! 对应 TS 侧的 `src/main/config/env.ts`。语义刻意逐条对齐 ——
-//! 同一份 `.env` 在两种壳下必须得到同一套配置，否则「换成 Tauri 之后
-//! 行为不一样」会变成一堆无从下手的差异。
+//! 这是全项目**唯一**读环境变量的地方。命令与服务一律从 `AppState.config`
+//! 取配置，不允许自己 `std::env::var` —— 否则「某个开关到底有没有生效」
+//! 会散落到几十处，没法一眼看全。
 //!
 //! 任何一项非法立即快速失败，而不是等到运行时某个功能静默失效。
 //! 业务代码永远不直接读环境变量。
@@ -29,12 +29,6 @@ impl std::fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-#[derive(Debug, Clone, Copy)]
-pub struct WindowConfig {
-    pub width: u32,
-    pub height: u32,
-}
-
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub env: String,
@@ -45,25 +39,33 @@ pub struct AppConfig {
     pub log_dir: PathBuf,
     pub db_file_name: String,
     pub user_data_dir: PathBuf,
-    pub window: WindowConfig,
     pub open_dev_tools: bool,
     pub disable_gpu: bool,
 }
 
 /* ------------------------------------------------------------------ *
- * 默认值（与 TS 侧 zod 的 .default() 一一对应）
+ * 默认值（与 前端 zod 的 .default() 一一对应）
  * ------------------------------------------------------------------ */
 const DEFAULT_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
 const MIN_LOG_MAX_BYTES: u64 = 64 * 1024;
 const MAX_LOG_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const DEFAULT_DB_FILENAME: &str = "winbook.db";
-const DEFAULT_WINDOW_WIDTH: u32 = 1280;
-const DEFAULT_WINDOW_HEIGHT: u32 = 820;
-const MIN_WINDOW_WIDTH: u32 = 640;
-const MIN_WINDOW_HEIGHT: u32 = 480;
-const MAX_WINDOW_DIMENSION: u32 = 10_000;
 
 const ALLOWED_ENVS: [&str; 3] = ["development", "production", "test"];
+
+/// 软件渲染要传给 WebView2 的开关。**必须**走窗口的 `additionalBrowserArgs`，
+/// 不能走 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 环境变量 ——
+/// wry 建 WebView2 环境时是 `pl_attrs.additional_browser_args.unwrap_or_else(..)`，
+/// 即「没给就自己拼一份默认串显式传下去」，永远不传 `None`；而 WebView2 的
+/// `AdditionalBrowserArguments` 一旦被显式设置，就不再读那个环境变量了。
+///
+/// 开头的 `--disable-features=...` 是**从 wry 的默认串里抄过来的**：
+/// 这个字段是「替换」而不是「追加」（wry 那行是 `unwrap_or_else`，不是合并），
+/// 少了这一段，WebView2 自带的右键迷你菜单与 SmartScreen 拦截会重新冒出来。
+pub const SOFTWARE_RENDERING_ARGS: &str = concat!(
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection ",
+    "--disable-gpu --disable-gpu-compositing --disable-software-rasterizer",
+);
 
 pub fn load_config() -> Result<AppConfig, ConfigError> {
     let user_data_dir = resolve_user_data_dir();
@@ -88,20 +90,6 @@ pub fn load_config() -> Result<AppConfig, ConfigError> {
         &mut issues,
     );
     let db_file_name = pick_db_filename(&mut issues);
-    let width = pick_bounded_u32(
-        "WINBOOK_WINDOW_WIDTH",
-        DEFAULT_WINDOW_WIDTH,
-        MIN_WINDOW_WIDTH,
-        MAX_WINDOW_DIMENSION,
-        &mut issues,
-    );
-    let height = pick_bounded_u32(
-        "WINBOOK_WINDOW_HEIGHT",
-        DEFAULT_WINDOW_HEIGHT,
-        MIN_WINDOW_HEIGHT,
-        MAX_WINDOW_DIMENSION,
-        &mut issues,
-    );
     let open_dev_tools = pick_bool("WINBOOK_DEVTOOLS", false, &mut issues);
     let disable_gpu = pick_bool("WINBOOK_DISABLE_GPU", false, &mut issues);
 
@@ -120,10 +108,28 @@ pub fn load_config() -> Result<AppConfig, ConfigError> {
         log_dir,
         db_file_name,
         user_data_dir,
-        window: WindowConfig { width, height },
         open_dev_tools,
         disable_gpu,
     })
+}
+
+/* ------------------------------------------------------------------ *
+ * 建窗之前就要问的配置
+ * ------------------------------------------------------------------ */
+
+/// 「要不要关硬件加速」—— **必须在 Tauri 建窗之前**问一次，所以单独开一个入口。
+///
+/// 为什么不能等 `load_config()`：`tauri.conf.json` 里的窗口由 Tauri 在用户 setup
+/// 钩子**之前**就建好了（tauri 2.12 的 `src/app.rs::setup()`：先 for 循环
+/// `WebviewWindowBuilder::from_config(..).build()` 把配置窗口建完，**再**调用用户
+/// 钩子），而 WebView2 的启动参数只能在**建窗那一刻**通过 `additionalBrowserArgs`
+/// 传进去。也就是说这个值必须在 `Builder::build()` 之前就拿到。
+///
+/// 只回答这一个问题、**不做校验**：非法取值仍然由 `load_config()` 报错并弹窗退出，
+/// 避免出现两套校验规则（那必然漂移）。
+pub fn disable_gpu_requested() -> bool {
+    load_dotenv_files(&resolve_user_data_dir());
+    matches!(read_env("WINBOOK_DISABLE_GPU").as_deref(), Some("true"))
 }
 
 /* ------------------------------------------------------------------ *
@@ -159,25 +165,6 @@ fn pick_bounded_u64(key: &str, default: u64, min: u64, max: u64, issues: &mut Ve
         return default;
     };
     match raw.trim().parse::<u64>() {
-        Ok(value) if value >= min && value <= max => value,
-        Ok(value) => {
-            issues.push(format!(
-                "{key} — 取值需在 {min}..{max} 之间，当前为 {value}"
-            ));
-            default
-        }
-        Err(_) => {
-            issues.push(format!("{key} — 不是合法的整数：「{raw}」"));
-            default
-        }
-    }
-}
-
-fn pick_bounded_u32(key: &str, default: u32, min: u32, max: u32, issues: &mut Vec<String>) -> u32 {
-    let Some(raw) = read_env(key) else {
-        return default;
-    };
-    match raw.trim().parse::<u32>() {
         Ok(value) if value >= min && value <= max => value,
         Ok(value) => {
             issues.push(format!(
@@ -288,8 +275,9 @@ fn load_dotenv_file(path: &Path) -> bool {
 
 /// 用户数据目录。
 ///
-/// 刻意与 Electron 版保持一致（`%APPDATA%\winbook`）而不是用 Tauri 默认的
-/// identifier 目录：换壳不该让用户的稿子「消失」，升级后要能直接读到老库。
+/// 固定用 `%APPDATA%\winbook`，而不是 Tauri 默认的 identifier 目录
+/// （`com.winbook.desktop`）：库的位置不该随外壳框架变化 ——
+/// 否则一次升级之后，应用会「找不到」用户已经写下的稿子。
 fn resolve_user_data_dir() -> PathBuf {
     if let Ok(custom) = std::env::var("WINBOOK_USER_DATA_DIR") {
         if !custom.trim().is_empty() {

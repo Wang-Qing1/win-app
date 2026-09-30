@@ -1,4 +1,4 @@
-//! 备份的命令层（对应 TS 侧 `backup.controller.ts`）。
+//! 备份的命令层。
 //!
 //! 与导出同理，命令跑在独立线程上（`#[tauri::command(async)]`）不是为并发，
 //! 而是为了离开主线程：`ask_target` 里的 `blocking_save_file` 在事件循环
@@ -18,7 +18,7 @@ use super::models::BackupDatabaseResult;
 use super::service;
 
 // 这条通道**没有入参**：它是「把当前这一份原样存下来」，没有任何可选项。
-// TS 版同样忽略 `_input`，前端调用时也不传。
+// 形参 `_input` 只是 Tauri 命令的统一形状（见 `core/input.rs`），前端不传。
 fn run_backup(window: &WebviewWindow, state: &AppState) -> AppResult<BackupDatabaseResult> {
     let suggested_name = service::suggested_name();
 

@@ -1,4 +1,4 @@
-//! 分卷仓储（对应 TS 侧 `volume.repository.ts`）。
+//! 分卷仓储。
 
 use rusqlite::types::Value;
 use rusqlite::{params_from_iter, Connection, Row};

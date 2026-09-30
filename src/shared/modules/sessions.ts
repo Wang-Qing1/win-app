@@ -88,26 +88,10 @@ export const sessionListQuerySchema = z.object({
 
 export type SessionListQueryInput = z.infer<typeof sessionListQuerySchema>
 
-/** 归一化后的查询条件，主进程内部使用 */
+/** 归一化后的查询条件，后端内部使用 */
 export interface SessionListQuery {
   from: string | undefined
   to: string | undefined
   bookId: number | null
   limit: number
 }
-
-export function normalizeSessionListQuery(input: SessionListQueryInput): SessionListQuery {
-  return { from: input.from, to: input.to, bookId: input.bookId, limit: input.limit }
-}
-
-/**
- * 会话按「开始时间所在的本地日期」归属到某一天。
- *
- * 跨午夜的会话（23:50 开始、00:20 结束）整段算作前一天。这是刻意的简化：
- * 按分钟切分到两天会让「今日写了多少」在半夜出现难以解释的跳变，
- * 而作者对「这天写了多久」的直觉本来就是按开始时刻算的。
- */
-export const DEFAULT_SESSION_LIST_QUERY = {
-  bookId: null,
-  limit: 100
-} as const

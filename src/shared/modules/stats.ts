@@ -26,10 +26,6 @@ export const STATS_RANGE_LABELS: Record<StatsRange, string> = {
   365: '近一年'
 }
 
-export function isStatsRange(value: unknown): value is StatsRange {
-  return typeof value === 'number' && (STATS_RANGES as readonly number[]).includes(value)
-}
-
 /* ------------------------------------------------------------------ *
  * 概览（首页顶部与统计页头部共用）
  * ------------------------------------------------------------------ */
@@ -102,10 +98,6 @@ export interface StatsTrendQuery {
   bookId: number | null
 }
 
-export function normalizeStatsTrendQuery(input: StatsTrendQueryInput): StatsTrendQuery {
-  return { days: input.days, bookId: input.bookId }
-}
-
 /* ------------------------------------------------------------------ *
  * 分书籍进度（首页「在写书籍」与统计页对比）
  * ------------------------------------------------------------------ */
@@ -144,10 +136,6 @@ export interface BookProgressQuery {
   rangeDays: number | null
 }
 
-export function normalizeBookProgressQuery(input: BookProgressQueryInput): BookProgressQuery {
-  return { limit: input.limit, rangeDays: input.rangeDays }
-}
-
 /* ------------------------------------------------------------------ *
  * 写作热力日历
  * ------------------------------------------------------------------ */
@@ -182,14 +170,3 @@ export type StatsHeatmapQueryInput = z.infer<typeof statsHeatmapQuerySchema>
 /* ------------------------------------------------------------------ *
  * 强度分级
  * ------------------------------------------------------------------ */
-
-/** 热力图与趋势柱共用的等级阈值。集中在这里，保证两处颜色含义一致 */
-export function levelOf(words: number, maxWords: number): number {
-  if (words <= 0) return 0
-  if (maxWords <= 0) return 1
-  const ratio = words / maxWords
-  if (ratio <= 0.25) return 1
-  if (ratio <= 0.5) return 2
-  if (ratio <= 0.75) return 3
-  return 4
-}

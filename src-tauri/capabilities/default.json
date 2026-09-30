@@ -1,14 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "winbook 默认能力集。只放开业务真正用到的插件权限，不做通配。",
+  "description": "winbook 默认能力集。只放开业务真正用到的权限，不做通配。移除 fs / opener 两项插件后，这里就只剩 core 与 dialog —— 后者虽然只由 Rust 侧调用，但保留它的能力声明可以让「应用能做什么」在配置里一眼看完。",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "dialog:allow-save",
-    "dialog:allow-message",
-    "fs:allow-read-file",
-    "fs:allow-write-file",
-    "opener:allow-reveal-item-in-dir"
+    "dialog:allow-message"
   ]
 }

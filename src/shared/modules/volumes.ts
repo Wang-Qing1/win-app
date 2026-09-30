@@ -60,8 +60,6 @@ export const volumeListQuerySchema = z.object({
   bookId: z.number().int().positive('书籍 ID 非法')
 })
 
-export type VolumeListQueryInput = z.infer<typeof volumeListQuerySchema>
-
 /**
  * 重排：一次提交整个容器内的新顺序。
  *

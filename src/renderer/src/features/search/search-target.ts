@@ -14,7 +14,7 @@ import type { SearchHit } from '@shared/modules/search'
 export interface HitTarget {
   /** 目标路由（含查询参数） */
   path: string
-  /** 目标页面里应当被选中 / 定位的对象 id —— 冒烟测试用它验证「真的打开了这一条」 */
+  /** 目标页面里应当被选中 / 定位的对象 id —— 端到端测试用它验证「真的打开了这一条」 */
   focus: number
 }
 
@@ -29,9 +29,9 @@ export function targetOf(hit: SearchHit): HitTarget | null {
       if (hit.bookId === null) return null
 
       /*
-       * `find` 带的是**锚点关键词**而不是片段，`at` 是主进程算出的偏移。
+       * `find` 带的是**锚点关键词**而不是片段，`at` 是后端算出的偏移。
        *
-       * 两者都要带：编辑器不能直接相信这个偏移 —— 主进程搜的是库里的
+       * 两者都要带：编辑器不能直接相信这个偏移 —— 后端搜的是库里的
        * content_text，编辑器手里的是自己从 TipTap 文档算出的纯文本，
        * 两套投影的换行约定并不完全一致（列表类结构会差字符）。
        * 因此编辑器拿关键词在自己文档里重新找全部出现位置，再用 at

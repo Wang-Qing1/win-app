@@ -1,4 +1,4 @@
-//! 卡片关联的服务层（对应 TS 侧 `card-link.service.ts`）。
+//! 卡片关联的服务层。
 //!
 //! 这里只守一条规则，但它是这个功能成立的前提：**两边必须属于同一本书**。
 //! 跨书的关联点过去会跳到另一本书的某一章，读者只会以为点错了；
@@ -159,7 +159,7 @@ pub fn list_relations(conn: &Connection, card_id: i64) -> AppResult<Vec<CardRela
 
 /// 这本书里所有的关系边，给关系网用。
 ///
-/// **刻意不校验书是否存在**：与 TS 一致 —— 一本书还没有任何关系时也应当
+/// **刻意不校验书是否存在**：与前端契约一致 —— 一本书还没有任何关系时也应当
 /// 正常返回空数组，而不是报「书籍不存在」。关系网是一个只读视图，
 /// 它的空状态是合法的。
 pub fn list_relations_by_book(conn: &Connection, book_id: i64) -> AppResult<Vec<CardRelationEdge>> {

@@ -178,7 +178,7 @@ export function RichTextEditor({
             prefs.showParagraphRules ? ' editor-surface--rules' : ''
           }`}
           // 把墨色取向摆到 DOM 上。它决定正文该用浅色字还是深色字，
-          // 而这件事只由纸面决定、与主题无关 —— 冒烟测试就靠这个属性
+          // 而这件事只由纸面决定、与主题无关 —— 端到端测试就靠这个属性
           // 校验「算出来的字色和纸面方向一致」，而不是靠人眼盯截图。
           // （曾经这里搞反过：素白纸配了近白色的字，正文整段看不见）
           data-paper-ink={paper.ink}
@@ -191,7 +191,7 @@ export function RichTextEditor({
             aria-hidden="true"
           />
 
-          {/* 这一层挂 data-testid 是为了让冒烟测试能数段落、拿正文文本，
+          {/* 这一层挂 data-testid 是为了让端到端测试能数段落、拿正文文本，
               而不是去匹配 .ProseMirror 这类第三方内部类名 */}
           <div className="editor-column" data-testid="editor-content">
             <EditorContent editor={editor} />

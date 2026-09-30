@@ -1,4 +1,4 @@
-//! 本地日期工具（对应 TS 侧 `src/shared/datetime.ts`）。
+//! 本地日期工具（前端对应 `src/shared/datetime.ts`）。
 //!
 //! 为什么不用 UTC 日期（`toISOString().slice(0, 10)`）：对东八区用户来说，
 //! 早上 8 点之前写的字会被算到前一天 ——「今日字数」在早鸟用户那里会长期是错的，
@@ -75,7 +75,7 @@ pub fn add_days(date: NaiveDate, days: i64) -> NaiveDate {
 /// 看起来像「某天写了特别多」。补零由调用方用这个函数完成，
 /// 不在 SQL 里造一张日历表。
 ///
-/// 参数名字里的 exclusive / inclusive 是 TS 版的既有语义：调用方把
+/// 参数名字里的 exclusive / inclusive 是刻意保留的语义：调用方把
 /// `from - 1 天` 传进来，函数自己再加一天，正好从 `from` 开始。
 pub fn each_day_key(
     from_exclusive: NaiveDate,

@@ -91,7 +91,7 @@ export function useSetTimelineOrder() {
 /**
  * 复制一张卡片。
  *
- * 不做乐观更新：副本的标题由主进程生成（要避开同书同类型下的重名），
+ * 不做乐观更新：副本的标题由后端生成（要避开同书同类型下的重名），
  * 前端猜出来的名字在「已经有一张叫 X 副本」时必然猜错，猜错再回滚更晃眼。
  */
 export function useDuplicateCard() {

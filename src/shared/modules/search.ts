@@ -4,10 +4,12 @@ import { z } from 'zod'
  * 全库检索的共享契约。
  *
  * 这个模块里有两段**纯计算**：`parseKeywords`（切词）与 `sliceSnippet`
- * （切片 + 标高亮）。它们刻意放在共享层而不是主进程：
- *   1. 渲染进程要用切词结果即时显示「正在搜索：林澈 + 星云」这样的词条，
- *      两侧各写一份必然出现「界面显示 3 个词、后端只搜了 2 个」这种对不上的情况；
- *   2. 主进程的冒烟测试可以直接对它们做单元断言，不需要起数据库。
+ * （切片 + 标高亮）。前端用它们即时显示「正在搜索：林澈 + 星云」这样的词条，
+ * Rust 后端另有一份对应实现（`modules/search/models.rs`）负责实际切片。
+ *
+ * 两边的切词结果必须一致，否则会出现「界面显示 3 个词、后端只搜了 2 个」
+ * 这种对不上的情况；切片窗口的边界也要一致，不然高亮会落在错误的字上。
+ * 跨语言没法共用一份实现，靠各自单测锁行为。
  *
  * 检索最终走的是 LIKE 全表扫描，不是 FTS5。这个选择有实测依据：
  * 1024 万字（2000 章）的全库扫描约 52 毫秒，单本书内 5 毫秒，都在感知阈值以下；
@@ -29,10 +31,6 @@ export const SEARCH_SOURCE_LABELS: Record<SearchSource, string> = {
   card: '卡片库',
   outline: '大纲',
   book: '书籍信息'
-}
-
-export function isSearchSource(value: unknown): value is SearchSource {
-  return typeof value === 'string' && (SEARCH_SOURCES as readonly string[]).includes(value)
 }
 
 /* ------------------------------------------------------------------ *
@@ -215,20 +213,6 @@ function distinctKeywordsIn(matches: readonly RawMatch[], window: Window): numbe
 }
 
 /**
- * 这段文本命中了几个**种类**的关键词（同一个词出现多次只算一个）。
- *
- * 用来决定一条结果锚定在哪个字段上：标题和正文都命中时，取命中词更多的
- * 那一边做片段。出现次数不参与比较 —— 「正文里『林澈』出现 5 次、
- * 标题里『林澈』和『星云』都出现」这种情况下，用户想看的是标题那一处。
- */
-export function countKeywordHits(text: string, keywords: readonly string[]): number {
-  if (text.length === 0 || keywords.length === 0) return 0
-  const kinds = new Set<string>()
-  for (const match of collectMatches(text, keywords)) kinds.add(match.keyword.toLowerCase())
-  return kinds.size
-}
-
-/**
  * 切出命中片段，并给出片段内的关键词高亮区间。
  *
  * 锚点选择的规则值得说明：**不是简单取第一次命中**，而是在所有命中里挑一个
@@ -319,25 +303,6 @@ export interface SearchQuery {
   limit: number
 }
 
-export function normalizeSearchQuery(input: {
-  keywords: string
-  bookId: number | null
-  limit: number
-}): SearchQuery {
-  return {
-    keywords: parseKeywords(input.keywords),
-    raw: input.keywords.trim(),
-    bookId: input.bookId,
-    limit: input.limit
-  }
-}
-
-export const DEFAULT_SEARCH_QUERY: SearchQueryInput = {
-  keywords: '',
-  bookId: null,
-  limit: SEARCH_LIMITS.perSource
-}
-
 /* ------------------------------------------------------------------ *
  * 结果
  * ------------------------------------------------------------------ */
@@ -380,7 +345,7 @@ export interface SearchGroup {
 }
 
 export interface SearchResult {
-  /** 回显切词结果，让界面能显示实际生效的词条（与后端完全一致） */
+  /** 回显切词结果，让界面能显示实际生效的词条（与后端同名同语义的两份实现） */
   keywords: string[]
   groups: SearchGroup[]
   /** 四类来源命中数之和 */
@@ -388,11 +353,3 @@ export interface SearchResult {
 }
 
 export const EMPTY_SEARCH_RESULT: SearchResult = { keywords: [], groups: [], total: 0 }
-
-/** 结果里第一条命中，用于「回车直接打开最相关的一条」 */
-export function firstHit(result: SearchResult): SearchHit | null {
-  for (const group of result.groups) {
-    if (group.hits.length > 0) return group.hits[0]
-  }
-  return null
-}

@@ -1,4 +1,4 @@
-//! 大纲模块的命令层（对应 TS 侧 `outline.controller.ts`）。
+//! 大纲模块的命令层。
 
 use serde_json::Value;
 use tauri::State;

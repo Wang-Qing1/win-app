@@ -99,23 +99,26 @@ import type {
 } from './modules/trash'
 
 /**
- * preload 通过 contextBridge 暴露给渲染进程的 API 形状。
+ * `window.winbook` 暴露给前端的 API 形状。
  *
- * 该接口被 preload 实现、被渲染进程消费，两侧共用一份定义：
- * 主进程改接口时渲染进程会直接编译失败，而不是运行时才报错。
+ * 该接口由 tauri-bridge 实现，渲染层其余部分只消费它：
+ * 改这个形状，实现与调用方会在**同一次 `tsc`** 里一起报错，不会拖到运行时。
+ *
+ * 但它管不到 Rust 那一侧 —— 后端命令的入参与出参是手写的，
+ * 改接口时要照着 `src-tauri/src/modules/<模块名>/commands.rs` 再核一遍。
  *
  * 注意：所有方法返回的都是 IpcResponse 信封而不是直接抛异常。
- * 跨 contextBridge 传递 Error 实例语义不可靠，统一由渲染进程的
- * api-client 负责拆信封并抛出类型化的 ApiError。
+ * 跨进程传递 Error 实例语义不可靠，统一由前端的 api-client
+ * 负责拆信封并抛出类型化的 ApiError。
  */
 
 export interface RuntimeInfo {
   appName: string
   appVersion: string
-  electronVersion: string
-  chromeVersion: string
-  nodeVersion: string
-  v8Version: string
+  /** 宿主外壳版本（Tauri） */
+  tauriVersion: string
+  /** WebView 内核版本（Windows 上即 WebView2 / Chromium） */
+  webviewVersion: string
   platform: string
   arch: string
   isPackaged: boolean
@@ -202,7 +205,7 @@ export interface WinbookApi {
     create: (input: OutlineNodeCreateInput) => Promise<IpcResponse<OutlineNode>>
     update: (input: OutlineNodeUpdateInput) => Promise<IpcResponse<OutlineNode>>
     remove: (input: OutlineNodeIdInput) => Promise<IpcResponse<{ id: number; removedCount: number }>>
-    /** 拖拽落点：目标父节点 + 落点下标，顺序由主进程算 */
+    /** 拖拽落点：目标父节点 + 落点下标，顺序由后端算 */
     move: (input: OutlineNodeMoveInput) => Promise<IpcResponse<OutlineNode>>
     /** 关联 / 解除关联已有章节；chapterId 传 null 表示解除 */
     attachChapter: (input: OutlineAttachChapterInput) => Promise<IpcResponse<OutlineNode>>
@@ -330,6 +333,3 @@ export interface WinbookApi {
     database: () => Promise<IpcResponse<BackupDatabaseResult>>
   }
 }
-
-/** 渲染进程侧挂载点，preload 在 window 上注入 */
-export const WINBOOK_BRIDGE_KEY = 'winbook' as const

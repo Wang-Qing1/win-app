@@ -1,9 +1,9 @@
 /**
  * 跨进程统一响应信封。
  *
- * 设计要点：主进程永远不把异常直接抛给渲染进程（Electron 会把 Error 序列化成
+ * 设计要点：后端永远不把异常直接抛给前端（跨 IPC 传输会把 Error 序列化成
  * 一个信息残缺的字符串）。所有 handler 的返回值都被包成 IpcResponse，
- * 失败时只回传规范化错误码与用户可读文案，堆栈与内部细节仅写进主进程日志。
+ * 失败时只回传规范化错误码与用户可读文案，堆栈与内部细节仅写进后端日志。
  */
 
 export type AppErrorCode =
@@ -29,7 +29,7 @@ export interface AppErrorPayload {
   code: AppErrorCode
   /** 面向用户的提示文案，已做脱敏，可直接渲染 */
   message: string
-  /** 请求追踪 ID，与主进程日志中的 requestId 对应 */
+  /** 请求追踪 ID，与后端日志中的 requestId 对应 */
   requestId: string
   /** 仅校验类错误携带 */
   issues?: FieldIssue[]
@@ -46,20 +46,3 @@ export interface IpcFailure {
 }
 
 export type IpcResponse<T> = IpcSuccess<T> | IpcFailure
-
-export function isIpcSuccess<T>(response: IpcResponse<T>): response is IpcSuccess<T> {
-  return response.ok === true
-}
-
-export function isFieldIssueArray(value: unknown): value is FieldIssue[] {
-  return (
-    Array.isArray(value) &&
-    value.every(
-      (item) =>
-        typeof item === 'object' &&
-        item !== null &&
-        typeof (item as FieldIssue).path === 'string' &&
-        typeof (item as FieldIssue).message === 'string'
-    )
-  )
-}

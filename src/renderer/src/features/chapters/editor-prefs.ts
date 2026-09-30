@@ -143,7 +143,7 @@ export const DEFAULT_EDITOR_PREFS: EditorPrefs = {
   paragraphGap: 0,
   firstLineIndent: true,
   // 「默认」= 应用面板底色；浓度 1 表示不做半透明叠加，
-  // 这样纸面底色与面板底色是同一个值，冒烟断言才能直接比这对颜色
+  // 这样纸面底色与面板底色是同一个值，端到端测试断言才能直接比这对颜色
   paperKey: 'panel',
   paperOpacity: 1,
   // 段落虚线分隔**默认开**（用户 2026-09-20：「编辑框中没有分割线？」）。

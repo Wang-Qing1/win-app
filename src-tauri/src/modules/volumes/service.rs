@@ -1,4 +1,4 @@
-//! 分卷服务（对应 TS 侧 `volume.service.ts`）：业务规则与事务边界。
+//! 分卷服务：业务规则与事务边界。
 
 use rusqlite::Connection;
 

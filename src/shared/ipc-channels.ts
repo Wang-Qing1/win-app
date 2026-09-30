@@ -1,7 +1,8 @@
 /**
  * IPC 通道名集中定义。
- * 主进程注册与 preload 调用都必须引用这里的常量，禁止出现裸字符串，
- * 否则改名时会静默产生「通道不存在」的运行时错误。
+ * Rust 侧的 `generate_handler![]` 与前端 `lib/tauri-bridge.ts` 都必须引用
+ * 这里的常量，禁止出现裸字符串 —— 通道名一旦漂移，症状是运行期的
+ * 「命令不存在」，而不是编译期报错。
  */
 export const IpcChannel = {
   HealthPing: 'health:ping',
@@ -91,5 +92,3 @@ export const IpcChannel = {
   /* ---------------- 数据库备份 ---------------- */
   BackupDatabase: 'backup:database'
 } as const
-
-export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel]

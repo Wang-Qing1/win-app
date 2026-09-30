@@ -128,7 +128,7 @@ export const CARD_EXTRA_FIELDS = {
   ]
 } as const satisfies Record<CardType, readonly CardExtraField[]>
 
-/** 设定卡「时点」的键。时间线视图与冒烟断言共用，避免各处写裸字符串 */
+/** 设定卡「时点」的键。时间线视图与后端排序读的是同一个键，避免各处写裸字符串 */
 export const SETTING_TIME_POINT_KEY = 'timePoint'
 
 /** 设定卡「时间线序号」的键。由时间线视图的上下移动写入，不出现在表单里 */
@@ -193,8 +193,9 @@ export function normalizeExtra(type: CardType, raw: unknown): CardExtra {
 /**
  * 标签规范化：去首尾空白、丢掉空标签、去重。
  *
- * 放在共享层而不是服务层：前端在输入框里解析标签时也用同一份规则，
+ * 放在共享层而不是服务层：前端在输入框里解析标签时也要用同一套规则，
  * 否则会出现「输入时显示 3 个标签、保存后变成 2 个」的不一致。
+ * 后端另有一份同名实现（`modules/cards/models.rs::normalize_tags`），两份要对齐。
  */
 export function normalizeTags(tags: readonly string[]): string[] {
   const seen = new Set<string>()
@@ -272,12 +273,6 @@ export interface CardRemovalResult {
  */
 export const CARD_BOOK_SCOPES = ['all', 'book', 'global'] as const
 export type CardBookScope = (typeof CARD_BOOK_SCOPES)[number]
-
-export const CARD_BOOK_SCOPE_LABELS: Record<CardBookScope, string> = {
-  all: '全部书籍',
-  book: '指定书籍',
-  global: '仅通用卡片'
-}
 
 export function isCardBookScope(value: unknown): value is CardBookScope {
   return typeof value === 'string' && (CARD_BOOK_SCOPES as readonly string[]).includes(value)
@@ -502,25 +497,6 @@ export interface CardListQuery {
   sortOrder: CardSortOrder
 }
 
-export function normalizeCardListQuery(input: CardListQueryInput): CardListQuery {
-  const scope = isCardBookScope(input.bookScope) ? input.bookScope : 'all'
-
-  return {
-    // 「要看某本书」却没说哪本：降级为全部，而不是查出一片空白。
-    // 前端切换下拉的中间态会短暂产生这种组合，此时报错没有意义
-    bookScope: scope === 'book' && input.bookId === null ? 'all' : scope,
-    bookId: scope === 'book' ? input.bookId : null,
-    // 非法类型值静默降级为「不筛选」，与书籍列表对 status 的处理一致
-    cardType: isCardType(input.cardType) ? input.cardType : null,
-    settingCategory: isSettingCategory(input.settingCategory) ? input.settingCategory : null,
-    keyword: input.keyword,
-    page: input.page,
-    pageSize: input.pageSize,
-    sortBy: normalizeCardSortField(input.sortBy),
-    sortOrder: normalizeCardSortOrder(input.sortOrder)
-  }
-}
-
 /* ------------------------------------------------------------------ *
  * 设定卡时间线（第三期第 2 件）
  * ------------------------------------------------------------------ */
@@ -567,14 +543,6 @@ export interface CardTimelineOrderInput {
   /** null 表示不校验类别（时间线视图可能横跨各类别） */
   category: SettingCategory | null
   orderedIds: number[]
-}
-
-export function normalizeTimelineOrder(input: CardTimelineOrderRawInput): CardTimelineOrderInput {
-  return {
-    bookId: input.bookId,
-    category: isSettingCategory(input.category) ? input.category : null,
-    orderedIds: input.orderedIds
-  }
 }
 
 export const DEFAULT_CARD_QUERY: CardListQuery = {

@@ -1,4 +1,4 @@
-//! 写作会话的命令层（对应 TS 侧 `session.controller.ts`）。
+//! 写作会话的命令层。
 
 use serde_json::Value;
 use tauri::State;

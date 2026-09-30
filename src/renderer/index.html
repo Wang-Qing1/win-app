@@ -4,8 +4,227 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>winbook</title>
+
+    <!--
+      启动占位（boot splash）。
+
+      为什么必须有它：产物是一个 3.3 MB 的 JS（gzip 约 1 MB），从「窗口出现」到
+      「React 第一帧」之间有一段真实存在的空白。桌面应用比网页更刺眼 ——
+      窗口边框已经画好了，里面什么都没有，看着像卡死。
+
+      所以这里放的是**纯 CSS + 内联脚本**：不依赖任何打包产物，
+      在窗口出现的第一帧就已经渲染完毕。
+
+      三条纪律：
+
+      1. 颜色只从 styles.css 那套 CSS 变量取（下面抄了一份最小副本，因为
+         styles.css 要等 bundle 加载完才生效）。**变量名保持同名、不做改名** ——
+         否则会出现「占位是深色、应用是浅色」这种两套色板各自漂移的经典问题。
+         值也必须与 styles.css 逐字一致。
+
+      2. 内联脚本必须放在 <head> 里**同步**执行。它负责在首次绘制之前就把
+         data-theme 定下来：ThemeProvider 要到 React 挂载后才设这个属性，
+         中间那段时间深色模式会先闪一帧白底。
+
+      3. 主题键 'winbook.theme' 与 theme/tokens.ts 的 THEME_STORAGE_KEY 是
+         **两处必须一致**的常量。这里没法 import（要保持零依赖），
+         所以由 lib/boot-splash.test.ts 读这个文件做断言，改一边漏一边会红。
+
+      撤场逻辑不在这里，在 lib/boot-splash.ts —— 由 App 的首帧 effect 触发。
+    -->
+    <script>
+      ;(function () {
+        var mode = 'light'
+        try {
+          var stored = window.localStorage.getItem('winbook.theme')
+          if (stored === 'light' || stored === 'dark') {
+            mode = stored
+          } else if (
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches
+          ) {
+            mode = 'dark'
+          }
+        } catch (error) {
+          /* localStorage 在隐私模式下会抛错。读不到就按浅色走，不影响启动 */
+        }
+        document.documentElement.dataset.theme = mode
+        document.documentElement.style.colorScheme = mode
+
+        /*
+         * 启动阶段抛错时也要让占位退场，否则错误提示会被它盖住 ——
+         * 那是「白屏」里最难查的一种：窗口不白，是一个很正常的启动画面，
+         * 就那么永远停在原地。
+         *
+         * 用非捕获监听：这样只会接到脚本错误，不会接资源加载失败
+         * （资源错误不冒泡、只在捕获阶段到 window；这里不捕获，
+         * 所以一张图加载失败不会把占位提前撤掉）。
+         */
+        window.addEventListener(
+          'error',
+          function () {
+            document.documentElement.dataset.boot = 'done'
+          },
+          { once: true }
+        )
+      })()
+    </script>
+
+    <style>
+      /* 最小色板副本 —— 与 styles.css 的 :root / html[data-theme='dark'] 逐字一致 */
+      :root {
+        --winbook-font:
+          'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', 'Microsoft YaHei UI',
+          'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+        --winbook-bg: #f3f3f3;
+        --winbook-border: #e5e5e5;
+        --winbook-text: #1b1b1b;
+        --winbook-text-faint: #8a8a8a;
+        --winbook-accent: #0f6cbd;
+      }
+
+      html[data-theme='dark'] {
+        --winbook-bg: #1f1f1f;
+        --winbook-border: #3d3d3d;
+        --winbook-text: #ffffff;
+        --winbook-text-faint: #8a8a8a;
+        --winbook-accent: #479ef5;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        font-family: var(--winbook-font);
+        font-size: 14px;
+        line-height: 1.6;
+        background: var(--winbook-bg);
+        color: var(--winbook-text);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /*
+       * 盖住整个窗口。z-index 取 int32 上限：它要压过 antd 的所有浮层，
+       * 而此刻 bundle 还没执行，没法知道将来会用到哪些层级。
+       */
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background: var(--winbook-bg);
+        transition: opacity 0.18s ease;
+      }
+
+      /* 退出态：由 lib/boot-splash.ts 在 <html> 上打 data-boot="done" 触发 */
+      html[data-boot='done'] #boot {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      #boot .boot__mark {
+        display: block;
+        width: 64px;
+        height: 64px;
+      }
+
+      #boot .boot__name {
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      #boot .boot__hint {
+        font-size: 12px;
+        color: var(--winbook-text-faint);
+      }
+
+      /*
+       * 不确定进度条（Win11 观感：一条细轨 + 一段来回滑的强调色）。
+       * 刻意不做「假装有百分比」的假进度 —— 启动耗时几乎全在解析 bundle，
+       * 报不出有意义的进度，编一个数字只会让慢的时候更难受。
+       */
+      #boot .boot__bar {
+        width: 168px;
+        height: 3px;
+        border-radius: 999px;
+        background: var(--winbook-border);
+        overflow: hidden;
+      }
+
+      #boot .boot__bar::after {
+        content: '';
+        display: block;
+        width: 42%;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--winbook-accent);
+        animation: boot-slide 1.25s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+
+      @keyframes boot-slide {
+        0% {
+          transform: translateX(-105%);
+        }
+        100% {
+          transform: translateX(255%);
+        }
+      }
+
+      /* 系统开了「减少动态效果」就不动，改成一条静态的短条 */
+      @media (prefers-reduced-motion: reduce) {
+        #boot .boot__bar::after {
+          animation: none;
+          width: 100%;
+        }
+      }
+    </style>
   </head>
   <body>
+    <!--
+      占位放在 #root **外面**：React 挂载时不会把它一起清掉，
+      所以它必须在 App 提交首帧后由 lib/boot-splash.ts 主动撤场。
+    -->
+    <div id="boot" role="status" aria-live="polite">
+      <!--
+        图标是 src-tauri/icons/icon-small.svg 的内联简化版，让启动画面与任务栏
+        图标是同一个东西。取小尺寸那版而不是大尺寸版：这里只有 64px。
+        方块的两色渐变是品牌色，不跟主题走（和图标本身一致）。
+      -->
+      <svg class="boot__mark" viewBox="0 0 256 256" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="boot-tile" x1="0" y1="0" x2="0.85" y2="1">
+            <stop offset="0" stop-color="#4aa3f7" />
+            <stop offset="1" stop-color="#0f6cbd" />
+          </linearGradient>
+        </defs>
+        <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#boot-tile)" />
+        <path d="M128 76 C106 62 82 58 46 58 L46 174 C82 174 106 178 128 192 Z" fill="#ffffff" />
+        <path
+          d="M128 76 C150 62 174 58 210 58 L210 174 C174 174 150 178 128 192 Z"
+          fill="#d2e5f8"
+        />
+        <path d="M128 76 L128 192" stroke="#3f8ed6" stroke-width="12" stroke-linecap="round" />
+      </svg>
+
+      <div class="boot__name">winbook</div>
+      <div class="boot__bar"></div>
+      <div class="boot__hint">正在启动…</div>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

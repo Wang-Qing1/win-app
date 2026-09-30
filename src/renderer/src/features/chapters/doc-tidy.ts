@@ -20,7 +20,7 @@ import { Fragment, type Node as ProseMirrorNode } from '@tiptap/pm/model'
  * 实现上按「返回同一个节点表示没改动」写：调用方靠 `next !== current`
  * 判断要不要提交事务，这样点一次空按钮不会白白写入一次撤销历史。
  *
- * 纯函数、不碰 DOM —— 这样它能和 doc-text 一样在主进程外单独测。
+ * 纯函数、不碰 DOM —— 这样它能和 doc-text 一样在 Node 环境下单独单测。
  */
 export function tidyDocument(doc: ProseMirrorNode): ProseMirrorNode {
   // 原节点与整理结果各存一份：判断「有没有改动」必须拿**原节点**比，

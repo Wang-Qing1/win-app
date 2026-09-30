@@ -54,21 +54,6 @@ export function formatDuration(totalSeconds: number): string {
   return `${hours} 小时 ${minutes % 60} 分`
 }
 
-export function initialsOf(name: string): string {
-  const trimmed = name.trim()
-  if (trimmed.length === 0) return '?'
-  // 中文取末字（姓氏在后不利于辨识），西文取首字母
-  const isAscii = /^[\x20-\x7f]+$/.test(trimmed)
-  if (isAscii) {
-    const parts = trimmed.split(/\s+/).filter(Boolean)
-    return parts
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? '')
-      .join('')
-  }
-  return trimmed.slice(-1)
-}
-
 /* ------------------------------------------------------------------ *
  * 字数与数量的展示格式
  *
@@ -115,20 +100,6 @@ export function formatMinutes(totalSeconds: number): string {
   const hours = Math.floor(minutes / 60)
   const rest = Math.round(minutes % 60)
   return rest === 0 ? `${hours} 小时` : `${hours} 小时 ${rest} 分`
-}
-
-/**
- * 带正负号的百分比变化。
- * 返回 null 表示无法计算（基数为 0），由调用方决定显示什么 ——
- * 显示「+∞%」或「+100%」都是在撒谎。
- */
-export function formatDelta(current: number, previous: number): string | null {
-  if (previous <= 0) return null
-  const ratio = (current - previous) / previous
-  const percent = Math.round(ratio * 100)
-  if (!Number.isFinite(percent)) return null
-  if (percent === 0) return '持平'
-  return `${percent > 0 ? '+' : ''}${percent}%`
 }
 
 /** 进度百分比，0–100 的整数。目标为 0 时返回 null（不设目标就不该显示进度） */

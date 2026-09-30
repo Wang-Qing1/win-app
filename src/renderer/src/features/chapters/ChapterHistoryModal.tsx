@@ -41,7 +41,7 @@ const { Text } = Typography
  * 四处必须留在实现里的细节：
  *
  *   - **`destroyOnHidden`**。关闭后内容要从 DOM 里真的移除，而不只是
- *     藏起来：`chapter-history-modal` 这个锚点是冒烟判断「关掉了没有」的
+ *     藏起来：`chapter-history-modal` 这个锚点是端到端测试判断「关掉了没有」的
  *     唯一依据（`waitForTestIdGone`），留着外壳就永远判不出关闭。
  *   - **弹性宽度下的固定高度**。两栏差异各自滚动，版本列表也自己滚动 ——
  *     高度由内容撑的话，版本一多弹窗就会长到屏幕外，最早的版本反而够不着。
@@ -56,7 +56,7 @@ const { Text } = Typography
  *     一旦哪一列自己加了 `padding-left/right`，这一列就会被推进去，
  *     右上角立刻变成「一列没对齐的圆」（2026-09-22 用户就是这么发现的：
  *     「这两个图标对齐，现在的状态太丑了」）。因此样式表里定了一条
- *     「body 各列不带横向内边距」的规矩，冒烟里也有一条几何断言钉着它。
+ *     「body 各列不带横向内边距」的规矩，端到端测试里也有一条几何断言钉着它。
  */
 export function ChapterHistoryModal({
   chapterId,

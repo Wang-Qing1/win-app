@@ -1,21 +1,21 @@
 //! 应用内统一错误类型。
 //!
-//! 约定（与 Electron 版一致）：服务层与仓储层只抛 `AppError`，
+//! 约定：服务层与仓储层只抛 `AppError`，
 //! 命令边界不再做错误转换。只有 `code` / `message` / `requestId` / `issues`
 //! 会离开后端进程；`detail` 永远只留在日志里。
 //!
-//! `detail` 是 Rust 侧新增的一档：TS 里原始异常塞在 `cause` 上，
-//! 而 Rust 没有那么自然的「保留 cause 但不上报」的通道，
-//! 于是显式分成 `message`（可上报）与 `detail`（仅日志）两个字段。
+//! 错误被显式分成两档：`message`（可上报给前端）与 `detail`（仅进日志）。
+//! 于是「该不该让用户看到」是**选字段**，而不是靠调用方自觉 ——
+//! 原始异常往往带着完整文件路径或 SQL 语句，不该出现在界面上。
 
 use crate::core::response::{AppErrorCode, FieldIssue};
 
 /// 内部错误的通用文案。
 ///
 /// 单独提成常量是因为它有**两个码**的用法：`unclassified()` 用 `UNKNOWN`，
-/// 而「底层 IO / 系统调用失败」在 TS 版是走到 `INTERNAL_ERROR` 那一支的
-/// （见 `ipc-handler.ts::toErrorPayload` 的兜底分支）。文案必须一字不差，
-/// 否则同一个故障在两个壳里对用户说的话不一样。
+/// 而「底层 IO / 系统调用失败」（`io_error`）用 `INTERNAL_ERROR`。
+/// 两种码共用同一句文案，所以提成常量而不是各写一遍 ——
+/// 同一个故障不该因为走了哪条分支而对用户说不同的话。
 pub const INTERNAL_MESSAGE: &str = "应用内部错误，请稍后重试（若持续出现，请凭追踪 ID 查看日志）";
 
 #[derive(Debug, Clone)]
@@ -88,8 +88,7 @@ impl std::error::Error for AppError {}
 
 /// 底层能力（写文件、系统调用、驱动）失败的统一收敛。
 ///
-/// 这类失败在 TS 版里走的是「非 AppError 异常 → `INTERNAL_ERROR`」那一支，
-/// 所以码与文案都照它来：给用户一句通用话，真正的系统报错进 `detail`
+/// 给用户一句通用话（`INTERNAL_MESSAGE`），真正的系统报错进 `detail`
 /// 只落日志 —— 那里面往往带着完整文件路径，不该出现在界面上。
 pub fn io_error(context: &str, error: impl std::fmt::Display) -> AppError {
     AppError::internal(INTERNAL_MESSAGE).with_detail(format!("{context}：{error}"))

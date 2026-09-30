@@ -1,4 +1,4 @@
-//! 草稿导出模块的领域契约（对应 TS 侧 `shared/modules/exporter.ts`）。
+//! 草稿导出模块的领域契约（前端对应 `shared/modules/exporter.ts`）。
 //!
 //! 名字虽然叫 export，但它做的其实是「把一章（或一整本、一整卷）的正文
 //! 写成磁盘上的一个纯文本文件」。之所以单开一个模块而不是塞进 chapters：
@@ -13,7 +13,7 @@ use serde::Serialize;
 
 pub const EXPORT_FORMATS: [&str; 2] = ["txt", "md"];
 
-// 刻意**没有** `is_export_format`：TS 侧的 `isExportFormat` 只有两个消费方
+// 刻意**没有** `is_export_format`：前端的 `isExportFormat` 只有两个消费方
 // —— 单测，以及三个 schema 里的 `.refine(isExportFormat, '导出格式不支持')`。
 // Rust 这边没有单测副本，值域校验由 `commands.rs` 的
 // `validator.enum_value("format", &EXPORT_FORMATS, …)` 一次做完，

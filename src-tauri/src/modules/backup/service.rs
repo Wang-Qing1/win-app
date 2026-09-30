@@ -1,4 +1,4 @@
-//! 数据库备份服务（对应 TS 侧 `backup.service.ts`）。
+//! 数据库备份服务。
 //!
 //! 用 SQLite 自带的**在线备份 API**（`rusqlite::Connection::backup`）而不是
 //! 直接复制 .db 文件：连接开的是 WAL 模式（见 `db/`），最新写入可能还没
@@ -6,8 +6,8 @@
 //! 这一段，备份回来的书少了最后几行；在线备份 API 会自己处理，且在备份
 //! 期间不阻塞其它读写。
 //!
-//! TS 版用的 `db.backup()` 也是同一套东西（better-sqlite3 包的就是
-//! `sqlite3_backup_*`），所以两边产出的备份文件等价。
+//! WAL 模式下这一点尤其要紧：主文件可能比实际内容小得多 —— 实测过一个
+//! 「主文件 4096 B、`-wal` 412 KB」的库，直接复制主文件等于备份了个空壳。
 //!
 //! 为什么这里带 `&WebviewWindow`：它需要一次原生保存对话框，这是全项目
 //! 仅有的两处宿主能力之一（另一处是 exporter）。
@@ -69,13 +69,13 @@ pub fn ask_target(window: &WebviewWindow, suggested_name: &str) -> AppResult<Opt
 /// 「没有书就不给备份」的判断 —— 备份的意义正是把「现在这一份」原样存下来。
 pub fn write_backup(conn: &Connection, target: &Path) -> AppResult<i64> {
     // rusqlite 的 Connection::backup 内部就是「开目标连接 → step 到 Done →
-    // 析构时 sqlite3_backup_finish 收尾」，与 better-sqlite3 的 db.backup()
-    // 一路。pages_per_step 固定 100，与 rusqlite 自己的实现保持一致。
+    // 析构时 sqlite3_backup_finish 收尾」。pages_per_step 固定 100 ——
+    // 一次搬 100 页，既不长时间占住源库的写锁，也不会碎成几千次调用。
     conn.backup(DatabaseName::Main, target, None)
         .map_err(|error| io_error(&format!("备份到 {} 失败", target.display()), error))?;
 
-    // TS 用的是 statSync(path).size —— 以**落地后的文件**为准，而不是
-    // 内存里的内容长度：备份文件里还有页头、空闲页与索引，两者不是一个数。
+    // 以**落地后的文件**为准，而不是内存里的内容长度 ——
+    // 备份文件里还有页头、空闲页与索引，两者根本不是一个数。
     let bytes = std::fs::metadata(target)
         .map_err(|error| io_error(&format!("无法读取备份文件 {}", target.display()), error))?
         .len();

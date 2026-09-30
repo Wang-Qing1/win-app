@@ -1,4 +1,4 @@
-//! 分卷模块的命令层（对应 TS 侧 `volume.controller.ts`）。
+//! 分卷模块的命令层。
 
 use serde_json::Value;
 use tauri::State;

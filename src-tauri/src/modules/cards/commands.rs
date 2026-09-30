@@ -1,4 +1,4 @@
-//! 卡片模块的命令层（对应 TS 侧 `card.controller.ts`）。
+//! 卡片模块的命令层。
 //!
 //! 只做「解析请求 → 调用服务 → 返回结果」：不含业务判断，也不吞异常 ——
 //! 异常交给 `dispatch` 统一收敛成信封。
@@ -34,7 +34,7 @@ use super::service;
 
 /// 按 `extra_fields` 表逐个字段校验 `input.extra`。
 ///
-/// 对应 TS 侧动态生成的 `cardExtraSchemaFor(type)`：字段集合由类型决定，
+/// 对应 前端动态生成的 `cardExtraSchemaFor(type)`：字段集合由类型决定，
 /// 所以没法写成一个固定的 schema —— 手写四份就意味着「新增一个字段时可能
 /// 只改了表、忘了改 schema」，而那样的漏改不会报错，只会让新字段的输入
 /// 被静默丢弃（用户填了却存不进去）。
@@ -45,7 +45,7 @@ fn parse_extra(
 ) -> BTreeMap<String, String> {
     let object = source.get("extra").and_then(|value| value.as_object());
     if object.is_none() {
-        // TS 侧 `extra` 是必填键（`z.object({...})` 上没有 `.optional()`）：
+        // 前端 `extra` 是必填键（`z.object({...})` 上没有 `.optional()`）：
         // 缺了它整张卡都不该被接受 —— 否则「改类型时漏传 extra」会静默
         // 把这条卡片的专属字段清空
         validator.record("extra", "缺少类型专属字段");
@@ -89,7 +89,7 @@ fn parse_extra(
 
 /// 新建与更新共用的字段解析（两者只差一个 id）。
 ///
-/// 对应 TS 侧的 discriminated union：**先取 cardType，才知道该收哪些专属字段**
+/// 对应 前端的 discriminated union：**先取 cardType，才知道该收哪些专属字段**
 /// —— 分支里没声明的键会被 Zod 剥掉，也就是说「给物品卡塞一个身份定位」
 /// 在 IPC 边界就被拦下了，根本走不到服务层。
 fn parse_card(source: &Value) -> AppResult<CardWriteData> {
@@ -126,7 +126,7 @@ fn parse_card(source: &Value) -> AppResult<CardWriteData> {
         &format!("单个标签最多 {LIMIT_TAG} 个字符"),
     );
 
-    // 类型本身就不合法时不再逐字段校验 extra：TS 的 discriminatedUnion
+    // 类型本身就不合法时不再逐字段校验 extra：前端契约里的 discriminated union
     // 在这一步只会报一条「判别值非法」，逐字段再报一串只会让表单上多出
     // 一堆与 stale 类型对应的输入框错误
     let extra = if card_type.is_empty() {
@@ -153,14 +153,14 @@ fn parse_list_query(input: Option<Value>) -> AppResult<CardListQuery> {
     let mut validator = Validator::new(&source);
 
     // `bookScope` 是**真的枚举**（z.string().refine(...)）：值非法直接报错。
-    // 这一点与下面的 cardType 不同 —— 那一个在 TS 里只是 z.string()，
+    // 这一点与下面的 cardType 不同 —— 那一个在前端契约里只是 z.string()，
     // 非法值由后续归一化静默降级。
     let book_scope = validator.enum_value("bookScope", &CARD_BOOK_SCOPES, "all", "书籍筛选范围不合法");
     let book_id = validator.optional_id("bookId", "书籍 ID 非法");
 
     // 下面这四个在 zod 里都只是 `z.string()` / `z.string().trim()`，
     // **没有任何长度上限**，真正决定行为的是后面的白名单归一化。
-    // 所以这里的 max 传 usize::MAX：加一个 TS 没有的上限会让
+    // 所以这里的 max 传 usize::MAX：加一个前端没有的上限会让
     // 「旧链接里带了一个超长排序值」从「静默回落」变成「页面报错」。
     let raw_card_type = validator.string("cardType", "", usize::MAX, "卡片类型不合法", "卡片类型不合法");
     let raw_category = validator.string(
@@ -223,7 +223,7 @@ fn parse_timeline_order(input: Option<Value>) -> AppResult<CardTimelineOrderInpu
 
     let book_id = validator.optional_id("bookId", "书籍 ID 非法");
     // 字段名是 `category`（不是列表查询里的 settingCategory）—— 与
-    // TS 侧 cardTimelineOrderSchema 逐字对齐，改了就收不到客户端的值
+    // 前端 cardTimelineOrderSchema 逐字对齐，改了就收不到客户端的值
     let raw_category = validator.string("category", "", usize::MAX, "设定类别不合法", "设定类别不合法");
     let ordered_ids = validator.id_array(
         "orderedIds",

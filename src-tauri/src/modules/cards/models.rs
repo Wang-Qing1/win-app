@@ -1,4 +1,4 @@
-//! 卡片库的领域契约（对应 TS 侧 `src/shared/modules/cards.ts`）。
+//! 卡片库的领域契约（前端对应 `src/shared/modules/cards.ts`）。
 //!
 //! 四类卡片（人物 / 物品 / 灵感 / 设定）**共用一张 cards 表**，靠 card_type
 //! 列区分：它们的共性（标题、一句话简介、正文、标签、归属书籍）占了绝大部分，
@@ -15,7 +15,7 @@
 //! 一个字段名写错、或把人物卡的 extra 直接搬到物品卡上，SQLite 不会吭声。
 //! 所以下面这张 CARD_EXTRA_FIELDS 表是唯一的字段来源，它同时驱动三件事：
 //!   1. 命令边界的校验（`super::commands::parse_extra`）
-//!   2. 编辑面板渲染哪些输入框（渲染层仍然用它自己的那份 TS 常量）
+//!   2. 编辑面板渲染哪些输入框（前端仍然用它自己的那份 TS 常量）
 //!   3. 类型切换时的字段迁移（本文件的 `normalize_extra`）
 //! 一处新增字段，三处自动跟上 —— 这是统一建模能成立的前提。
 
@@ -47,7 +47,7 @@ pub fn card_type_label(card_type: &str) -> &'static str {
 /// 「什么时候发生了什么」—— 它们的结构一致，只是**读的人关心的问题**不同。
 pub const SETTING_CATEGORIES: [&str; 4] = ["地点", "势力", "规则体系", "时间线"];
 
-/// 设定卡「时点」的键。时间线视图与冒烟断言共用，避免各处写裸字符串。
+/// 设定卡「时点」的键。时间线视图与后端排序读的是同一个键，避免各处写裸字符串。
 pub const SETTING_TIME_POINT_KEY: &str = "timePoint";
 /// 设定卡「时间线序号」的键。由时间线视图的上下移动写入，不出现在表单里。
 pub const SETTING_ORDER_KEY: &str = "order";
@@ -64,7 +64,7 @@ pub fn is_setting_category(value: &str) -> bool {
  * 类型专属字段
  * ------------------------------------------------------------------ */
 
-/// 一个类型专属字段的声明。字段含义与 TS 侧 `CardExtraField` 一一对应。
+/// 一个类型专属字段的声明。字段含义与 前端 `CardExtraField` 一一对应。
 pub struct CardExtraField {
     pub key: &'static str,
     pub label: &'static str,
@@ -85,7 +85,7 @@ pub struct CardExtraField {
     /// 既没有意义（作者关心的是先后，不是具体数值），也很容易填成重复值。
     ///
     /// Rust 侧只做校验、不渲染表单（表单在渲染层，用它自己的那份常量），
-    /// 因此这个标志在这里没有读取点 —— 保留它是为了让这张表与 TS 侧
+    /// 因此这个标志在这里没有读取点 —— 保留它是为了让这张表与 前端
     /// 逐字段对齐，将来导出 / 生成表单时要用。
     #[allow(dead_code)]
     pub hidden: bool,
@@ -190,7 +190,7 @@ const SETTING_EXTRA_FIELDS: [CardExtraField; 3] = [
 /// 取某一类卡片的专属字段表。
 ///
 /// 认不出的类型回落到「设定」：调用方传进来的类型一定已经过校验
-/// （`is_card_type`），这里的兜底只是为了让函数是完备的 —— 与 TS 侧
+/// （`is_card_type`），这里的兜底只是为了让函数是完备的 —— 与 前端
 /// `CARD_EXTRA_FIELDS[type]` 在非法类型下会拿到 `undefined` 不同，
 /// Rust 里必须回一个真实存在的表。
 pub fn extra_fields(card_type: &str) -> &'static [CardExtraField] {
@@ -295,7 +295,7 @@ pub struct Card {
     pub content: String,
     pub tags: Vec<String>,
     /// 值集合由 `CARD_EXTRA_FIELDS` 决定；用 BTreeMap 是为了**稳定输出**
-    /// （冒烟断言拿 `Object.keys(extra).sort()` 比对，顺序必须确定）
+    /// （前端按 `Object.keys(extra).sort()` 比对时，顺序必须确定）
     pub extra: BTreeMap<String, String>,
     pub created_at: String,
     pub updated_at: String,
@@ -342,7 +342,7 @@ pub const CARD_BOOK_SCOPES: [&str; 3] = ["all", "book", "global"];
 /// 非法排序字段回落 `updatedAt`（而不是报错）：与书籍列表同一取舍 ——
 /// 旧链接里带来的排序值不该让整个卡片页打不开。
 ///
-/// 注意这与「边界校验」是两回事：`sortBy` 在 TS 侧只是 `z.string()`，
+/// 注意这与「边界校验」是两回事：`sortBy` 在 前端只是 `z.string()`，
 /// 没有任何值域限制，所以这里**不能**换成会记账报错的枚举校验，
 /// 否则一本排序值是旧版本留下的书会让整个列表变成错误页。
 pub fn normalize_card_sort_field(value: &str) -> &'static str {

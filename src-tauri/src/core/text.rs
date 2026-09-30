@@ -1,8 +1,9 @@
-//! 文本度量与 HTML 转纯文本（对应 TS 侧 `src/shared/text.ts`）。
+//! 文本度量与 HTML 转纯文本（前端对应 `src/shared/text.ts`）。
 //!
 //! 这个文件决定 `hanzi_count` / `char_count` 两个落库的值，因此**口径必须与
-//! Electron 版逐字一致**：不一致的症状是「同一章在换壳后字数变了」——
-//! 旧数据是 JS 版算的，新数据是 Rust 版算的，同一本书里两种数字混着显示。
+//! 前端那一份实现（`src/shared/text.ts`）逐字一致**：不一致的症状是
+//! 「编辑器里显示的字数与统计页对不上」—— 一边是 JS 算的、一边是 Rust 算的，
+//! 同一本书里两种数字混着显示，而用户只会觉得「这软件的数字不准」。
 //!
 //! 三处刻意对齐的细节：
 //!   - 汉字用 Unicode **Script** 属性（`\p{Han}`）而不是 `[\u4e00-\u9fa5]`
@@ -30,7 +31,7 @@ static HAN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\p{Han}").expect("汉字正�
 ///
 /// 与 Rust 正则的 `\S` 有细微差别：JS 把 U+FEFF 算作空白，Unicode 的
 /// `White_Space` 不算；反过来 U+0085 在 Unicode 里是空白，JS 不算。
-/// 用显式集合而不是 `\S`，是为了让这两个边界字符的行为与旧壳一致。
+/// 用显式集合而不是 `\S`，是为了让这两个边界字符的行为与前端实现一致。
 ///
 /// 检索侧的切词（`modules::search`）也用它：那边要复刻 JS 的
 /// `split(/\s+/)`，用 `Rust` 的 `split_whitespace` 会在全角空格以外的
@@ -212,9 +213,10 @@ mod tests {
         assert_eq!(html_to_text("<p>&lt;p&gt;</p>"), "<p>");
         assert_eq!(html_to_text("<p>你好<br>世界</p>"), "你好\n世界");
         // 相邻块级标签之间会留下**一个空行**：开标签与闭标签各贡献一个换行。
-        // 这不是 bug，而是 TS 版的既有行为 —— 三处正则（br / 块级闭 / 块级开）
+        // 这不是 bug，而是**既有行为**：三处正则（br / 块级闭 / 块级开）
         // 依次替换，中间没有「合并相邻换行」的一步，`\n{3,}` 也压不到两行。
-        // 照抄它，是因为 content_text 已经按这个形状落库了。
+        // 保持它是因为 content_text 已经按这个形状落库了 —— 改了会让
+        // 老数据的段落间距与新数据不一致。
         assert_eq!(html_to_text("<div>上</div><div>下</div>"), "上\n\n下");
         assert_eq!(html_to_text("&ldquo;引号&rdquo;"), "\u{201c}引号\u{201d}");
     }

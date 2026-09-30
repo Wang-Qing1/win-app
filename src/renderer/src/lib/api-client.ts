@@ -2,11 +2,11 @@ import type { WinbookApi } from '@shared/api'
 import type { AppErrorCode, AppErrorPayload, FieldIssue, IpcResponse } from '@shared/result'
 
 /**
- * 渲染进程侧的类型化错误。
+ * 前端侧的类型化错误。
  *
- * 主进程返回的是 IpcResponse 信封而不是异常 —— 跨 contextBridge 传 Error
- * 实例语义不可靠。本文件负责把信封拆开，失败时抛出 ApiError，
- * 于是 React Query / 表单 / 提示条都只需要处理一个统一的错误类型。
+ * Rust 后端返回的是 IpcResponse 信封而不是异常 —— 跨进程传 Error 实例
+ * 语义不可靠。本文件负责把信封拆开，失败时抛出 ApiError，于是
+ * React Query / 表单 / 提示条都只需要处理一个统一的错误类型。
  */
 export class ApiError extends Error {
   readonly code: AppErrorCode
@@ -68,7 +68,7 @@ export function getBridge(): WinbookApi {
 
 /**
  * 统一的 IPC 调用包装：拆信封 + 异常归一化。
- * 所有对主进程的调用都必须经过它，避免各处重复写拆信封逻辑。
+ * 所有对后端的调用都必须经过它，避免各处重复写拆信封逻辑。
  */
 export async function invoke<T>(call: () => Promise<IpcResponse<T>>): Promise<T> {
   let response: IpcResponse<T>
@@ -76,10 +76,10 @@ export async function invoke<T>(call: () => Promise<IpcResponse<T>>): Promise<T>
   try {
     response = await call()
   } catch {
-    // 主进程重启、通道被移除等情况下 ipcRenderer.invoke 会直接 reject
+    // 后端进程退出、命令未注册等情况下 invoke 会直接 reject
     throw new ApiError({
       code: 'INTERNAL_ERROR',
-      message: '与主进程通信失败，请重启 winbook 后重试',
+      message: '与后端通信失败，请重启 winbook 后重试',
       requestId: '-'
     })
   }

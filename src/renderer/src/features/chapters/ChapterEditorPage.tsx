@@ -281,7 +281,7 @@ export function ChapterEditorPage() {
       if (!mountedRef.current) return
       setSaveState('saved')
       setSavedAt(result.updatedAt)
-      // 用服务端回传的字数而不是前端自己算的：主进程是唯一的口径来源
+      // 用服务端回传的字数而不是前端自己算的：后端是唯一的口径来源
       setServerCounts({ hanzi: result.hanziCount, chars: result.charCount })
     } catch (error) {
       if (!mountedRef.current) return
@@ -788,7 +788,7 @@ export function ChapterEditorPage() {
    *
    * 这里的分工必须说清楚：**关键词负责「找得到」，偏移负责「是哪一次」**。
    *
-   * 不能只信偏移 —— 主进程搜的是库里的 `content_text`，而编辑器手里是从
+   * 不能只信偏移 —— 后端搜的是库里的 `content_text`，而编辑器手里是从
    * TipTap 文档算出的纯文本，两套投影的换行约定并不完全一致（`htmlToText`
    * 对列表这类嵌套块级结构插入的换行数与 `extractDocText` 不同），
    * 偏移会差上几个字符。直接拿它去 mapTextRange，会标在错误的字上 ——
@@ -1196,7 +1196,7 @@ export function ChapterEditorPage() {
           )}
         </Flex>
 
-        {/* 全书统计。data-* 是给冒烟测试读的：这几个数字是「底部统计」的全部内容，
+        {/* 全书统计。data-* 是给端到端测试读的：这几个数字是「底部统计」的全部内容，
             只读文案的话，「全书汉字取的是缓存里的聚合字段」这类错会被漏掉 */}
         <Flex align="center" gap={14} className="editor-statusbar__book">
           <Text
@@ -1284,7 +1284,7 @@ export function ChapterEditorPage() {
  * 中央那枚入口按全应用空状态的规矩做成 40px 实底正圆 + 悬浮提示
  * （见 `checkEmptyZones`）：它是这一屏唯一有内容的地方，四周是空白、
  * 没有对齐对象，用基础规格才像「一块可以点的地方」。
- * 挂在 `data-empty-zone` / `data-empty-create` 上，冒烟按区块采。
+ * 挂在 `data-empty-zone` / `data-empty-create` 上，端到端测试按区块采。
  */
 function EmptyBookState({
   loading,
@@ -1342,7 +1342,7 @@ function EmptyBookState({
  */
 function SaveIndicator({ state, savedAt }: { state: SaveState; savedAt: string | null }) {
   /*
-   * `data-value` 是给冒烟的锚点：状态文案里带着「N 分钟前」这种相对时间，
+   * `data-value` 是给端到端测试的锚点：状态文案里带着「N 分钟前」这种相对时间，
    * 断言没法对文案做相等匹配；原始状态值（saved/saving/error）才可断。
    */
   if (state === 'saving') {
